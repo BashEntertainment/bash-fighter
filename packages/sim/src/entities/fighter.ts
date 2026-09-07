@@ -1,6 +1,5 @@
-// Fixed top-level fighter states (Engine Architecture §3). Only idle/run/
-// jump/airborne are reachable by this minimal loop; attack/hitstun/shield/
-// ledge/dead exist as named states for future work but are unused for now.
+// Fixed top-level fighter states (Engine Architecture section 3), driven by
+// the declarative transition table in state-machine/transitions.ts.
 export const FighterStateId = {
   IDLE: 0,
   RUN: 1,

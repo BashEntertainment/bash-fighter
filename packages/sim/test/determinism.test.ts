@@ -3,13 +3,13 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { Sim } from '../src/sim.ts';
 import { hashStateBuffer } from '../src/hash.ts';
-import { buildReplayInputStream, REPLAY_SEED } from './fixtures/replay-input-stream.ts';
+import { buildReplayInputStream, REPLAY_SEED, REPLAY_CHARACTERS } from './fixtures/replay-input-stream.ts';
 
 const GOLDEN_PATH = new URL('./golden/replay-hashes.json', import.meta.url);
 const golden: string[] = JSON.parse(readFileSync(GOLDEN_PATH, 'utf8'));
 
 function runReplay(): string[] {
-  const sim = new Sim(REPLAY_SEED);
+  const sim = new Sim(REPLAY_SEED, REPLAY_CHARACTERS);
   const buf = sim.createStateBuffer();
   const hashes: string[] = [];
   for (const frameInputs of buildReplayInputStream()) {
@@ -41,14 +41,14 @@ describe('Determinism harness', () => {
     // Run up to splitPoint, save state, keep going normally to get the
     // "continued" tail, but via a *second* Sim that we load state into —
     // simulating a rollback resync after a network correction.
-    const simA = new Sim(REPLAY_SEED);
+    const simA = new Sim(REPLAY_SEED, REPLAY_CHARACTERS);
     const bufA = simA.createStateBuffer();
     for (let t = 0; t < splitPoint; t++) {
       simA.advance(inputStream[t] as [import('../src/types.ts').InputFrame, import('../src/types.ts').InputFrame]);
     }
     simA.saveState(bufA);
 
-    const simB = new Sim(999999); // deliberately wrong seed/state first
+    const simB = new Sim(999999, REPLAY_CHARACTERS); // deliberately wrong seed/state first
     simB.loadState(bufA); // rollback: discard simB's own history, load A's snapshot
     const bufCheck = simB.createStateBuffer();
     const resumedHashes: string[] = [];
@@ -63,7 +63,7 @@ describe('Determinism harness', () => {
   });
 
   it('saveState/loadState round trip preserves hash at the exact save point', () => {
-    const sim = new Sim(REPLAY_SEED);
+    const sim = new Sim(REPLAY_SEED, REPLAY_CHARACTERS);
     const buf = sim.createStateBuffer();
     for (const frameInputs of buildReplayInputStream().slice(0, 45)) {
       sim.advance(frameInputs);

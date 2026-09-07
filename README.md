@@ -7,24 +7,28 @@ live in the Bash Entertainment wiki: "Engine Architecture" and
 
 ## Packages
 
-- `packages/sim` — **real, implemented.** Deterministic fixed-timestep
-  simulation core: Q16.16 fixed-point math, a seeded PRNG, and a minimal
-  two-fighter physics loop (gravity, ground collision, jump, horizontal
-  movement). No floats, no wall-clock reads, no `Math.random` — every frame
-  is a pure function of the previous state and that frame's inputs, so any
-  two clients running the same inputs from the same seed reach bit-identical
-  state. This is what makes rollback netcode and reproducible replays
+- `packages/sim` — **real, implemented, tested.** Deterministic
+  fixed-timestep simulation core: Q16.16 fixed-point math, a seeded PRNG,
+  and a full two-fighter combat loop (movement, jumping, hitboxes/hurtboxes,
+  hitstun, knockback scaling, DI, shield, stocks). No floats in game state,
+  no wall-clock reads, no `Math.random` — every frame is a pure function of
+  the previous state and that frame's inputs, so any two clients running
+  the same inputs from the same seed reach bit-identical state. This is
+  what makes server-authoritative resimulation and reproducible replays
   possible later.
-- `packages/render` — stub. Will own the WebGL2/Canvas renderer that reads
-  sim state and draws it; never mutates sim state.
-- `packages/input` — stub. Will own keyboard/Gamepad polling and translate
-  raw browser input into the `InputFrame` struct `sim` consumes.
-- `packages/net` — stub. Will own the rollback netcode session (GGPO-style)
-  and transport.
-- `packages/content` — stub. Will own the character/stage data format and
-  loader for community-contributed content.
-- `packages/app` — stub. Will own the Vite app shell wiring the above
-  together into a playable page.
+- `packages/content` — in progress. Owns the character/stage data format
+  and loader for community-contributed content; has a package scaffold and
+  its own tests started.
+- `packages/render`, `packages/input`, `packages/app` — actively being
+  built (by other contributors/agents as of this writing): the WebGL/Pixi
+  renderer, keyboard/Gamepad input capture, and the Vite app shell that
+  wires sim + render + input into a playable page. Check each package's
+  `src/` directly for current state — this README won't always be first to
+  reflect in-flight work; `docs/ROADMAP.md` tracks it at a coarser grain.
+- `packages/net` — not started. Will own the server-authoritative netcode
+  session (fixed-tick simulation with client prediction/interpolation,
+  chosen over peer-to-peer rollback because that model doesn't hold up at
+  the target scale of 20 simultaneous players) and transport.
 
 ## Why `packages/sim` looks the way it does
 
@@ -62,60 +66,46 @@ live in the Bash Entertainment wiki: "Engine Architecture" and
   `Sim` instance that started from a deliberately wrong seed, and resuming
   from there reproduces the same tail of hashes as an uninterrupted run.
 
-## Running tests
+## Quickstart
 
 ```sh
-npm install   # see "Known limitations" below
+git clone <this repo>
+cd bash-fighter
+npm install
+npm run typecheck
+npm run lint
 npm test
 ```
 
-`npm test` runs `node --test packages/*/test/**/*.test.ts`. It uses Node's
-native TypeScript support (Node 24+, no build step, no ts-node) rather than
-vitest, for reasons explained below. All 42 tests pass as of this writing.
+`npm test` runs `node --test packages/*/test/**/*.test.ts` — Node's
+built-in TypeScript type-stripping (Node 24+; CI runs Node 24), no build
+step, no ts-node. This is why source files import each other with explicit
+`.ts` extensions (e.g. `from './fixed.ts'`) rather than the `.js`-referring-
+to-compiled-output convention — type stripping doesn't rewrite extensions,
+it only strips type syntax. `npm run typecheck` runs `tsc --noEmit`;
+`npm run lint` runs ESLint, including the determinism-restriction rule
+described above, scoped to `packages/sim/src`.
 
-## Known limitations (please read before assuming CI parity)
-
-This repo was built in a container where **the npm registry
-(`registry.npmjs.org`) was completely unreachable** (every request failed
-with a connection error / 403). That means:
-
-- `typescript`, `vitest`, and `eslint`/`@typescript-eslint/*` listed in
-  `devDependencies` were never actually installed, and `npm run typecheck`
-  / `npm run lint` / `npm run test:vitest` could not be run for real in that
-  environment.
-- To still deliver real, runnable, passing tests, `npm test` uses **Node
-  24's built-in TypeScript type-stripping** (no separate compile step —
-  Node runs `.ts` files directly) with `node:test`/`node:assert` instead of
-  vitest. This is why source files import each other with explicit `.ts`
-  extensions (e.g. `from './fixed.ts'`) rather than the more common `.js`-
-  referring-to-compiled-output convention — Node's type stripping does not
-  rewrite extensions, it only strips type syntax.
-- `tsconfig.json` is set up for a real `tsc --noEmit` typecheck
-  (`strict: true`, `noUncheckedIndexedAccess: true`,
-  `allowImportingTsExtensions: true`) and `eslint.config.js` implements the
-  sim-restriction rule described above — both should work as soon as
-  install succeeds; neither has been verified end-to-end in this
-  environment because the tools aren't present. Code was written to strict
-  TypeScript conventions throughout, but this is an honest gap: "typecheck
-  and lint pass" is unverified, not verified-and-passing.
-
-If you can install packages here, running `npm install && npm run typecheck
-&& npm run lint && npm run test:vitest` is worth doing once to confirm
-parity with the `node --test` results.
+There's no dev server yet for the actual game — `packages/app` is under
+active construction (see above). Once it has a `dev` script wired to Vite,
+this section will show the command to run it locally.
 
 ## Repo layout
 
 ```
 packages/
-  sim/      real: fixed-point math, PRNG, sim loop, determinism harness
-  render/   stub
-  input/    stub
-  net/      stub
-  content/  stub
-  app/      stub
+  sim/      real, tested: fixed-point math, PRNG, sim loop, determinism harness
+  content/  in progress: character/stage data format + loader
+  render/   in progress: WebGL/Pixi renderer
+  input/    in progress: keyboard/Gamepad polling -> InputFrame
+  app/      in progress: Vite app shell
+  net/      not started: server-authoritative netcode + transport
 scripts/
   generate-trig-lut.mjs           offline generator for the trig LUT
   run-determinism-harness.ts      regenerates the golden hash file
+docs/
+  ROADMAP.md        what exists, what's next, sequencing rationale
+.github/            issue/PR templates, CI workflow
 eslint.config.js
 tsconfig.json / tsconfig.base.json
 ```
@@ -126,8 +116,12 @@ No secrets, credentials, or private keys are stored in this repo.
 
 See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for dev environment setup,
 coding standards, and the PR process. Use the issue templates under
-`.github/ISSUE_TEMPLATE/` to report bugs or propose features.
+`.github/ISSUE_TEMPLATE/` to report bugs or propose features. See
+[`docs/ROADMAP.md`](./docs/ROADMAP.md) for what's built, in progress, and
+not started, and [`SECURITY.md`](./SECURITY.md) to report a vulnerability.
 
 ## License
 
-AGPL-3.0. See [`LICENSE`](./LICENSE) for the full text.
+AGPL-3.0, with a Contributor License Agreement required from contributors
+(owner decision — mechanism not yet built, see CONTRIBUTING.md). See
+[`LICENSE`](./LICENSE) for the full text.

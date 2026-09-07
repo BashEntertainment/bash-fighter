@@ -1,0 +1,43 @@
+[Unit]
+Description=Bash Fighter game server (authoritative sim + websocket)
+Documentation=https://github.com/BashEntertainment/bash-fighter
+After=network.target
+
+[Service]
+Type=simple
+User=bashgame
+Group=bashgame
+WorkingDirectory=/srv/bash-fighter/current
+
+# Configuration (PORT, NODE_ENV, etc). Never commit real values here --
+# this file just points at an env file that lives only on the box.
+EnvironmentFile=-/srv/bash-fighter/shared/bash-fighter.env
+
+ExecStart=/usr/bin/node /srv/bash-fighter/current/server/dist/index.js
+
+Restart=on-failure
+RestartSec=2
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=bash-fighter
+
+# --- Hardening ---
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/bash-fighter
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+AmbientCapabilities=
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target

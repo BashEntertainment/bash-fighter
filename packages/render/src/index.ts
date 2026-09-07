@@ -35,11 +35,26 @@ export interface RenderFrame {
   hash: string;
 }
 
-const CAMERA_CFG: Omit<CameraConfig, 'viewWidth' | 'viewHeight'> = {
-  minScale: 0.9,
-  maxScale: 7.5,
-  paddingWorld: 60,
-};
+// Fighters spread by roughly a screen-width during normal play; a
+// paddingWorld a bit smaller than the arena keeps the baseline "whole
+// arena" framing from [[camera.ts]] as the default rather than the
+// exception. minScale keeps fighters legible even on a wide arena;
+// maxScale stops the camera slamming in when fighters stand still.
+function cameraConfig(stage: StageBounds, viewWidth: number, viewHeight: number): CameraConfig {
+  return {
+    viewWidth,
+    viewHeight,
+    minScale: 1.6,
+    maxScale: 5.5,
+    paddingWorld: 20,
+    arena: {
+      minX: stage.blastMinX,
+      maxX: stage.blastMaxX,
+      minY: stage.blastMinY,
+      maxY: stage.blastMaxY,
+    },
+  };
+}
 
 const PLAYER_COLOR_COUNT = PALETTE.fighters.length;
 
@@ -115,7 +130,7 @@ export class Renderer {
 
     const cam = computeCamera(
       frame.fighters.map((f) => ({ x: f.x, y: f.y })),
-      { ...CAMERA_CFG, viewWidth: vw, viewHeight: vh },
+      cameraConfig(this.stageBounds, vw, vh),
     );
 
     drawStage(this.stageLayer, this.stageBounds, cam, vw, vh);
@@ -126,7 +141,7 @@ export class Renderer {
       sprite.root.visible = true;
       const screen = worldToScreen(f.x, f.y, cam, vw, vh);
       sprite.root.position.set(screen.x, screen.y);
-      sprite.root.scale.set(cam.scale / 6.5);
+      sprite.root.scale.set(cam.scale); // silhouette is drawn in world units
       sprite.draw({
         facing: f.facing,
         hitstun: f.hitstun,

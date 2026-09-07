@@ -50,11 +50,10 @@ html, body {
   display: none;
 }
 
-.title {
-  font-size: 15px;
-  letter-spacing: 0.14em;
+.subtitle {
+  font-size: 16px;
   color: var(--ink-dim);
-  font-weight: 600;
+  font-weight: 400;
 }
 
 .wordmark {

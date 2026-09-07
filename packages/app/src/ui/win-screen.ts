@@ -13,8 +13,8 @@ export class WinScreen {
     this.root.className = 'screen hidden';
     this.root.id = 'win-screen';
     this.root.innerHTML = `
-      <div class="title">MATCH OVER</div>
       <div class="wordmark" id="win-headline">—</div>
+      <div class="subtitle">Match over.</div>
       <button class="btn" id="rematch-btn">REMATCH</button>
     `;
     parent.appendChild(this.root);

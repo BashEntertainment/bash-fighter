@@ -13,9 +13,14 @@ export interface FighterVisualState {
   isDead: boolean;
 }
 
-const BODY_WIDTH = 34;
-const BODY_HEIGHT = 62;
-const HEAD_RADIUS = 14;
+// World units, not pixels — the root container is scaled by the camera's
+// pixels-per-unit factor, same as everything else drawn in the arena.
+// Sized to read clearly against a stage a few hundred units wide rather
+// than to match the sim's (much smaller) hurtbox exactly; the debug
+// overlay is what shows the real hurtbox.
+const BODY_WIDTH = 14;
+const BODY_HEIGHT = 26;
+const HEAD_RADIUS = 6;
 
 export class FighterSprite {
   readonly root = new Graphics();

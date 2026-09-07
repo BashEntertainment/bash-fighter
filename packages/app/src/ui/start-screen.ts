@@ -22,8 +22,8 @@ export class StartScreen {
     this.root.className = 'screen';
     this.root.id = 'start-screen';
     this.root.innerHTML = `
-      <div class="title">BASH ENTERTAINMENT — LOCAL MATCH</div>
       <div class="wordmark">BASH FIGHTER</div>
+      <div class="subtitle">Local test build — two players, one keyboard or gamepads.</div>
       <div class="select-row">
         <div class="select-card p1">
           <h3>PLAYER 1</h3>

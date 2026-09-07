@@ -1,0 +1,189 @@
+:root {
+  --bg: #0b0d10;
+  --panel: #14171b;
+  --ink: #e8e6df;
+  --ink-dim: #8a8f98;
+  --accent: #e8b23c;
+  --accent-2: #4fa3c4;
+  --danger: #d7593f;
+  --font-ui: 'Inter', 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'Iosevka', 'JetBrains Mono', ui-monospace, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  overflow: hidden;
+}
+
+#app {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+}
+
+#canvas-root {
+  position: absolute;
+  inset: 0;
+}
+
+.screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 28px;
+  background: var(--bg);
+  z-index: 10;
+}
+
+.screen.hidden {
+  display: none;
+}
+
+.title {
+  font-size: 15px;
+  letter-spacing: 0.14em;
+  color: var(--ink-dim);
+  font-weight: 600;
+}
+
+.wordmark {
+  font-size: 56px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  border-bottom: 4px solid var(--accent);
+  padding-bottom: 10px;
+}
+
+.select-row {
+  display: flex;
+  gap: 48px;
+}
+
+.select-card {
+  border: 1px solid #23262b;
+  background: var(--panel);
+  padding: 20px 26px;
+  min-width: 220px;
+  text-align: left;
+}
+
+.select-card h3 {
+  margin: 0 0 10px;
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  color: var(--ink-dim);
+}
+
+.select-card .name {
+  font-size: 22px;
+  font-weight: 700;
+  margin-bottom: 14px;
+}
+
+.select-card .p1 .name { color: var(--accent); }
+.select-card .p2 .name { color: var(--accent-2); }
+
+.bindings {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-dim);
+  line-height: 1.7;
+}
+
+.btn {
+  font-family: var(--font-ui);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--bg);
+  background: var(--ink);
+  border: none;
+  padding: 14px 34px;
+  cursor: pointer;
+}
+
+.btn:hover {
+  background: var(--accent);
+}
+
+.hint {
+  font-size: 13px;
+  color: var(--ink-dim);
+}
+
+#hud {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: space-between;
+  padding: 18px 22px;
+  z-index: 5;
+  pointer-events: none;
+  font-family: var(--font-ui);
+}
+
+#hud.hidden {
+  display: none;
+}
+
+.hud-list {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+/* Compact list mode kicks in once there are more fighters than fit as
+   two big readouts — same markup, different density. */
+.hud-list.compact .hud-card {
+  min-width: 92px;
+  padding: 8px 10px;
+}
+
+.hud-card {
+  background: rgba(20, 23, 27, 0.85);
+  border-left: 3px solid var(--ink-dim);
+  padding: 10px 16px;
+  min-width: 140px;
+}
+
+.hud-card .pct {
+  font-family: var(--font-mono);
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.hud-card .stocks {
+  margin-top: 6px;
+  font-size: 13px;
+  letter-spacing: 0.12em;
+  color: var(--ink-dim);
+}
+
+#win-screen .winner-name {
+  font-size: 15px;
+}
+
+.debug-hint {
+  position: absolute;
+  bottom: 12px;
+  right: 16px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-dim);
+  z-index: 5;
+}

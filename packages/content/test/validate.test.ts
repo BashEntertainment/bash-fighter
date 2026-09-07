@@ -44,21 +44,21 @@ describe('validateCharacter: error cases', () => {
 
   it('rejects duplicate move ids', () => {
     const bad = clone();
-    bad.moves[1].id = bad.moves[0].id;
+    bad.moves[1]!.id = bad.moves[0]!.id;
     const errors = validateCharacter(bad);
     assert.ok(errors.some((e) => e.message.includes('duplicate move id')));
   });
 
   it('rejects a move with zero frame windows', () => {
     const bad = clone();
-    bad.moves[0].windows = [];
+    bad.moves[0]!.windows = [];
     const errors = validateCharacter(bad);
     assert.ok(errors.some((e) => e.message.includes('at least one frame window')));
   });
 
   it('rejects a non-active window that has hitboxes (orphaned hitboxes)', () => {
     const bad = clone();
-    bad.moves[0].windows[0].hitboxes = [
+    (bad.moves[0]!.windows[0] as unknown as { hitboxes: unknown[] }).hitboxes = [
       {
         id: 99,
         offsetX: fromInt(0),
@@ -78,23 +78,27 @@ describe('validateCharacter: error cases', () => {
 
   it('rejects a window with a non-positive duration', () => {
     const bad = clone();
-    bad.moves[0].windows[0].duration = 0;
+    bad.moves[0]!.windows[0]!.duration = 0;
     const errors = validateCharacter(bad);
     assert.ok(errors.some((e) => e.message.includes('duration must be a positive integer')));
   });
 
   it('rejects duplicate hitbox ids within the same move', () => {
     const bad = clone();
-    const activeWindow = bad.moves[0].windows.find((w: { kind: string }) => w.kind === 'active');
-    activeWindow.hitboxes.push({ ...activeWindow.hitboxes[0] });
+    const activeWindow = bad.moves[0]!.windows.find((w: { kind: string }) => w.kind === 'active') as unknown as
+      | { hitboxes: Record<string, unknown>[] }
+      | undefined;
+    activeWindow!.hitboxes.push({ ...activeWindow!.hitboxes[0] });
     const errors = validateCharacter(bad);
     assert.ok(errors.some((e) => e.message.includes('duplicate hitbox id')));
   });
 
   it('rejects negative damage on a hitbox', () => {
     const bad = clone();
-    const activeWindow = bad.moves[0].windows.find((w: { kind: string }) => w.kind === 'active');
-    activeWindow.hitboxes[0].damage = -1;
+    const activeWindow = bad.moves[0]!.windows.find((w: { kind: string }) => w.kind === 'active') as unknown as
+      | { hitboxes: Record<string, unknown>[] }
+      | undefined;
+    activeWindow!.hitboxes[0]!.damage = -1;
     const errors = validateCharacter(bad);
     assert.ok(errors.some((e) => e.message.includes('damage must be >= 0')));
   });

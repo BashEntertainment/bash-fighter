@@ -12,7 +12,7 @@ import { FighterStateId, type FighterStateValue } from './entities/fighter.ts';
 import { assertTransition } from './state-machine/transitions.ts';
 import { BUTTON_JUMP, BUTTON_ATTACK, BUTTON_SHIELD, type InputFrame } from './types.ts';
 import { seedRng, nextUint32, type RngState } from './math/prng.ts';
-import type { CharacterData, MoveDef } from './moves/types.ts';
+import type { CharacterData, MoveDef, MoveIdValue } from './moves/types.ts';
 import { MoveId, findMove, moveTotalDuration, windowAtFrame } from './moves/types.ts';
 import { makeBoxCentered, aabbOverlap } from './hitbox.ts';
 import {
@@ -440,7 +440,7 @@ export class Sim {
 
     const wantsAttack = (input.buttons & BUTTON_ATTACK) !== 0;
     if (wantsAttack && character.moves.length > 0) {
-      let chosen: number;
+      let chosen: MoveIdValue;
       if (grounded) {
         chosen = fx.abs(input.stickX) > STICK_MOVE_THRESHOLD ? MoveId.FTILT : MoveId.JAB;
       } else {

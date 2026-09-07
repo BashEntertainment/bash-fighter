@@ -40,3 +40,39 @@ Both files were grepped for common credential patterns (`key`, `token`, `secret`
 `Bearer`, AWS-style keys, etc.) before committing. No API keys, tokens, passwords, or private keys
 were found. The only matches were the game's own keyboard-input variable named `keys` (a `Set` of
 currently-held keyboard keys) — unrelated to credentials. Files are committed as retrieved, verbatim.
+
+## Update: full server source retrieved over SSH (2026-09-07)
+
+SSH access to `135.181.45.254` was later established, which let a subsequent agent pull the actual
+project directory instead of relying on browser-side HTTP retrieval. The full tree was copied from
+`/root/super_bash` on the Hetzner box to this container at `~/work/proto-src/super_bash`, on
+2026-09-07. It included: `config.json`, `config.example.json`, `package.json`,
+`package-lock.json`, `tsconfig.json`, `.gitignore`, `simulation.ts`, `shared/types.ts`,
+`server/game.ts`, `server/index.ts`, `client/input.ts`, `client/main.ts`, `public/index.html`,
+`dist/client.js`, `dist/server.js`, plus a full `.git` history and a 39MB `node_modules`.
+
+**Security pass:** `config.json` was inspected and holds only `{"port": 80, "host": "0.0.0.0"}` —
+no credentials. The prototype's own git history (10 commits, `3c813ff Initial commit` through
+`bdc4c73 hopefully more balanced`) was searched in full (`git log --all -p | grep -iE
+'key|token|secret|password|passwd|credential'`) — the only matches were the `keys` keyboard-input
+`Set` and a `hitKey`/`hitPlayers` de-dupe key used for melee-attack collision tracking, both
+unrelated to credentials. **No secrets found anywhere in the retrieved tree or its history.**
+
+**What was committed to this repo, under `prototype/src/`:** `simulation.ts`, `shared/types.ts`,
+`server/game.ts`, `server/index.ts`, `client/input.ts`, `client/main.ts`, `public/index.html`,
+`package.json`, `package-lock.json`, `tsconfig.json`, `config.example.json` — i.e. everything
+needed to read, build, and run the prototype from source.
+
+**What was deliberately excluded, and why:**
+- `node_modules/` (39MB) — never belongs in git; reproducible from `package-lock.json` via `npm ci`.
+- `.git/` — the prototype's own history is not grafted into this repo's history (per instructions);
+  its commit log is summarized above and in the wiki instead.
+- `dist/` (`client.js`, `dist/server.js`) — build output, not source; reproducible via `npm run build`
+  and would just duplicate `prototype/client.js` already committed from the earlier HTTP retrieval.
+- `config.json` — environment-specific (the live box's port/host), not a template; `config.example.json`
+  is kept instead as the template contributors should copy.
+
+The full read of the source (rather than just the client bundle) supersedes several inferences in
+the wiki's "Super Bash Prototype Analysis" pages — see those pages for the corrected write-up,
+including the authoritative tick loop, real data model, and an honest verdict on what (if anything)
+is worth carrying into the new engine as code.

@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Super Bash</title>
+  <link href="https://fonts.googleapis.com/css2?family=Bangers&family=Outfit:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #0f0f1a;
+      font-family: 'Outfit', sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      color: #fff;
+    }
+    #game-container {
+      position: relative;
+    }
+    canvas {
+      border: 3px solid #08d9d6;
+      border-radius: 8px;
+      box-shadow: 0 0 30px rgba(8, 217, 214, 0.3);
+    }
+    #join-screen {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(15, 15, 26, 0.95);
+      padding: 40px;
+      border-radius: 16px;
+      border: 2px solid #08d9d6;
+      text-align: center;
+      min-width: 350px;
+    }
+    #join-screen.hidden { display: none; }
+    #join-screen h1 {
+      font-family: 'Bangers', cursive;
+      font-size: 48px;
+      color: #08d9d6;
+      text-shadow: 3px 3px 0 #ff2e63;
+      margin-bottom: 30px;
+    }
+    #playerName {
+      width: 100%;
+      padding: 12px 16px;
+      font-size: 18px;
+      border: 2px solid #333;
+      border-radius: 8px;
+      background: #1a1a2e;
+      color: #fff;
+      margin-bottom: 20px;
+    }
+    #playerName:focus {
+      outline: none;
+      border-color: #08d9d6;
+    }
+    .hero-select {
+      display: flex;
+      gap: 15px;
+      justify-content: center;
+      margin-bottom: 25px;
+    }
+    .hero-btn {
+      width: 80px;
+      height: 100px;
+      border: 3px solid #333;
+      border-radius: 12px;
+      background: #1a1a2e;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+    .hero-btn:hover { border-color: #666; transform: scale(1.05); }
+    .hero-btn.selected { border-color: #08d9d6; box-shadow: 0 0 15px rgba(8, 217, 214, 0.5); }
+    .hero-btn .icon { font-size: 36px; }
+    .hero-btn .name { font-size: 12px; font-weight: bold; color: #aaa; }
+    .hero-btn[data-hero="tank"] .icon { color: #ff6b9d; }
+    .hero-btn[data-hero="ninja"] .icon { color: #52d681; }
+    .hero-btn[data-hero="mage"] .icon { color: #74b9ff; }
+    #join-btn {
+      width: 100%;
+      padding: 15px;
+      font-size: 20px;
+      font-family: 'Bangers', cursive;
+      background: linear-gradient(135deg, #08d9d6, #ff2e63);
+      border: none;
+      border-radius: 8px;
+      color: #fff;
+      cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    #join-btn:hover {
+      transform: scale(1.02);
+      box-shadow: 0 5px 20px rgba(255, 46, 99, 0.4);
+    }
+    /* Overlay banners */
+    .overlay-banner {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(15, 15, 26, 0.95);
+      padding: 40px 50px;
+      border-radius: 16px;
+      border: 3px solid #08d9d6;
+      text-align: center;
+      z-index: 100;
+      box-shadow: 0 0 40px rgba(8, 217, 214, 0.4);
+    }
+    .overlay-banner.hidden { display: none; }
+    .overlay-banner h2 {
+      font-family: 'Bangers', cursive;
+      font-size: 36px;
+      margin-bottom: 10px;
+    }
+    .overlay-banner p {
+      color: #aaa;
+      margin-bottom: 25px;
+      font-size: 16px;
+    }
+    .overlay-banner .btn-row {
+      display: flex;
+      gap: 15px;
+      justify-content: center;
+    }
+    .overlay-btn {
+      padding: 12px 25px;
+      font-size: 16px;
+      font-family: 'Bangers', cursive;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .overlay-btn:hover {
+      transform: scale(1.05);
+    }
+    .overlay-btn.primary {
+      background: linear-gradient(135deg, #08d9d6, #ff2e63);
+      color: #fff;
+    }
+    .overlay-btn.primary:hover {
+      box-shadow: 0 5px 20px rgba(255, 46, 99, 0.4);
+    }
+    .overlay-btn.secondary {
+      background: #2a2a40;
+      color: #aaa;
+      border: 2px solid #444;
+    }
+    .overlay-btn.secondary:hover {
+      border-color: #666;
+      color: #fff;
+    }
+    #winner-banner h2 { color: #4ade80; }
+    #death-banner h2 { color: #ff6b6b; }
+    /* Small leave button for spectating */
+    #spectate-leave {
+      position: absolute;
+      top: 15px;
+      right: 15px;
+      padding: 8px 16px;
+      font-size: 14px;
+      font-family: 'Outfit', sans-serif;
+      background: rgba(15, 15, 26, 0.9);
+      color: #aaa;
+      border: 2px solid #444;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s;
+      z-index: 50;
+    }
+    #spectate-leave:hover {
+      border-color: #08d9d6;
+      color: #fff;
+    }
+    #spectate-leave.hidden { display: none; }
+  </style>
+</head>
+<body>
+  <div id="game-container">
+    <canvas id="gameCanvas" width="1200" height="700"></canvas>
+    
+    <!-- Winner banner -->
+    <div id="winner-banner" class="overlay-banner hidden">
+      <h2>🏆 <span id="winner-name">Player</span> WINS! 🏆</h2>
+      <p>Returning to lobby in <span id="winner-countdown">5</span>s...</p>
+      <div class="btn-row">
+        <button class="overlay-btn primary" id="winner-lobby-btn">Back to Lobby</button>
+      </div>
+    </div>
+    
+    <!-- Death banner -->
+    <div id="death-banner" class="overlay-banner hidden">
+      <h2>💀 YOU DIED! 💀</h2>
+      <p>Better luck next time...</p>
+      <div class="btn-row">
+        <button class="overlay-btn primary" id="death-lobby-btn">Back to Lobby</button>
+        <button class="overlay-btn secondary" id="keep-watching-btn">Keep Watching</button>
+      </div>
+    </div>
+    
+    <!-- Small leave button for spectating -->
+    <button id="spectate-leave" class="hidden">Leave Game</button>
+    
+    <div id="join-screen">
+      <h1>SUPER BASH</h1>
+      <input type="text" id="playerName" placeholder="Enter your name..." maxlength="15">
+      <div class="hero-select">
+        <button class="hero-btn" data-hero="tank">
+          <span class="icon">🛡️</span>
+          <span class="name">TANK</span>
+        </button>
+        <button class="hero-btn selected" data-hero="ninja">
+          <span class="icon">⚔️</span>
+          <span class="name">NINJA</span>
+        </button>
+        <button class="hero-btn" data-hero="mage">
+          <span class="icon">🔮</span>
+          <span class="name">MAGE</span>
+        </button>
+      </div>
+      <button id="join-btn">FIGHT!</button>
+    </div>
+  </div>
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <script src="/client.js"></script>
+</body>
+</html>

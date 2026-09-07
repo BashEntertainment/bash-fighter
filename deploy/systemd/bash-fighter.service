@@ -2,6 +2,8 @@
 Description=Bash Fighter game server (authoritative sim + websocket)
 Documentation=https://github.com/BashEntertainment/bash-fighter
 After=network.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -17,8 +19,6 @@ ExecStart=/usr/bin/node /srv/bash-fighter/current/server/dist/index.js
 
 Restart=on-failure
 RestartSec=2
-StartLimitIntervalSec=60
-StartLimitBurst=5
 
 StandardOutput=journal
 StandardError=journal

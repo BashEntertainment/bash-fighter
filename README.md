@@ -121,3 +121,13 @@ tsconfig.json / tsconfig.base.json
 ```
 
 No secrets, credentials, or private keys are stored in this repo.
+
+## Contributing
+
+See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for dev environment setup,
+coding standards, and the PR process. Use the issue templates under
+`.github/ISSUE_TEMPLATE/` to report bugs or propose features.
+
+## License
+
+AGPL-3.0. See [`LICENSE`](./LICENSE) for the full text.

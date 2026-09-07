@@ -19,7 +19,6 @@ import {
   computeKnockbackMagnitude,
   computeHitstunTicks,
   mirrorAngleIdx,
-  applyDirectionalInfluence,
 } from './knockback.ts';
 import { sinLUT, cosLUT } from './math/fixed.ts';
 
@@ -41,6 +40,17 @@ export const BLAST_MIN_X: Fixed = fx.fromInt(-260);
 export const BLAST_MAX_X: Fixed = fx.fromInt(260);
 export const BLAST_MIN_Y: Fixed = fx.fromInt(-120);
 export const BLAST_MAX_Y: Fixed = fx.fromInt(220);
+
+// Directional influence, applied per-tick while in hitstun (not as one
+// instantaneous nudge): a small acceleration toward the held stick each
+// tick, small enough relative to typical knockback magnitudes (see
+// knockback.ts) that it curves the trajectory rather than letting the
+// defender cancel or reverse it outright.
+export const HITSTUN_DI_ACCEL_PER_TICK: Fixed = fx.fromFloat(0.06);
+// Ground friction while sliding during hitstun (e.g. a bounce that lands
+// mid-knockback): horizontal speed decays geometrically instead of holding
+// constant forever.
+export const GROUND_FRICTION: Fixed = fx.fromFloat(0.9);
 
 export const STARTING_STOCKS = 3;
 export const SHIELD_MAX_HEALTH: Fixed = fx.fromInt(100);
@@ -126,6 +136,14 @@ const DEFAULT_CHARACTER: CharacterData = {
 };
 
 const SPAWN_X: readonly Fixed[] = [fx.fromInt(-30), fx.fromInt(30)];
+
+/** True while `posX` is over the stage's solid platform. Ground collision
+ * only applies here; past the platform edge there is nothing to land on,
+ * which is what lets a hard knockback (including straight down) carry a
+ * fighter through to the blast zone instead of bouncing off y=0. */
+function onPlatform(posX: Fixed): boolean {
+  return posX >= STAGE_MIN_X && posX <= STAGE_MAX_X;
+}
 const STICK_MOVE_THRESHOLD: Fixed = fx.fromFloat(0.5);
 
 export class Sim {
@@ -328,15 +346,26 @@ export class Sim {
     const character = this.characters[index] as CharacterData;
 
     if (hitstun > 0) {
-      // No voluntary control; existing knockback velocity plus gravity carries
-      // the fighter until hitstun expires.
-      if (!grounded) {
+      // No voluntary control over movement, but the stick still curves the
+      // knockback trajectory (directional influence) a little every tick,
+      // and ground friction bleeds off horizontal speed if a bounce lands
+      // the fighter back on the platform mid-hitstun.
+      velX = fx.add(velX, fx.mul(input.stickX, HITSTUN_DI_ACCEL_PER_TICK));
+      velY = fx.add(velY, fx.mul(input.stickY, HITSTUN_DI_ACCEL_PER_TICK));
+      if (grounded) {
+        velX = fx.mul(velX, GROUND_FRICTION);
+      } else {
         velY = fx.add(velY, GRAVITY);
         velY = fx.max(velY, TERMINAL_VELOCITY);
       }
       posX = fx.add(posX, velX);
       posY = fx.add(posY, velY);
-      if (posY <= GROUND_Y && velY <= 0) {
+      // A launched fighter is only caught by the stage floor while inside
+      // the platform's horizontal extent. Off the side of the stage there
+      // is no floor to land on, so a strong downward (meteor) hit keeps
+      // falling toward the bottom blast zone instead of snapping back to
+      // y=0 the instant it crosses it.
+      if (onPlatform(posX) && posY <= GROUND_Y && velY <= 0) {
         posY = GROUND_Y;
         velY = 0;
         grounded = true;
@@ -536,9 +565,6 @@ export class Sim {
     d[dBase + lastHitField] = moveInstance;
 
     const defenderState = d[dBase + FighterField.STATE] as FighterStateValue;
-    const percentBefore = d[dBase + FighterField.PERCENT] as number;
-    const percentAfter = fx.add(percentBefore, best.damage);
-    d[dBase + FighterField.PERCENT] = percentAfter;
 
     if (defenderState === FighterStateId.SHIELD) {
       const shieldLoss = fx.mul(best.damage, SHIELD_DAMAGE_MULTIPLIER);
@@ -546,8 +572,6 @@ export class Sim {
       const healthAfter = fx.sub(healthBefore, shieldLoss);
       d[dBase + FighterField.SHIELD_HEALTH] = healthAfter > 0 ? healthAfter : 0;
       if (healthAfter <= 0) {
-        // Shield break: a harsh punish window, then shield recovers for the
-        // fighter's next life/attempt.
         d[dBase + FighterField.SHIELD_HEALTH] = SHIELD_MAX_HEALTH;
         d[dBase + FighterField.SHIELD_STUN] = SHIELD_BREAK_HITSTUN_TICKS;
       } else {
@@ -559,6 +583,10 @@ export class Sim {
       return;
     }
 
+    const percentBefore = d[dBase + FighterField.PERCENT] as number;
+    const percentAfter = fx.add(percentBefore, best.damage);
+    d[dBase + FighterField.PERCENT] = percentAfter;
+
     const magnitude = computeKnockbackMagnitude(
       best.damage,
       percentAfter,
@@ -566,8 +594,7 @@ export class Sim {
       best.knockbackGrowth,
       defenderChar.weight,
     );
-    let angleIdx = attackerFacing < 0 ? mirrorAngleIdx(best.angleIdx) : best.angleIdx;
-    angleIdx = applyDirectionalInfluence(angleIdx, defenderInput.stickX, defenderInput.stickY);
+    const angleIdx = attackerFacing < 0 ? mirrorAngleIdx(best.angleIdx) : best.angleIdx;
 
     const velX = fx.mul(cosLUT(angleIdx), magnitude);
     const velY = fx.mul(sinLUT(angleIdx), magnitude);

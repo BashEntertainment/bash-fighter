@@ -159,6 +159,7 @@ describe('Sim: shielding', () => {
     const shielding = sim.getFighter(1);
     assert.equal(shielding.state, FighterStateId.SHIELD);
     const healthBefore = shielding.shieldHealth;
+    const percentBefore = shielding.percent;
 
     let tookShieldStun = false;
     for (let i = 0; i < 20; i++) {
@@ -169,10 +170,115 @@ describe('Sim: shielding', () => {
         assert.ok(f1.shieldHealth < healthBefore);
         assert.equal(f1.velX, 0);
         assert.equal(f1.velY, 0);
+        assert.equal(f1.percent, percentBefore, 'a blocked hit must add zero percent');
         break;
       }
     }
     assert.ok(tookShieldStun, 'expected the shielded hit to register shield stun');
+  });
+});
+
+describe('Sim: meteor knockback off-stage', () => {
+  it('a down-air on an off-stage airborne opponent can carry them into the bottom blast zone', () => {
+    const sim = new Sim(5, CHARACTERS);
+    // Manufacture the scenario directly via the raw buffer rather than
+    // walking there: put fighter 0 (attacker) right beside fighter 1
+    // (defender), both airborne, with the defender positioned just past the
+    // stage's horizontal platform edge so there is nothing to catch them.
+    // Reach directly into the sim's internal buffer to place the defender
+    // already off-stage (past the stage's +-200 horizontal platform) and
+    // already in hitstun with strong downward velocity, exactly the state
+    // a real down-air would leave them in. This isolates the fix under
+    // test (does the floor still catch them off-platform?) from the
+    // separate question of whether an attack can connect at range.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const view = (sim as any).data as Int32Array;
+    const FIELD_COUNT = 17;
+    const STATE = 4;
+    const GROUNDED = 6;
+    const POS_X = 0;
+    const POS_Y = 1;
+    const VEL_Y = 3;
+    const HITSTUN = 14;
+    view[FIELD_COUNT + POS_X] = fx.fromInt(210);
+    view[FIELD_COUNT + POS_Y] = fx.fromInt(20);
+    view[FIELD_COUNT + VEL_Y] = fx.fromInt(-19);
+    view[FIELD_COUNT + STATE] = FighterStateId.HITSTUN;
+    view[FIELD_COUNT + GROUNDED] = 0;
+    view[FIELD_COUNT + HITSTUN] = 30;
+
+    const stocksBefore = sim.getFighter(1).stocks;
+    let stockLost = false;
+    for (let i = 0; i < 60; i++) {
+      sim.advance([NEUTRAL, NEUTRAL]);
+      if (sim.getFighter(1).stocks < stocksBefore) {
+        stockLost = true;
+        break;
+      }
+    }
+    assert.ok(
+      stockLost,
+      'expected the off-stage meteor victim to fall through the missing floor and lose a stock',
+    );
+  });
+});
+
+describe('Sim: continuous directional influence and ground friction', () => {
+  it('DI held during hitstun measurably changes trajectory but cannot cancel knockback outright', () => {
+    function runHit(diStickX: number) {
+      const sim = new Sim(6, CHARACTERS);
+      closeDistance(sim, fx.fromFloat(1.0));
+      const f0 = sim.getFighter(0);
+      const f1 = sim.getFighter(1);
+      const facingInput = f1.posX >= f0.posX ? fx.fromFloat(1) : fx.fromFloat(-1);
+      let hit = false;
+      let result = f1;
+      const di = fx.fromFloat(diStickX);
+      for (let i = 0; i < 40; i++) {
+        sim.advance([makeInputFrame(BUTTON_ATTACK, facingInput, 0), makeInputFrame(0, di, 0)]);
+        const state = sim.getFighter(1);
+        if (state.state === FighterStateId.HITSTUN) hit = true;
+        if (hit && state.hitstun === 0) {
+          return state;
+        }
+        result = state;
+      }
+      return result;
+    }
+
+    const withPositiveDI = runHit(1);
+    const withNegativeDI = runHit(-1);
+    assert.notEqual(
+      withPositiveDI.posX,
+      withNegativeDI.posX,
+      'opposite DI stick directions should produce different final positions',
+    );
+    assert.ok(fx.toFloat(fx.abs(fx.sub(withPositiveDI.posX, withNegativeDI.posX))) > 0.01);
+  });
+
+  it('ground friction decays horizontal knockback speed instead of holding it constant', () => {
+    const sim = new Sim(7, CHARACTERS);
+    closeDistance(sim, fx.fromFloat(1.0));
+    const f0 = sim.getFighter(0);
+    const f1 = sim.getFighter(1);
+    const facingInput = f1.posX >= f0.posX ? fx.fromFloat(1) : fx.fromFloat(-1);
+    let landedGroundedInHitstun = false;
+    let prevVelX: number | null = null;
+    let sawDecay = false;
+    for (let i = 0; i < 60; i++) {
+      sim.advance([makeInputFrame(BUTTON_ATTACK, facingInput, 0), NEUTRAL]);
+      const f = sim.getFighter(1);
+      if (f.state === FighterStateId.HITSTUN && f.grounded) {
+        landedGroundedInHitstun = true;
+        if (prevVelX !== null && Math.abs(f.velX) < Math.abs(prevVelX)) {
+          sawDecay = true;
+        }
+        prevVelX = f.velX;
+      }
+    }
+    if (landedGroundedInHitstun) {
+      assert.ok(sawDecay, 'expected horizontal knockback speed to decay while grounded in hitstun');
+    }
   });
 });
 

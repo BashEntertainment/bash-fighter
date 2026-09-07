@@ -50,14 +50,9 @@ export function mirrorAngleIdx(angleIdx: number): number {
   return m < 0 ? m + LUT_SIZE : m;
 }
 
-// Directional influence: the defender's stick shifts the knockback angle by
-// up to DI_MAX_SHIFT_TICKS LUT indices per axis at the moment of the hit.
-// LUT_SIZE indices = a full turn, so this caps DI at roughly 17 degrees.
-export const DI_MAX_SHIFT: number = 48;
-
-export function applyDirectionalInfluence(angleIdx: number, stickX: Fixed, stickY: Fixed): number {
-  const shiftX = fx.toInt(fx.mul(fx.fromInt(DI_MAX_SHIFT), stickX));
-  const shiftY = fx.toInt(fx.mul(fx.fromInt(DI_MAX_SHIFT), stickY));
-  const m = (angleIdx + shiftX + shiftY) % LUT_SIZE;
-  return m < 0 ? m + LUT_SIZE : m;
-}
+// Directional influence used to be a one-shot angle nudge applied at the
+// instant of the hit. It is now continuous instead: see
+// HITSTUN_DI_ACCEL_PER_TICK and GROUND_FRICTION in sim.ts, applied every
+// tick of hitstun directly to velocity based on the defender's current
+// stick input, so DI curves the whole trajectory rather than being baked
+// in once.

@@ -8,3 +8,4 @@ export { PLACEHOLDER_CHARACTER } from './characters/placeholder/data.ts';
 export { BATTLE_ROYALE_20_ARENA } from './arenas/battle-royale-20/data.ts';
 export { BASH_FIGHTER_ITEM_SET } from './items/data.ts';
 export { BASH_FIGHTER_HAZARD } from './hazards/data.ts';
+export { createMatchSim } from './match-sim.ts';

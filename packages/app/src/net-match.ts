@@ -19,7 +19,7 @@ import {
   type FighterSnapshot,
   type InputFrame,
 } from '@bash-fighter/sim';
-import { PLACEHOLDER_CHARACTER } from '@bash-fighter/content';
+import { PLACEHOLDER_CHARACTER, createMatchSim } from '@bash-fighter/content';
 import { InputManager } from '@bash-fighter/input';
 import {
   Renderer,
@@ -197,8 +197,10 @@ export class NetMatch {
     this.mySlot = slot;
     this.spectating = slot < 0;
     this.matchStarted = true;
-    this.localSim = new Sim(seed, numFighters);
-    this.renderSim = new Sim(seed, numFighters);
+    // Must match the server's construction exactly, or prediction silently
+    // diverges from authority. See createMatchSim.
+    this.localSim = createMatchSim(seed, numFighters);
+    this.renderSim = createMatchSim(seed, numFighters);
     this.localTick = 0;
     this.inputHistory.clear();
     this.events.onStateChange?.(this.spectating ? 'spectating' : 'in-match');

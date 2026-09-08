@@ -3,7 +3,7 @@
 // between matches, no global game instance.
 import { Sim, makeInputFrame, type InputFrame, type MatchSettings } from '@bash-fighter/sim/src/index.ts';
 import { BotController, BotDifficulty, deriveBotSeed, type BotDifficultyValue } from '@bash-fighter/sim/src/ai/bot.ts';
-import { BATTLE_ROYALE_20_ARENA } from '@bash-fighter/content/src/index.ts';
+import { createMatchSim } from '@bash-fighter/content/src/index.ts';
 import { SNAPSHOT_HZ } from '@bash-fighter/net/src/protocol.ts';
 
 /** MATCH_BOT_DIFFICULTY env var -> BotDifficulty, following the existing
@@ -139,7 +139,7 @@ export class Match {
     // clock. Never set in production (systemd unit does not set it).
     const shrinkOverride = process.env.MATCH_SHRINK_FULLY_CLOSED_TICK;
     if (shrinkOverride) settingsOverride.shrinkFullyClosedTick = Number(shrinkOverride);
-    this.sim = new Sim(this.seed, this.seats.length, characters, BATTLE_ROYALE_20_ARENA, settingsOverride);
+    this.sim = createMatchSim(this.seed, this.seats.length, settingsOverride, characters);
     const difficulty = botDifficultyFromEnv();
     this.bots.clear();
     for (const seat of this.seats) {

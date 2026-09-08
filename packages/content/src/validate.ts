@@ -3,6 +3,8 @@
 // frame-data sanity checks on every content PR before it is mergeable.
 import type { CharacterData, FrameWindow, MoveDef } from '../../sim/src/moves/types.ts';
 import type { ArenaData } from '../../sim/src/arena/types.ts';
+import type { ItemSet, ItemTypeDef } from '../../sim/src/items/types.ts';
+import type { HazardConfig } from '../../sim/src/hazards/types.ts';
 
 export interface ValidationError {
   path: string;
@@ -139,5 +141,103 @@ export function assertValidArena(arena: ArenaData): void {
   if (errors.length > 0) {
     const detail = errors.map((e) => '  - ' + e.path + ': ' + e.message).join('\n');
     throw new Error('invalid arena data for ' + arena.name + ':\n' + detail);
+  }
+}
+
+// --- Item set validation (this task's item 1/3) ---------------------------
+
+function validateItemType(item: ItemTypeDef, errors: ValidationError[]): void {
+  const path = `items[${item.id}](${item.name})`;
+  if (!item.name || item.name.trim().length === 0) {
+    errors.push({ path: path + '.name', message: 'item name must be non-empty' });
+  }
+  if (item.boxWidth <= 0 || item.boxHeight <= 0) {
+    errors.push({ path, message: 'boxWidth/boxHeight must be > 0' });
+  }
+  if (item.damage < 0) {
+    errors.push({ path: path + '.damage', message: 'damage must be >= 0' });
+  }
+  if (item.baseKnockback < 0 || item.knockbackGrowth < 0) {
+    errors.push({ path, message: 'baseKnockback/knockbackGrowth must be >= 0' });
+  }
+  if (!Number.isInteger(item.angleIdx)) {
+    errors.push({ path: path + '.angleIdx', message: 'angleIdx must be an integer LUT index' });
+  }
+  if (item.kind === 'thrown' && item.projectileSpeed <= 0) {
+    errors.push({ path: path + '.projectileSpeed', message: 'thrown items need projectileSpeed > 0' });
+  }
+  if (item.kind === 'explosive' && item.fuseTicks < 1) {
+    errors.push({ path: path + '.fuseTicks', message: 'explosive items need fuseTicks >= 1' });
+  }
+  if (item.kind === 'heal' && item.healAmount <= 0) {
+    errors.push({ path: path + '.healAmount', message: 'heal items need healAmount > 0' });
+  }
+  if (!Number.isInteger(item.despawnTicks) || item.despawnTicks < 1) {
+    errors.push({ path: path + '.despawnTicks', message: 'despawnTicks must be a positive integer' });
+  }
+}
+
+export function validateItemSet(items: ItemSet): ValidationError[] {
+  const errors: ValidationError[] = [];
+  const seenIds = new Set<number>();
+  for (const item of items) {
+    if (seenIds.has(item.id)) {
+      errors.push({ path: `items[${item.id}]`, message: 'duplicate item id: ' + item.id });
+    }
+    seenIds.add(item.id);
+    validateItemType(item, errors);
+  }
+  return errors;
+}
+
+export function assertValidItemSet(items: ItemSet): void {
+  const errors = validateItemSet(items);
+  if (errors.length > 0) {
+    const detail = errors.map((e) => '  - ' + e.path + ': ' + e.message).join('\n');
+    throw new Error('invalid item set:\n' + detail);
+  }
+}
+
+// --- Hazard config validation (this task's item 2/3) -----------------------
+
+export function validateHazardConfig(hazard: HazardConfig): ValidationError[] {
+  const errors: ValidationError[] = [];
+  if (!hazard.name || hazard.name.trim().length === 0) {
+    errors.push({ path: 'name', message: 'hazard name must be non-empty' });
+  }
+  if (
+    !Number.isInteger(hazard.spawnIntervalMaxTicks) ||
+    !Number.isInteger(hazard.spawnIntervalMinTicks) ||
+    hazard.spawnIntervalMinTicks < 1 ||
+    hazard.spawnIntervalMaxTicks < hazard.spawnIntervalMinTicks
+  ) {
+    errors.push({
+      path: 'spawnIntervalMaxTicks/spawnIntervalMinTicks',
+      message: 'need 0 < spawnIntervalMinTicks <= spawnIntervalMaxTicks',
+    });
+  }
+  if (hazard.boxWidth <= 0 || hazard.boxHeight <= 0) {
+    errors.push({ path: 'boxWidth/boxHeight', message: 'must be > 0' });
+  }
+  if (hazard.damage < 0) {
+    errors.push({ path: 'damage', message: 'must be >= 0' });
+  }
+  if (hazard.baseKnockback < 0 || hazard.knockbackGrowth < 0) {
+    errors.push({ path: 'baseKnockback/knockbackGrowth', message: 'must be >= 0' });
+  }
+  if (!Number.isInteger(hazard.angleIdx)) {
+    errors.push({ path: 'angleIdx', message: 'must be an integer LUT index' });
+  }
+  if (!Number.isInteger(hazard.maxLifetimeTicks) || hazard.maxLifetimeTicks < 1) {
+    errors.push({ path: 'maxLifetimeTicks', message: 'must be a positive integer' });
+  }
+  return errors;
+}
+
+export function assertValidHazardConfig(hazard: HazardConfig): void {
+  const errors = validateHazardConfig(hazard);
+  if (errors.length > 0) {
+    const detail = errors.map((e) => '  - ' + e.path + ': ' + e.message).join('\n');
+    throw new Error('invalid hazard config for ' + hazard.name + ':\n' + detail);
   }
 }

@@ -284,7 +284,24 @@ describe('Sim: continuous directional influence and ground friction', () => {
 
 describe('Sim: stocks, blast zones, and match end', () => {
   it('losing all stocks moves a fighter to DEAD and reports the other as the winner', () => {
-    const sim = new Sim(4, 2, CHARACTERS, undefined, { winCondition: 'stocks', startingStocks: 3 });
+    // Items/hazards are disabled here (empty item set, hazard interval far
+    // beyond the tick budget): this test isolates the stock-loss/blast-zone
+    // path, and a PRNG-timed item pickup could otherwise intercept fighter
+    // 0's scripted attack button (holding an item redirects BUTTON_ATTACK to
+    // useHeldItem — see sim.ts) and stall the scripted finish.
+    const sim = new Sim(4, 2, CHARACTERS, undefined, { winCondition: 'stocks', startingStocks: 3 }, [], {
+      name: 'disabled',
+      spawnIntervalMaxTicks: 1_000_000,
+      spawnIntervalMinTicks: 1_000_000,
+      fallAccel: 0,
+      boxWidth: fx.ONE,
+      boxHeight: fx.ONE,
+      damage: 0,
+      baseKnockback: 0,
+      knockbackGrowth: 0,
+      angleIdx: 0,
+      maxLifetimeTicks: 1_000_000,
+    });
     // Directly exercise the blast-zone/stock-loss path without needing to
     // land real hits three times over: repeatedly knock fighter 1 with the
     // heaviest connecting move available (forward tilt) is slow, so instead

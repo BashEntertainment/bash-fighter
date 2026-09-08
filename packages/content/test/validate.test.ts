@@ -1,8 +1,17 @@
 // Content schema validator tests (Engine Architecture part 2 section 7).
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { validateCharacter, assertValidCharacter } from '../src/validate.ts';
+import {
+  validateCharacter,
+  assertValidCharacter,
+  validateItemSet,
+  assertValidItemSet,
+  validateHazardConfig,
+  assertValidHazardConfig,
+} from '../src/validate.ts';
 import { PLACEHOLDER_CHARACTER } from '../src/characters/placeholder/data.ts';
+import { BASH_FIGHTER_ITEM_SET } from '../src/items/data.ts';
+import { BASH_FIGHTER_HAZARD } from '../src/hazards/data.ts';
 import type { CharacterData } from '../../sim/src/moves/types.ts';
 import { fromInt, fromFloat } from '../../sim/src/math/fixed.ts';
 
@@ -115,5 +124,47 @@ describe('validateCharacter: error cases', () => {
     bad.weight = -fromFloat(1);
     bad.moves = [];
     assert.throws(() => assertValidCharacter(bad), /invalid character data/);
+  });
+});
+
+describe('validateItemSet: the shipped item set', () => {
+  it('has no validation errors', () => {
+    assert.deepEqual(validateItemSet(BASH_FIGHTER_ITEM_SET), []);
+  });
+
+  it('assertValidItemSet does not throw', () => {
+    assert.doesNotThrow(() => assertValidItemSet(BASH_FIGHTER_ITEM_SET));
+  });
+});
+
+describe('validateItemSet: error cases', () => {
+  it('rejects a thrown item with no projectile speed', () => {
+    const bad = JSON.parse(JSON.stringify(BASH_FIGHTER_ITEM_SET));
+    bad[0].projectileSpeed = 0;
+    const errors = validateItemSet(bad);
+    assert.ok(errors.some((e) => e.path.includes('projectileSpeed')));
+  });
+
+  it('rejects a duplicate item id', () => {
+    const bad = JSON.parse(JSON.stringify(BASH_FIGHTER_ITEM_SET));
+    bad[1].id = bad[0].id;
+    const errors = validateItemSet(bad);
+    assert.ok(errors.some((e) => e.message.startsWith('duplicate item id')));
+  });
+});
+
+describe('validateHazardConfig: the shipped hazard', () => {
+  it('has no validation errors', () => {
+    assert.deepEqual(validateHazardConfig(BASH_FIGHTER_HAZARD), []);
+  });
+
+  it('assertValidHazardConfig does not throw', () => {
+    assert.doesNotThrow(() => assertValidHazardConfig(BASH_FIGHTER_HAZARD));
+  });
+
+  it('rejects a spawn interval min greater than max', () => {
+    const bad = { ...BASH_FIGHTER_HAZARD, spawnIntervalMinTicks: 999999 };
+    const errors = validateHazardConfig(bad);
+    assert.ok(errors.some((e) => e.path.includes('spawnInterval')));
   });
 });

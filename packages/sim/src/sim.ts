@@ -31,8 +31,13 @@ import {
   resolveMatchSettings,
   respawnsEnabled,
 } from './match-settings.ts';
-import { computeCurrentBlastRect } from './arena-shrink.ts';
+import { computeCurrentBlastRect, computeShrinkProgress } from './arena-shrink.ts';
 import { SpatialGrid } from './broadphase.ts';
+import { nextBounded } from './math/prng.ts';
+import { findItemType, type ItemSet, type ItemTypeDef } from './items/types.ts';
+import { DEFAULT_ITEM_SET } from './items/default-items.ts';
+import type { HazardConfig } from './hazards/types.ts';
+import { DEFAULT_HAZARD_CONFIG } from './hazards/default-hazard.ts';
 
 export const MIN_FIGHTERS = 2;
 export const MAX_FIGHTERS = 32;
@@ -60,6 +65,51 @@ export const SHIELD_MAX_HEALTH: Fixed = fx.fromInt(100);
 export const SHIELD_DAMAGE_MULTIPLIER: Fixed = fx.fromFloat(1.2);
 export const SHIELD_STUN_PER_DAMAGE: Fixed = fx.fromFloat(1.0);
 export const SHIELD_BREAK_HITSTUN_TICKS = 120;
+
+// --- Items (this task's item 1) -------------------------------------------
+// Small fixed pool of concurrently-live item instances, preallocated like
+// everything else in the hot path. 6 is generous for a handful of item
+// types spawning every few seconds in a 20-player match without ever
+// needing to grow the array.
+export const MAX_ITEMS = 6;
+/** Ticks between item spawn attempts (a draw from the PRNG happens every
+ * time this elapses regardless of whether a free slot exists, so the RNG
+ * stream never depends on how many items happen to be alive). */
+export const ITEM_SPAWN_INTERVAL_TICKS = 300; // 5s
+/** Held item position offset above the holder's center, so it renders/acts
+ * from roughly hand height rather than exactly on top of the fighter. */
+export const ITEM_HELD_OFFSET_Y: Fixed = fx.fromFloat(1.4);
+const ItemState = {
+  WORLD: 0, // unheld, on the ground or falling toward it — pickupable
+  HELD: 1, // carried by a fighter, follows their position
+  THROWN: 2, // 'thrown' kind only: flying in a straight line after use
+  ARMED: 3, // 'explosive' kind only: dropped, counting down its fuse
+} as const;
+const ItemField = {
+  ACTIVE: 0,
+  TYPE: 1,
+  POS_X: 2,
+  POS_Y: 3,
+  VEL_X: 4,
+  VEL_Y: 5,
+  STATE: 6,
+  HOLDER: 7, // fighter index currently holding it, -1 if none
+  OWNER: 8, // fighter index who last used/threw/dropped it, -1 if never held
+  TIMER: 9, // despawn countdown (WORLD/THROWN) or safety cap (ARMED)
+  FUSE: 10, // 'explosive' kind only: ticks left until detonation, -1 n/a
+  FIELD_COUNT: 11,
+} as const;
+
+// --- Stage hazards (this task's item 2) ------------------------------------
+export const MAX_HAZARDS = 4;
+const HazardField = {
+  ACTIVE: 0,
+  POS_X: 1,
+  POS_Y: 2,
+  VEL_Y: 3,
+  TIMER: 4,
+  FIELD_COUNT: 5,
+} as const;
 
 /** Layout of one fighter's slice inside the flat Int32Array state buffer.
  * Per-fighter hit-dedup fields (LAST_HIT_FROM_0/1 in the 2-fighter version)
@@ -137,6 +187,28 @@ export interface FighterSnapshot {
   placement: number; // 0 until decided; 1 = winner
 }
 
+export interface ItemSnapshot {
+  active: boolean;
+  typeId: number;
+  posX: Fixed;
+  posY: Fixed;
+  velX: Fixed;
+  velY: Fixed;
+  state: number; // 0=world, 1=held, 2=thrown, 3=armed
+  holder: number; // fighter index, -1 if none
+  owner: number; // fighter index, -1 if never held
+  timer: number;
+  fuse: number; // -1 if not an armed explosive
+}
+
+export interface HazardSnapshot {
+  active: boolean;
+  posX: Fixed;
+  posY: Fixed;
+  velY: Fixed;
+  timer: number;
+}
+
 // A character with no moves: attack input is simply a no-op. Used as the
 // default so packages/sim never needs to import packages/content (the
 // content -> sim data dependency runs one way, per the design docs); a
@@ -174,6 +246,12 @@ export class Sim {
   // Scratch arrays reused every tick inside resolveHits, preallocated once
   // so the hot path never allocates.
   private readonly activeFlag: Uint8Array;
+  private readonly itemsData: Int32Array;
+  private readonly hazardsData: Int32Array;
+  private readonly itemSet: ItemSet;
+  private readonly hazardConfig: HazardConfig;
+  private itemSpawnCooldown: number;
+  private hazardSpawnCooldown: number;
 
   readonly numFighters: number;
 
@@ -183,6 +261,8 @@ export class Sim {
     characters?: readonly CharacterData[],
     arena: ArenaData = DEFAULT_ARENA,
     matchSettings: Partial<MatchSettings> = {},
+    itemSet: ItemSet = DEFAULT_ITEM_SET,
+    hazardConfig: HazardConfig = DEFAULT_HAZARD_CONFIG,
   ) {
     if (numFighters < MIN_FIGHTERS || numFighters > MAX_FIGHTERS) {
       throw new RangeError(
@@ -212,6 +292,18 @@ export class Sim {
     for (let i = 0; i < numFighters; i++) {
       this.fullResetFighter(i);
     }
+    this.itemSet = itemSet;
+    this.hazardConfig = hazardConfig;
+    this.itemsData = new Int32Array(MAX_ITEMS * ItemField.FIELD_COUNT);
+    this.hazardsData = new Int32Array(MAX_HAZARDS * HazardField.FIELD_COUNT);
+    for (let i = 0; i < MAX_ITEMS; i++) {
+      const base = i * ItemField.FIELD_COUNT;
+      this.itemsData[base + ItemField.HOLDER] = -1;
+      this.itemsData[base + ItemField.OWNER] = -1;
+      this.itemsData[base + ItemField.FUSE] = -1;
+    }
+    this.itemSpawnCooldown = ITEM_SPAWN_INTERVAL_TICKS;
+    this.hazardSpawnCooldown = hazardConfig.spawnIntervalMaxTicks;
   }
 
   private spawnPoint(index: number): { x: Fixed; y: Fixed } {
@@ -376,6 +468,42 @@ export class Sim {
     };
   }
 
+  /** Read-only view of item slot `slot` for tests/tools — not used in the
+   * hot path. STATE values: 0=world, 1=held, 2=thrown, 3=armed (see
+   * ItemState in this file). */
+  getItem(slot: number): ItemSnapshot {
+    if (slot < 0 || slot >= MAX_ITEMS) throw new RangeError(`getItem: slot out of range: ${slot}`);
+    const base = slot * ItemField.FIELD_COUNT;
+    const d = this.itemsData;
+    return {
+      active: (d[base + ItemField.ACTIVE] as number) !== 0,
+      typeId: d[base + ItemField.TYPE] as number,
+      posX: d[base + ItemField.POS_X] as number,
+      posY: d[base + ItemField.POS_Y] as number,
+      velX: d[base + ItemField.VEL_X] as number,
+      velY: d[base + ItemField.VEL_Y] as number,
+      state: d[base + ItemField.STATE] as number,
+      holder: d[base + ItemField.HOLDER] as number,
+      owner: d[base + ItemField.OWNER] as number,
+      timer: d[base + ItemField.TIMER] as number,
+      fuse: d[base + ItemField.FUSE] as number,
+    };
+  }
+
+  /** Read-only view of hazard slot `slot` for tests/tools. */
+  getHazard(slot: number): HazardSnapshot {
+    if (slot < 0 || slot >= MAX_HAZARDS) throw new RangeError(`getHazard: slot out of range: ${slot}`);
+    const base = slot * HazardField.FIELD_COUNT;
+    const d = this.hazardsData;
+    return {
+      active: (d[base + HazardField.ACTIVE] as number) !== 0,
+      posX: d[base + HazardField.POS_X] as number,
+      posY: d[base + HazardField.POS_Y] as number,
+      velY: d[base + HazardField.VEL_Y] as number,
+      timer: d[base + HazardField.TIMER] as number,
+    };
+  }
+
   private stateWords(): number {
     return (
       this.numFighters * FighterField.FIELD_COUNT +
@@ -383,7 +511,10 @@ export class Sim {
       RNG_FIELD_WORDS +
       TICK_WORDS +
       ELIMINATED_COUNT_WORDS +
-      BLAST_RECT_WORDS
+      BLAST_RECT_WORDS +
+      MAX_ITEMS * ItemField.FIELD_COUNT +
+      MAX_HAZARDS * HazardField.FIELD_COUNT +
+      2 // itemSpawnCooldown, hazardSpawnCooldown
     );
   }
 
@@ -416,6 +547,12 @@ export class Sim {
     buf[off++] = this.blastMaxX as number;
     buf[off++] = this.blastMinY as number;
     buf[off++] = this.blastMaxY as number;
+    buf.set(this.itemsData, off);
+    off += this.itemsData.length;
+    buf.set(this.hazardsData, off);
+    off += this.hazardsData.length;
+    buf[off++] = this.itemSpawnCooldown;
+    buf[off++] = this.hazardSpawnCooldown;
   }
 
   /** Restore sim state from a previously saved buffer (no allocation). */
@@ -438,6 +575,12 @@ export class Sim {
     this.blastMaxX = buf[off++] as number;
     this.blastMinY = buf[off++] as number;
     this.blastMaxY = buf[off++] as number;
+    this.itemsData.set(buf.subarray(off, off + this.itemsData.length));
+    off += this.itemsData.length;
+    this.hazardsData.set(buf.subarray(off, off + this.hazardsData.length));
+    off += this.hazardsData.length;
+    this.itemSpawnCooldown = buf[off++] as number;
+    this.hazardSpawnCooldown = buf[off++] as number;
   }
 
   private dedupIndex(attacker: number, defender: number): number {
@@ -502,6 +645,15 @@ export class Sim {
     this.blastMaxX = rect.maxX;
     this.blastMinY = rect.minY;
     this.blastMaxY = rect.maxY;
+    // Items and hazards (this task's items 1/2): world/held/thrown/armed
+    // item physics and use-effects, then hazard fall/damage, then the two
+    // PRNG-driven spawn attempts — all after combat/blast-zone resolution
+    // so a KO this tick is reflected in aliveCount for hazard intensity
+    // and in the blast rect items/hazards despawn against.
+    this.stepItems();
+    this.stepHazards();
+    this.trySpawnItem();
+    this.trySpawnHazard();
     for (let i = 0; i < this.numFighters; i++) {
       this.checkBlastZone(i);
     }
@@ -655,6 +807,14 @@ export class Sim {
     }
 
     const wantsAttack = (input.buttons & BUTTON_ATTACK) !== 0;
+    const heldItemSlot = wantsAttack ? this.findHeldItemSlot(index) : -1;
+    if (heldItemSlot >= 0) {
+      // Holding an item takes over the attack button entirely; the
+      // character's own moves don't fire until the item is used/gone.
+      this.useHeldItem(index, heldItemSlot);
+      this.writeBack(base, { posX, posY, velX, velY, grounded, facing, moveId, moveFrame, hitstun, shieldStun });
+      return;
+    }
     if (wantsAttack && character.moves.length > 0) {
       let chosen: MoveIdValue;
       if (grounded) {
@@ -853,6 +1013,389 @@ export class Sim {
     d[dBase + FighterField.MOVE_ID] = -1;
     d[dBase + FighterField.MOVE_FRAME] = 0;
     this.setState(dBase, FighterStateId.HITSTUN);
+  }
+
+  /** Shared damage/knockback/hitstun application for items and hazards:
+   * same magnitude/hitstun formulas as tryApplyHit but with no shield
+   * interaction and no dedup table (an item/hazard is a single discrete
+   * event, not a multi-frame active window, so there is nothing to
+   * dedupe against). Ignores DEAD/RESPAWN/invulnerable defenders like
+   * combat hits do. `mirror` is true when the source point is to the
+   * defender's... no — mirroring here follows the *source's* facing
+   * (thrown item's travel direction, or true for hazards which have no
+   * facing and always mean "launch on the LUT's own axis"). */
+  private applyItemDamage(
+    defender: number,
+    damage: Fixed,
+    baseKnockback: Fixed,
+    knockbackGrowth: Fixed,
+    angleIdx: number,
+    mirror: boolean,
+  ): void {
+    const d = this.data;
+    const dBase = defender * FighterField.FIELD_COUNT;
+    const defenderState = d[dBase + FighterField.STATE] as number;
+    if (defenderState === FighterStateId.DEAD || defenderState === FighterStateId.RESPAWN) return;
+    if ((d[dBase + FighterField.INVULN_TIMER] as number) > 0) return;
+
+    const defenderChar = this.characters[defender] as CharacterData;
+    const percentBefore = d[dBase + FighterField.PERCENT] as number;
+    const percentAfter = fx.add(percentBefore, damage);
+    d[dBase + FighterField.PERCENT] = percentAfter;
+
+    const magnitude = computeKnockbackMagnitude(damage, percentAfter, baseKnockback, knockbackGrowth, defenderChar.weight);
+    const effectiveAngleIdx = mirror ? mirrorAngleIdx(angleIdx) : angleIdx;
+    d[dBase + FighterField.VEL_X] = fx.mul(cosLUT(effectiveAngleIdx), magnitude);
+    d[dBase + FighterField.VEL_Y] = fx.mul(sinLUT(effectiveAngleIdx), magnitude);
+    d[dBase + FighterField.HITSTUN] = computeHitstunTicks(magnitude);
+    d[dBase + FighterField.GROUNDED] = 0;
+    d[dBase + FighterField.MOVE_ID] = -1;
+    d[dBase + FighterField.MOVE_FRAME] = 0;
+    this.setState(dBase, FighterStateId.HITSTUN);
+  }
+
+  private isTargetable(index: number): boolean {
+    const base = index * FighterField.FIELD_COUNT;
+    const state = this.data[base + FighterField.STATE] as number;
+    if (state === FighterStateId.DEAD || state === FighterStateId.RESPAWN) return false;
+    if ((this.data[base + FighterField.INVULN_TIMER] as number) > 0) return false;
+    return true;
+  }
+
+  /** -1 if fighter `index` holds no item, else the item slot index. Linear
+   * scan over a tiny fixed pool — no allocation, no Map. */
+  private findHeldItemSlot(index: number): number {
+    for (let slot = 0; slot < MAX_ITEMS; slot++) {
+      const base = slot * ItemField.FIELD_COUNT;
+      if (
+        (this.itemsData[base + ItemField.ACTIVE] as number) === 1 &&
+        (this.itemsData[base + ItemField.STATE] as number) === ItemState.HELD &&
+        (this.itemsData[base + ItemField.HOLDER] as number) === index
+      ) {
+        return slot;
+      }
+    }
+    return -1;
+  }
+
+  /** Attack button pressed while holding an item: resolve its use-effect
+   * per item kind (see items/types.ts for why each kind behaves as it
+   * does). Called from stepFighter instead of starting a character move. */
+  private useHeldItem(fighterIndex: number, slot: number): void {
+    const base = slot * ItemField.FIELD_COUNT;
+    const typeId = this.itemsData[base + ItemField.TYPE] as number;
+    const type = findItemType(this.itemSet, typeId);
+    if (!type) {
+      this.itemsData[base + ItemField.ACTIVE] = 0;
+      return;
+    }
+    const fBase = fighterIndex * FighterField.FIELD_COUNT;
+    const facing = this.data[fBase + FighterField.FACING] as number;
+    const posX = this.data[fBase + FighterField.POS_X] as number;
+    const posY = this.data[fBase + FighterField.POS_Y] as number;
+
+    if (type.kind === 'thrown') {
+      this.itemsData[base + ItemField.STATE] = ItemState.THROWN;
+      this.itemsData[base + ItemField.HOLDER] = -1;
+      this.itemsData[base + ItemField.VEL_X] = facing < 0 ? fx.neg(type.projectileSpeed) : type.projectileSpeed;
+      this.itemsData[base + ItemField.VEL_Y] = 0;
+      this.itemsData[base + ItemField.TIMER] = type.despawnTicks;
+      return;
+    }
+    if (type.kind === 'melee') {
+      const offsetX = fx.mul(fx.fromFloat(0.9), fx.fromInt(facing < 0 ? -1 : 1));
+      const box = makeBoxCentered(fx.add(posX, offsetX), posY, type.boxWidth, type.boxHeight);
+      for (let target = 0; target < this.numFighters; target++) {
+        if (target === fighterIndex || !this.isTargetable(target)) continue;
+        const tBase = target * FighterField.FIELD_COUNT;
+        const tChar = this.characters[target] as CharacterData;
+        const tBox = makeBoxCentered(
+          this.data[tBase + FighterField.POS_X] as number,
+          this.data[tBase + FighterField.POS_Y] as number,
+          tChar.hurtboxWidth,
+          tChar.hurtboxHeight,
+        );
+        if (aabbOverlap(box, tBox)) {
+          this.applyItemDamage(target, type.damage, type.baseKnockback, type.knockbackGrowth, type.angleIdx, facing < 0);
+        }
+      }
+      this.itemsData[base + ItemField.ACTIVE] = 0;
+      return;
+    }
+    if (type.kind === 'explosive') {
+      this.itemsData[base + ItemField.STATE] = ItemState.ARMED;
+      this.itemsData[base + ItemField.HOLDER] = -1;
+      this.itemsData[base + ItemField.VEL_X] = 0;
+      this.itemsData[base + ItemField.VEL_Y] = 0;
+      this.itemsData[base + ItemField.FUSE] = type.fuseTicks;
+      this.itemsData[base + ItemField.TIMER] = type.despawnTicks;
+      return;
+    }
+    // 'heal': instant, no world presence needed afterward.
+    const percentBefore = this.data[fBase + FighterField.PERCENT] as number;
+    const percentAfter = fx.sub(percentBefore, type.healAmount);
+    this.data[fBase + FighterField.PERCENT] = percentAfter > 0 ? percentAfter : 0;
+    this.itemsData[base + ItemField.ACTIVE] = 0;
+  }
+
+  private outsideBlastRect(posX: number, posY: number): boolean {
+    return (
+      (posX as number) < (this.blastMinX as number) ||
+      (posX as number) > (this.blastMaxX as number) ||
+      (posY as number) < (this.blastMinY as number) ||
+      (posY as number) > (this.blastMaxY as number)
+    );
+  }
+
+  /** Per-tick physics/lifecycle for every active item slot: world items
+   * fall and land like a fighter (reusing findLandingPlatform), held items
+   * follow their holder, thrown projectiles fly straight and detonate on
+   * the first fighter (other than their owner) they touch, and armed
+   * bombs fall/rest while their fuse counts down to a radius explosion
+   * that (unlike a thrown hit) can catch the owner too. Pickup is
+   * resolved for WORLD items in ascending fighter-index order so the
+   * lowest index always wins a tie, per the task's determinism
+   * requirement. */
+  private stepItems(): void {
+    for (let slot = 0; slot < MAX_ITEMS; slot++) {
+      const base = slot * ItemField.FIELD_COUNT;
+      if ((this.itemsData[base + ItemField.ACTIVE] as number) !== 1) continue;
+      const state = this.itemsData[base + ItemField.STATE] as number;
+      const type = findItemType(this.itemSet, this.itemsData[base + ItemField.TYPE] as number);
+      if (!type) {
+        this.itemsData[base + ItemField.ACTIVE] = 0;
+        continue;
+      }
+
+      if (state === ItemState.HELD) {
+        const holder = this.itemsData[base + ItemField.HOLDER] as number;
+        const hBase = holder * FighterField.FIELD_COUNT;
+        const holderState = this.data[hBase + FighterField.STATE] as number;
+        if (holder < 0 || holderState === FighterStateId.DEAD) {
+          // Holder eliminated mid-hold: drop it back into the world.
+          this.itemsData[base + ItemField.STATE] = ItemState.WORLD;
+          this.itemsData[base + ItemField.HOLDER] = -1;
+          this.itemsData[base + ItemField.VEL_X] = 0;
+          this.itemsData[base + ItemField.VEL_Y] = 0;
+          this.itemsData[base + ItemField.TIMER] = type.despawnTicks;
+          continue;
+        }
+        this.itemsData[base + ItemField.POS_X] = this.data[hBase + FighterField.POS_X] as number;
+        this.itemsData[base + ItemField.POS_Y] = fx.add(
+          this.data[hBase + FighterField.POS_Y] as number,
+          ITEM_HELD_OFFSET_Y,
+        );
+        continue;
+      }
+
+      if (state === ItemState.THROWN) {
+        const posX = fx.add(this.itemsData[base + ItemField.POS_X] as number, this.itemsData[base + ItemField.VEL_X] as number);
+        const posY = this.itemsData[base + ItemField.POS_Y] as number;
+        this.itemsData[base + ItemField.POS_X] = posX;
+        const owner = this.itemsData[base + ItemField.OWNER] as number;
+        let hit = false;
+        const box = makeBoxCentered(posX, posY, type.boxWidth, type.boxHeight);
+        for (let target = 0; target < this.numFighters && !hit; target++) {
+          if (target === owner || !this.isTargetable(target)) continue;
+          const tBase = target * FighterField.FIELD_COUNT;
+          const tChar = this.characters[target] as CharacterData;
+          const tBox = makeBoxCentered(
+            this.data[tBase + FighterField.POS_X] as number,
+            this.data[tBase + FighterField.POS_Y] as number,
+            tChar.hurtboxWidth,
+            tChar.hurtboxHeight,
+          );
+          if (aabbOverlap(box, tBox)) {
+            const mirror = (this.itemsData[base + ItemField.VEL_X] as number) < 0;
+            this.applyItemDamage(target, type.damage, type.baseKnockback, type.knockbackGrowth, type.angleIdx, mirror);
+            hit = true;
+          }
+        }
+        const timer = ((this.itemsData[base + ItemField.TIMER] as number) - 1) | 0;
+        this.itemsData[base + ItemField.TIMER] = timer;
+        if (hit || timer <= 0 || this.outsideBlastRect(posX, posY)) {
+          this.itemsData[base + ItemField.ACTIVE] = 0;
+        }
+        continue;
+      }
+
+      // WORLD and ARMED both fall/land like a fighter's airborne physics.
+      const prevY = this.itemsData[base + ItemField.POS_Y] as number;
+      let velY = fx.add(this.itemsData[base + ItemField.VEL_Y] as number, GRAVITY);
+      let posY = fx.add(prevY, velY);
+      const posX = this.itemsData[base + ItemField.POS_X] as number;
+      const landing = this.findLandingPlatform(posX, prevY, posY);
+      if (landing) {
+        posY = landing.y;
+        velY = 0;
+      }
+      this.itemsData[base + ItemField.POS_Y] = posY;
+      this.itemsData[base + ItemField.VEL_Y] = velY;
+
+      if (state === ItemState.ARMED) {
+        const fuse = ((this.itemsData[base + ItemField.FUSE] as number) - 1) | 0;
+        this.itemsData[base + ItemField.FUSE] = fuse;
+        if (fuse <= 0) {
+          const blastBox = makeBoxCentered(posX, posY, type.boxWidth, type.boxHeight);
+          for (let target = 0; target < this.numFighters; target++) {
+            if (!this.isTargetable(target)) continue;
+            const tBase = target * FighterField.FIELD_COUNT;
+            const tChar = this.characters[target] as CharacterData;
+            const tBox = makeBoxCentered(
+              this.data[tBase + FighterField.POS_X] as number,
+              this.data[tBase + FighterField.POS_Y] as number,
+              tChar.hurtboxWidth,
+              tChar.hurtboxHeight,
+            );
+            // Explosive deliberately does NOT exclude its own owner: the
+            // task calls for punishing a holder too slow to clear the
+            // blast, so unlike a thrown item this has no owner exclusion.
+            if (aabbOverlap(blastBox, tBox)) {
+              this.applyItemDamage(target, type.damage, type.baseKnockback, type.knockbackGrowth, type.angleIdx, false);
+            }
+          }
+          this.itemsData[base + ItemField.ACTIVE] = 0;
+          continue;
+        }
+      } else {
+        // WORLD: pickup check, ascending fighter index so the lowest index
+        // always wins a simultaneous overlap (task's determinism
+        // requirement for pickup tie-breaking).
+        const itemBox = makeBoxCentered(posX, posY, type.boxWidth, type.boxHeight);
+        for (let target = 0; target < this.numFighters; target++) {
+          if (!this.isTargetable(target)) continue;
+          const tBase = target * FighterField.FIELD_COUNT;
+          const tChar = this.characters[target] as CharacterData;
+          const tBox = makeBoxCentered(
+            this.data[tBase + FighterField.POS_X] as number,
+            this.data[tBase + FighterField.POS_Y] as number,
+            tChar.hurtboxWidth,
+            tChar.hurtboxHeight,
+          );
+          if (aabbOverlap(itemBox, tBox)) {
+            this.itemsData[base + ItemField.STATE] = ItemState.HELD;
+            this.itemsData[base + ItemField.HOLDER] = target;
+            this.itemsData[base + ItemField.OWNER] = target;
+            break;
+          }
+        }
+        if ((this.itemsData[base + ItemField.STATE] as number) === ItemState.HELD) continue;
+      }
+
+      const timer = ((this.itemsData[base + ItemField.TIMER] as number) - 1) | 0;
+      this.itemsData[base + ItemField.TIMER] = timer;
+      if (timer <= 0 || this.outsideBlastRect(posX, posY)) {
+        this.itemsData[base + ItemField.ACTIVE] = 0;
+      }
+    }
+  }
+
+  /** Draw item-type and spawn-point choices from the shared PRNG whenever
+   * the spawn interval elapses, unconditionally (whether or not a free
+   * slot exists), so the RNG stream never depends on how many items are
+   * currently alive — only on tick count, which is identical on every
+   * client. */
+  private trySpawnItem(): void {
+    this.itemSpawnCooldown -= 1;
+    if (this.itemSpawnCooldown > 0) return;
+    this.itemSpawnCooldown = ITEM_SPAWN_INTERVAL_TICKS;
+
+    const spawnPoints = this.arena.spawnPoints;
+    if (this.itemSet.length === 0 || spawnPoints.length === 0) return;
+
+    const typeDraw = nextBounded(this.rng, this.itemSet.length);
+    this.rng = typeDraw.state;
+    const pointDraw = nextBounded(this.rng, spawnPoints.length);
+    this.rng = pointDraw.state;
+
+    const type = this.itemSet[typeDraw.value % this.itemSet.length] as ItemTypeDef;
+    const point = spawnPoints[pointDraw.value % spawnPoints.length] as { x: Fixed; y: Fixed };
+
+    for (let slot = 0; slot < MAX_ITEMS; slot++) {
+      const base = slot * ItemField.FIELD_COUNT;
+      if ((this.itemsData[base + ItemField.ACTIVE] as number) === 1) continue;
+      this.itemsData[base + ItemField.ACTIVE] = 1;
+      this.itemsData[base + ItemField.TYPE] = type.id;
+      this.itemsData[base + ItemField.POS_X] = point.x as number;
+      this.itemsData[base + ItemField.POS_Y] = point.y as number;
+      this.itemsData[base + ItemField.VEL_X] = 0;
+      this.itemsData[base + ItemField.VEL_Y] = 0;
+      this.itemsData[base + ItemField.STATE] = ItemState.WORLD;
+      this.itemsData[base + ItemField.HOLDER] = -1;
+      this.itemsData[base + ItemField.OWNER] = -1;
+      this.itemsData[base + ItemField.TIMER] = type.despawnTicks;
+      this.itemsData[base + ItemField.FUSE] = -1;
+      return;
+    }
+    // No free slot: the draw is discarded, item is "lost". Deterministic
+    // either way since it depends only on state, not wall-clock timing.
+  }
+
+  /** Falling-debris hazard (this task's item 2): pure function of tick +
+   * PRNG state exactly like arena-shrink, except the *interval* itself is
+   * derived from computeShrinkProgress so hazards fire more often as the
+   * ring closes and the field thins — the explicit coordination with
+   * arena-shrink the task calls for. */
+  private stepHazards(): void {
+    for (let slot = 0; slot < MAX_HAZARDS; slot++) {
+      const base = slot * HazardField.FIELD_COUNT;
+      if ((this.hazardsData[base + HazardField.ACTIVE] as number) !== 1) continue;
+      const cfg = this.hazardConfig;
+      const velY = fx.add(this.hazardsData[base + HazardField.VEL_Y] as number, cfg.fallAccel);
+      const posX = this.hazardsData[base + HazardField.POS_X] as number;
+      const posY = fx.add(this.hazardsData[base + HazardField.POS_Y] as number, velY);
+      this.hazardsData[base + HazardField.VEL_Y] = velY;
+      this.hazardsData[base + HazardField.POS_Y] = posY;
+
+      const box = makeBoxCentered(posX, posY, cfg.boxWidth, cfg.boxHeight);
+      for (let target = 0; target < this.numFighters; target++) {
+        if (!this.isTargetable(target)) continue;
+        const tBase = target * FighterField.FIELD_COUNT;
+        const tChar = this.characters[target] as CharacterData;
+        const tBox = makeBoxCentered(
+          this.data[tBase + FighterField.POS_X] as number,
+          this.data[tBase + FighterField.POS_Y] as number,
+          tChar.hurtboxWidth,
+          tChar.hurtboxHeight,
+        );
+        if (aabbOverlap(box, tBox)) {
+          this.applyItemDamage(target, cfg.damage, cfg.baseKnockback, cfg.knockbackGrowth, cfg.angleIdx, false);
+        }
+      }
+
+      const timer = ((this.hazardsData[base + HazardField.TIMER] as number) - 1) | 0;
+      this.hazardsData[base + HazardField.TIMER] = timer;
+      if (timer <= 0 || (posY as number) < (this.blastMinY as number)) {
+        this.hazardsData[base + HazardField.ACTIVE] = 0;
+      }
+    }
+  }
+
+  private trySpawnHazard(): void {
+    this.hazardSpawnCooldown -= 1;
+    if (this.hazardSpawnCooldown > 0) return;
+
+    const cfg = this.hazardConfig;
+    const progress = computeShrinkProgress(this.tick, this.aliveCount(), this.numFighters, this.settings);
+    const span = cfg.spawnIntervalMaxTicks - cfg.spawnIntervalMinTicks;
+    const interval = cfg.spawnIntervalMaxTicks - Math.round(span * progress);
+    this.hazardSpawnCooldown = interval < cfg.spawnIntervalMinTicks ? cfg.spawnIntervalMinTicks : interval;
+
+    const xDraw = nextBounded(this.rng, 1000);
+    this.rng = xDraw.state;
+    const spanX = (this.blastMaxX as number) - (this.blastMinX as number);
+    const posX = (this.blastMinX as number) + Math.floor((spanX * xDraw.value) / 1000);
+
+    for (let slot = 0; slot < MAX_HAZARDS; slot++) {
+      const base = slot * HazardField.FIELD_COUNT;
+      if ((this.hazardsData[base + HazardField.ACTIVE] as number) === 1) continue;
+      this.hazardsData[base + HazardField.ACTIVE] = 1;
+      this.hazardsData[base + HazardField.POS_X] = posX;
+      this.hazardsData[base + HazardField.POS_Y] = this.blastMaxY as number;
+      this.hazardsData[base + HazardField.VEL_Y] = 0;
+      this.hazardsData[base + HazardField.TIMER] = cfg.maxLifetimeTicks;
+      return;
+    }
   }
 
   /** A fighter whose position leaves the current (possibly shrunk)

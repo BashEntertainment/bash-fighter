@@ -7,7 +7,8 @@ match server for online play.
 
 The project is early. There is no public deployment yet, the only
 playable character is a placeholder capsule with four moves, and several
-packages described below are still stubs. This document describes what
+parts described below are thinner than
+they sound. This document describes what
 actually exists in this repository today, not the eventual vision.
 
 ## Game design
@@ -54,8 +55,9 @@ in a browser.
 
 ## Running it locally
 
-Requirements: Node 24+ (the test suite relies on Node's built-in
-TypeScript type-stripping).
+Requirements: Node 22.18+ or 24+. The test suite runs TypeScript directly
+via Node's built-in type-stripping, so older Node versions will not run it.
+CI covers Node 22 and 24.
 
 ```sh
 git clone https://github.com/BashEntertainment/bash-fighter.git

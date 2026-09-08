@@ -53,7 +53,7 @@ function botDifficultyFromEnv(): BotDifficultyValue {
 
 export const TICK_HZ = 60;
 export const TICK_MS = 1000 / TICK_HZ;
-const SNAPSHOT_EVERY_N_TICKS = Math.round(TICK_HZ / SNAPSHOT_HZ);
+export const SNAPSHOT_EVERY_N_TICKS = Math.round(TICK_HZ / SNAPSHOT_HZ);
 
 export interface Seat {
   slot: number;

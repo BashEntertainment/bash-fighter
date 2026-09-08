@@ -3,7 +3,7 @@
 // Built for N fighters — the sim milestone is fixed at 2, but nothing
 // here hardcodes that so the renderer isn't what blocks 20-player FFA.
 import { Application, Container, Graphics } from 'pixi.js';
-import { fixed as fx, FighterStateId, type CharacterData, type FighterStateValue } from '@bash-fighter/sim';
+import { fixed as fx, FighterStateId, findMove, windowAtFrame, type CharacterData, type FighterStateValue } from '@bash-fighter/sim';
 import { PALETTE } from './palette.ts';
 import { computeCamera, worldToScreen, type ArenaBounds, type CameraConfig, type CameraView } from './camera.ts';
 import { drawStage, type StageBounds } from './stage.ts';
@@ -418,6 +418,35 @@ export class Renderer {
     if (win?.__debugFreezeOnNextEffect && ((frame.hitEffects?.length ?? 0) > 0 || (frame.eliminationEffects?.length ?? 0) > 0)) {
       win.__debugFreezeOnNextEffect = false;
       this.freezeRemainingMs = Number.POSITIVE_INFINITY; // held until __debugUnfreeze is set
+    }
+
+    // DEV-ONLY debug freeze trigger: window.__debugFreezeOnAttackActive = true
+    // arms a freeze for the first frame, from now on, where any fighter is
+    // in the ATTACK state with moveFrame inside that move's real 'active'
+    // (hitbox-live) window -- read via the sim's own findMove/windowAtFrame,
+    // the exact lookup fighter-pose.ts uses to pose the swing. Exists only
+    // to let a slow remote screenshot tool land on the one frame that
+    // proves (or disproves) that the animated swing is on-screen while the
+    // hitbox is actually live, not before or after it. Inert unless a
+    // developer sets the flag from devtools/a debug console; reads frame
+    // state only, never writes to the sim, and does not touch the fixed
+    // 60Hz advance() cadence -- it only ever holds *rendering* of already-
+    // simulated frames, same mechanism as __debugFreezeOnNextEffect above.
+    if (win?.__debugFreezeOnAttackActive) {
+      for (let i = 0; i < frame.fighters.length; i++) {
+        const f = frame.fighters[i];
+        if (!f || f.eliminated || f.state !== FighterStateId.ATTACK) continue;
+        const character = frame.characters[i] as CharacterData | undefined;
+        if (!character) continue;
+        const move = findMove(character, f.moveId as never);
+        if (!move) continue;
+        const found = windowAtFrame(move, f.moveFrame);
+        if (found?.window.kind === 'active') {
+          win.__debugFreezeOnAttackActive = false;
+          this.freezeRemainingMs = Number.POSITIVE_INFINITY;
+          break;
+        }
+      }
     }
   }
 

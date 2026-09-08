@@ -241,6 +241,55 @@ test('a seat is released after the grace window expires and the token no longer 
   }
 });
 
+test('a duplicate connection presenting a token for a currently-connected seat is refused and the live player is never kicked', async () => {
+  const port = 8105;
+  const server = startServer(port, {});
+  try {
+    await waitForHealth(port, 90000);
+    const a = await connectClient(port, 'Alice');
+    const b = await connectClient(port, 'Bob');
+    const c = await connectClient(port, 'Cara');
+    const welcomeA = (await a.waitFor((m) => m.t === 'welcome')) as ControlMsg & { resumeToken: string };
+    await a.waitFor((m) => m.t === 'matchStart');
+    await b.waitFor((m) => m.t === 'matchStart');
+    await c.waitFor((m) => m.t === 'matchStart');
+    const tokenA = welcomeA.resumeToken;
+
+    // Alice's original socket stays open and live -- this is a second,
+    // racing/duplicate connection presenting the same still-valid token.
+    const dupe = await connectClient(port, 'Alice-duplicate', tokenA);
+    const result = (await dupe.waitFor((m) => m.t === 'error' || m.t === 'welcome')) as ControlMsg;
+    assert.equal(result.t, 'error', 'a token for a live, connected seat must not be granted to a second connection');
+    assert.equal(result.code, 'resume_seat_taken');
+
+    // The incumbent must not have been kicked: Alice's original socket is
+    // still open and the match still treats her seat as connected.
+    assert.equal(a.ws.readyState, WebSocket.OPEN, "the live player's socket must not be closed by the duplicate");
+    let tick = 0;
+    a.ws.send(encodeInput({ tick, buttons: 0, stickX: 65536, stickY: 0 }));
+    const snap = await new Promise<boolean>((resolve) => {
+      const check = setInterval(() => {
+        if (a.lastSnapshot()) {
+          clearInterval(check);
+          resolve(true);
+        }
+      }, 50);
+      setTimeout(() => {
+        clearInterval(check);
+        resolve(false);
+      }, 3000);
+    });
+    assert.ok(snap, "Alice's original connection must keep receiving snapshots after the duplicate was refused");
+
+    dupe.ws.close();
+    a.ws.close();
+    b.ws.close();
+    c.ws.close();
+  } finally {
+    server.kill();
+  }
+});
+
 test('reconnecting after the match already ended reports the outcome instead of erroring', async () => {
   const port = 8104;
   const server = startServer(port, { MATCH_SHRINK_FULLY_CLOSED_TICK: '120' }); // ~2s: force a fast finish

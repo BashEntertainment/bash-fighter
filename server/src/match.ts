@@ -169,15 +169,37 @@ export class Match {
    *  under its own player; the caller must reject the newcomer instead of
    *  kicking the incumbent. */
   findReclaimableSeat(token: string): Seat | undefined {
-    return this.seats.find((s) => s.resumeToken !== null && s.resumeToken === token && !s.connected);
+    const seat = this.seats.find((s) => s.resumeToken !== null && s.resumeToken === token && !s.connected);
+    if (!seat) return undefined;
+    // The grace-window setTimeout in markDisconnected is the seat's primary
+    // expiry mechanism, but a JS timer is only guaranteed to fire no
+    // earlier than its delay -- under event-loop load it can fire
+    // arbitrarily later. Trusting resumeToken !== null alone therefore lets
+    // a token that is already past its grace window still be honoured if
+    // the timer callback simply hasn't run yet. Re-check elapsed wall-clock
+    // time here so expiry is correct regardless of scheduler lag, and
+    // self-heal by releasing the seat immediately if it is found stale.
+    if (seat.disconnectedAt !== null && Date.now() - seat.disconnectedAt >= RECONNECT_GRACE_MS) {
+      this.releaseSeat(seat.slot);
+      return undefined;
+    }
+    return seat;
   }
 
   /** Finds a seat by token regardless of connected state, purely so the
    *  transport layer can tell "unknown/expired token" apart from "valid
    *  token, but that seat already has a live connection" (a duplicate
-   *  connection racing the original) for a more honest error message. */
+   *  connection racing the original) for a more honest error message.
+   *  Excludes seats whose grace window has elapsed even if the release
+   *  timer hasn't fired yet, for the same reason as findReclaimableSeat. */
   findSeatByAnyToken(token: string): Seat | undefined {
-    return this.seats.find((s) => s.resumeToken !== null && s.resumeToken === token);
+    const seat = this.seats.find((s) => s.resumeToken !== null && s.resumeToken === token);
+    if (!seat) return undefined;
+    if (!seat.connected && seat.disconnectedAt !== null && Date.now() - seat.disconnectedAt >= RECONNECT_GRACE_MS) {
+      this.releaseSeat(seat.slot);
+      return undefined;
+    }
+    return seat;
   }
 
   /** Reclaims a disconnected seat for a new connection: cancels its grace

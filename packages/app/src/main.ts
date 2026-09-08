@@ -158,7 +158,6 @@ async function beginOnlineMatch(): Promise<void> {
       setNetStatus(state, detail);
       if (state === 'disconnected' || state === 'error') {
         matchOverlay.show({
-          kicker: 'CONNECTION LOST',
           title: state === 'error' ? 'Could not reach the match server' : 'Disconnected from the match',
           message: 'The connection dropped and could not be resumed automatically. Your last match is over, but you can jump straight back into a new one.',
           tone: 'danger',
@@ -166,7 +165,6 @@ async function beginOnlineMatch(): Promise<void> {
         });
       } else if (state === 'reconnecting') {
         matchOverlay.show({
-          kicker: 'RECONNECTING',
           title: 'Connection dropped, reconnecting…',
           message: 'Trying to get you back into your match. This usually takes a few seconds.',
           tone: 'danger',
@@ -188,7 +186,6 @@ async function beginOnlineMatch(): Promise<void> {
     },
     onEliminated: (placement, totalFighters) => {
       matchOverlay.show({
-        kicker: 'ELIMINATED',
         title: `You finished ${placement} of ${totalFighters}`,
         message: 'You can jump straight into a new match, or keep watching this one play out.',
         actions: [

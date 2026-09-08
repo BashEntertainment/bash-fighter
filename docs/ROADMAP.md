@@ -14,19 +14,30 @@ elsewhere and aren't part of the public repo.
   shield, stocks). Covered by a determinism/rollback test harness with a
   committed golden-hash file.
 - **`packages/content`** — character/stage data format, a validator, and
-  one placeholder character (four moves: jab, forward tilt, up air, down
-  air).
+  a growing roster: Placeholder, Ballast (heavyweight), Voltling, and
+  Reed (long-reach zoner), each with a full four-move kit. Items (Thrown
+  Brick, Slam Bat, Bash Bomb, Medkit) and stage hazards are implemented,
+  PRNG-driven so server and clients agree without sending item events
+  over the wire, and are drawn on screen (`packages/render/src/hazard-sprite.ts`
+  and item sprites), not just simulated invisibly.
 - **`packages/render`, `packages/input`, `packages/app`** — a playable
-  local build: WebGL2 (PixiJS) renderer, keyboard/gamepad input, a Vite
-  app shell with an offline local-match mode.
+  build: WebGL2 (PixiJS) renderer with multi-platform arena support,
+  keyboard/gamepad input, a Vite app shell with an offline local-match
+  mode and a character-select screen (`packages/app/src/ui/character-select.ts`).
 - **`server/`** — the authoritative match server: lobby, room isolation,
-  match lifecycle, snapshot broadcasting, an integration test that
-  connects multiple real WebSocket clients and diffs their final state
-  hashes to prove no desync.
+  match lifecycle, snapshot broadcasting, bots that fill lobbies below
+  capacity, mid-match reconnection (grace period + token, see
+  `server/src/match.ts` and `server/src/rooms.ts`), and an integration
+  test that connects multiple real WebSocket clients and diffs their
+  final state hashes to prove no desync.
 - **`packages/net` + online play in `packages/app`** — a "PLAY ONLINE"
   mode: client connects to the server, predicts its own fighter,
-  reconciles on snapshots, interpolates remote fighters, and shows
-  connection state.
+  reconciles on snapshots, interpolates remote fighters, shows connection
+  state, and reconnects into an in-progress match after a drop.
+- **Live public deployment** — the match server and web client run in
+  production at http://135.181.45.254/ (plain HTTP/WS; TLS pending a
+  domain purchase), serving real 20-player matches over the public
+  internet.
 - **Licensing** — AGPL-3.0 (`LICENSE`), with a Contributor License
   Agreement required from contributors (`CLA.md`; signing mechanism not
   yet built).
@@ -40,11 +51,9 @@ elsewhere and aren't part of the public repo.
   free-for-all (Last Fighter Standing). Timed Brawl (KO count within a
   time limit, with respawns) and Stocks are designed but not both fully
   wired end to end yet.
-- **Online play polish.** The in-match HUD (fighter cards, "N / N
-  remaining") doesn't render in online mode the way it does locally yet.
-  Snapshots are full state rather than delta-compressed or quantised.
-  Reconnection to an in-progress match isn't implemented. There's no
-  bot/AI lobby filling for matches below capacity.
+- **Online play polish.** Snapshots are full state rather than
+  delta-compressed or quantised. Anti-cheat is limited to basic input
+  validation (see "Not started" below).
 - **Content pipeline.** The character/stage data format and validator
   exist; the broader on-ramp for community-contributed characters and
   stages (documentation, examples, more than one reference character) is
@@ -52,12 +61,10 @@ elsewhere and aren't part of the public repo.
 
 ## Not started
 
-- **More characters and stages.** There is exactly one placeholder
-  character today. A real roster, and more than one arena, are ahead of
-  us.
-- **Live public deployment.** No game is hosted publicly yet. The target
-  infrastructure is Bash Entertainment's own server; getting there needs
-  TLS and a domain, which are pending owner sign-off.
+- **More characters and stages.** Four characters exist today; more
+  archetypes and more than one arena layout are ahead of us.
+- **TLS / a domain.** The production deployment is plain HTTP/WS; a
+  domain and certificate purchase is pending owner sign-off.
 - **Anti-cheat / input validation hardening** beyond basic protocol
   version checks and malformed-message handling.
 - **Accessibility and input remapping** beyond basic keyboard/gamepad

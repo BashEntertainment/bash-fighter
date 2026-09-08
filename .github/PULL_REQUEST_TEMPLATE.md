@@ -13,9 +13,21 @@ closes, if any (`Closes #123`).
 ## Scope
 
 Which package(s) does this touch (`sim`, `render`, `input`, `net`,
-`content`, `app`, docs/config)? If it touches `packages/sim`, does it
-preserve determinism (no `Math.random`/`Date.now`/`performance.now`, no
-float ops outside the fixed-point helpers)?
+`content`, `app`, `server`, docs/config)?
+
+## Determinism checklist (only if this touches `packages/sim`)
+
+- [ ] No `Math.random` — uses the seeded PRNG instead.
+- [ ] No `Date.now()` / `performance.now()` — uses tick count instead.
+- [ ] No `Math.sin`/`Math.cos`/other transcendental `Math.*` at runtime —
+      uses the precomputed trig LUT instead.
+- [ ] No floats introduced into sim state — Q16.16 fixed-point only.
+- [ ] No new allocation inside `Sim.advance()` or other hot-path methods.
+- [ ] Entity iteration order is stable (integer ID), not Map/Set/object
+      insertion order.
+- [ ] If sim behavior intentionally changed, the golden hash file was
+      regenerated and that's called out explicitly below (not just in the
+      diff).
 
 ## Breaking changes
 

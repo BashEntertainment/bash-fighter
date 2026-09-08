@@ -1,68 +1,73 @@
 # Roadmap
 
-Honest status as of 2026-09-07. This tracks what exists in this repo, not
-aspirations — see the project wiki ("Bash Entertainment Initial Plan") for
-the fuller phased plan and rationale.
+This tracks what exists in this repo and what's planned as features, at a
+coarse grain. It is not a business plan or a launch schedule — those live
+elsewhere and aren't part of the public repo.
 
 ## Done
 
 - **`packages/sim`** — deterministic fixed-timestep simulation core:
-  Q16.16 fixed-point math, LUT-based trig, seeded xorshift128+ PRNG,
-  two-fighter physics loop, full combat (state machine, frame data,
-  hitboxes/hurtboxes, knockback, hitstun, DI, shield, stocks). Covered by a
-  determinism/rollback test harness with a committed golden-hash file.
-- **Licensing** — AGPL-3.0 (`LICENSE`), owner decision, paired with a
-  planned CLA (mechanism not yet built — see CONTRIBUTING.md).
-- **Repo hygiene (this batch)** — README, CONTRIBUTING, Code of Conduct,
-  Security policy, issue/PR templates, CI workflow (typecheck/lint/test on
-  push and PR).
+  Q16.16 fixed-point math, LUT-based trig, seeded PRNG. Generalised to
+  support 2–32 fighters with single elimination, deterministic placement,
+  KO counts, and a deterministically collapsing arena. Full combat loop
+  (state machine, frame data, hitboxes/hurtboxes, knockback, hitstun, DI,
+  shield, stocks). Covered by a determinism/rollback test harness with a
+  committed golden-hash file.
+- **`packages/content`** — character/stage data format, a validator, and
+  one placeholder character (four moves: jab, forward tilt, up air, down
+  air).
+- **`packages/render`, `packages/input`, `packages/app`** — a playable
+  local build: WebGL2 (PixiJS) renderer, keyboard/gamepad input, a Vite
+  app shell with an offline local-match mode.
+- **`server/`** — the authoritative match server: lobby, room isolation,
+  match lifecycle, snapshot broadcasting, an integration test that
+  connects multiple real WebSocket clients and diffs their final state
+  hashes to prove no desync.
+- **`packages/net` + online play in `packages/app`** — a "PLAY ONLINE"
+  mode: client connects to the server, predicts its own fighter,
+  reconciles on snapshots, interpolates remote fighters, and shows
+  connection state.
+- **Licensing** — AGPL-3.0 (`LICENSE`), with a Contributor License
+  Agreement required from contributors (`CLA.md`; signing mechanism not
+  yet built).
+- **Repo hygiene** — README, CONTRIBUTING, Code of Conduct, Security
+  policy, this roadmap, an architecture overview, issue/PR templates, and
+  a CI workflow (typecheck/lint/test on push and PR).
 
-## In progress
+## In progress / known gaps
 
-- **`packages/render`** — WebGL/Pixi.js renderer reading sim state.
-- **`packages/input`** — keyboard/Gamepad capture into the sim's
-  `InputFrame` format.
-- **`packages/app`** — Vite app shell wiring sim + render + input together
-  into a playable local page. Scaffolded (package.json, an entry point,
-  some UI/loop/match files have appeared in-progress); not yet a working
-  dev server as of this writing — check the package directly for current
-  state, this file will lag it.
-
-All three are being built concurrently by other agents; if you want to pick
-up work here, check open issues/PRs first to avoid duplicating in-flight
-work.
+- **Match modes.** The sim currently implements single-elimination
+  free-for-all (Last Fighter Standing). Timed Brawl (KO count within a
+  time limit, with respawns) and Stocks are designed but not both fully
+  wired end to end yet.
+- **Online play polish.** The in-match HUD (fighter cards, "N / N
+  remaining") doesn't render in online mode the way it does locally yet.
+  Snapshots are full state rather than delta-compressed or quantised.
+  Reconnection to an in-progress match isn't implemented. There's no
+  bot/AI lobby filling for matches below capacity.
+- **Content pipeline.** The character/stage data format and validator
+  exist; the broader on-ramp for community-contributed characters and
+  stages (documentation, examples, more than one reference character) is
+  still being built out.
 
 ## Not started
 
-- **`packages/content`** — has a package scaffold and its own tests
-  started, but the community character/stage data format and loader
-  described in "Engine Architecture: Input, Netplay, and Content Pipeline"
-  (wiki) is not complete. This is the on-ramp for external contributors
-  who don't want to touch the sim — a priority once the app shell can load
-  something.
-- **`packages/net`** — rollback-style netcode. Design intent (per the wiki)
-  is server-authoritative fixed-tick simulation with client-side prediction
-  and interpolation, not peer-to-peer rollback — pure rollback doesn't hold
-  up at the target scale of 20 simultaneous players in one match. Nothing
-  built yet; this depends on the sim's `saveState`/`loadState` API, which
-  exists, and on having something playable locally first.
-- **Live deployment** — no game is hosted anywhere yet. The eventual
-  target is the Bash Entertainment Hetzner server (`135.181.45.254`),
-  which today runs an older, unrelated prototype ("Super Bash") — see the
-  wiki's "Super Bash Prototype Analysis" pages for what's there and what,
-  if anything, gets carried forward. The plan is to replace it with this
-  engine, not extend it.
-- **Monetization** — briefing exists in the wiki
-  ("Monetization Options for an Open Source Web Fighter"): recommendation
-  is server-gated cosmetics plus an official ranked subscription on the
-  AGPL core. Nothing built or bought here without owner sign-off; this is
-  explicitly post-"game is fun and playable" work.
+- **More characters and stages.** There is exactly one placeholder
+  character today. A real roster, and more than one arena, are ahead of
+  us.
+- **Live public deployment.** No game is hosted publicly yet. The target
+  infrastructure is Bash Entertainment's own server; getting there needs
+  TLS and a domain, which are pending owner sign-off.
+- **Anti-cheat / input validation hardening** beyond basic protocol
+  version checks and malformed-message handling.
+- **Accessibility and input remapping** beyond basic keyboard/gamepad
+  capture.
 
 ## Sequencing rationale
 
-Rendering and input before netplay, netplay before monetization: none of
-the multiplayer or monetization work is worth doing against a moving
-target, and the sim's determinism guarantee (the hard, already-solved part)
-is what everything downstream leans on. If you're picking a place to help,
-prefer whatever unblocks the next item on this list over something further
-down it.
+The deterministic sim was the hard, foundational piece and it's done
+first for a reason: rendering, input, and netcode all lean on its
+guarantees, and none of them are worth building against a moving target.
+Within "what's left," prefer picking up whatever unblocks the next item
+on this list over something further down it — check open issues and PRs
+first to avoid duplicating in-flight work.

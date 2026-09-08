@@ -1,59 +1,108 @@
 # Contributing to Bash Fighter
 
-Bash Fighter is an open-source (AGPL-3.0), web-based platform fighter built
-for massive, chaotic party brawls (up to 20 players in a match). The engine
-is a workspace monorepo; see `README.md` for the package layout and the
-Bash Entertainment wiki pages "Engine Architecture" and "Engine
-Architecture: Input, Netplay, and Content Pipeline" for the design.
+Bash Fighter is an open-source (AGPL-3.0), web-based platform fighter
+built for chaotic 20-player free-for-all matches. Before your first pull
+request, read [`CLA.md`](./CLA.md): contributions require agreeing to a
+Contributor License Agreement. It is a licence grant, not a copyright
+assignment — you keep ownership of what you write. The signing mechanism
+is not yet built; until it is, a maintainer will follow up on your first
+PR with instructions.
+
+See [`README.md`](./README.md) for the package layout and
+[`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) for the technical design.
 
 ## Dev environment setup
 
-Requirements: Node 24+ (we rely on native TypeScript type-stripping for
-`npm test`; see "Known limitations" in `README.md`).
+Requirements: Node 24+ (the test suite relies on Node's built-in
+TypeScript type-stripping, not a separate build step).
 
 ```sh
 git clone https://github.com/BashEntertainment/bash-fighter.git
 cd bash-fighter
 npm install
-npm test          # node --test, runs packages/*/test
-npm run typecheck # tsc --noEmit
+npm test          # node --test packages/*/test/**/*.test.ts
+npm run typecheck # tsc --noEmit -p tsconfig.json
 npm run lint      # eslint .
 ```
 
-There is no build step for the packages under active development yet
-(`packages/app` will eventually own the Vite app shell). Work inside a
-single package where possible and run that package's tests before opening
-a PR.
+To run the app and server locally, see the "Running it locally" section
+of `README.md`. Work inside a single package where possible and run that
+package's tests before opening a PR.
+
+## Determinism rules (read this before touching `packages/sim`)
+
+`packages/sim` must be a pure function of the previous state and the
+current tick's inputs. Two clients (or a client and the server) that start
+from the same seed and receive the same inputs must reach bit-identical
+state, forever. Breaking this doesn't throw an error — it silently desyncs
+players from each other, which is much worse than a crash and much harder
+to debug after the fact. So, inside `packages/sim/src`:
+
+- **No floats in simulation state.** Position, velocity, knockback,
+  percent, and any other quantity that affects the outcome of a match are
+  Q16.16 fixed-point integers (`packages/sim/src/math/fixed.ts`), not
+  JavaScript numbers used as floats. A `+` on two floats can legitimately
+  differ in the last bit between browsers/CPUs; that is enough to desync a
+  match over time.
+- **No `Math.random`.** Use the seeded PRNG (`packages/sim/src/math/prng.ts`,
+  xorshift128+ seeded via splitmix64). A fixed seed must always produce
+  the same sequence.
+- **No `Date.now()` or `performance.now()`.** The sim only knows about tick
+  count, never wall-clock time. Anything time-based (e.g. the arena
+  collapse schedule) is driven by tick count and match seed.
+- **No `Math.sin`/`Math.cos`/`Math.pow`/`Math.exp`/`Math.log` at runtime.**
+  Transcendental `Math.*` implementations vary by JS engine, which breaks
+  cross-client determinism. Trig goes through the precomputed LUT
+  (`packages/sim/src/math/trigTable.ts`, generated offline by
+  `scripts/generate-trig-lut.mjs` — that script is the only place in the
+  repo allowed to call `Math.sin`/`Math.cos`).
+- **No allocation in hot paths.** `Sim.advance()` runs every tick for every
+  fighter; it mutates a preallocated `Int32Array` in place rather than
+  allocating. Keep that property in any change to the tick loop.
+- **Stable iteration order.** Entities are processed in a fixed, monotonic
+  order (integer entity ID), never Map/object/Set insertion order, since
+  insertion order is easy to accidentally make non-deterministic.
+
+These rules are partly enforced by `eslint.config.js` (`no-restricted-syntax`
+scoped to `packages/sim/src`, blocking `window`, `document`, `Date.now`,
+`performance.now`, and `Math.random`). The lint rule cannot catch every
+case (e.g. a stray `Math.sin` disguised through indirection, or float
+arithmetic on values that happen to look like integers), so review is the
+real backstop. If you think a change needs an exception, say so explicitly
+in the PR and explain why — don't route around the rule silently.
+
+The determinism test (`packages/sim/test/determinism.test.ts`) replays a
+recorded input stream, hashes full sim state every tick, and asserts the
+hashes match a committed golden file exactly. If your change legitimately
+changes sim behavior, regenerate the golden file and say so plainly in the
+PR description — a silently-updated golden file is exactly the kind of
+change a reviewer needs to know about.
 
 ## Coding standards
 
 - TypeScript, strict mode (`tsconfig.base.json`: `strict`,
   `noUncheckedIndexedAccess`). Keep new code passing `npm run typecheck`.
-- `packages/sim` has extra restrictions enforced by `eslint.config.js`: no
-  `Math.random`, `Date.now`, `performance.now`, `window`, or `document` —
-  the sim must stay a deterministic, pure function of state + input. Don't
-  work around the lint rule; ask in the PR if you think an exception is
-  needed.
 - Fix `npm run lint` warnings you touch; don't let a PR add new ones.
 - Match the existing file's style (naming, module layout) rather than
   introducing a new convention in one corner of the codebase.
 
 ## Pull request process
 
-1. Open an issue first for anything non-trivial (new feature, behavior
-   change, new package) so design gets discussed before code — use the
-   issue templates under `.github/ISSUE_TEMPLATE/`.
+1. For anything non-trivial (new feature, behavior change, new package),
+   open an issue first so the design gets discussed before code — use the
+   forms under `.github/ISSUE_TEMPLATE/`.
 2. Keep PRs focused: one logical change per PR. Large mechanical
    refactors should be their own PR, separate from behavior changes.
-3. Fill in the PR template (`.github/PULL_REQUEST_TEMPLATE.md`) — what
-   changed, why, and how you tested it.
+3. Fill in the PR template (`.github/PULL_REQUEST_TEMPLATE.md`), including
+   the determinism checklist if your change touches `packages/sim`.
 4. CI (`.github/workflows/ci.yml`) must pass: install, typecheck, lint,
-   test. A maintainer reviews and merges; community PRs are not merged
-   without review and a passing CI run, per project policy.
+   test, on Node 22 and Node 24. A maintainer reviews and merges; per
+   project policy, community PRs are never merged to `main` without
+   review and a passing CI run.
 5. Be responsive to review comments — PRs that go quiet for a long time
    may be closed and can be reopened later.
 
-## Reporting bugs / requesting features
+## Reporting bugs or requesting features
 
-Use the templates in `.github/ISSUE_TEMPLATE/`: `bug_report.md` or
-`feature_request.md`.
+Use the forms in `.github/ISSUE_TEMPLATE/`. For a security vulnerability,
+do not open a public issue — see [`SECURITY.md`](./SECURITY.md).

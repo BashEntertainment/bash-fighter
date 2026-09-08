@@ -2,29 +2,30 @@
 
 ## Current state
 
-Bash Fighter has **no public deployment yet**. The engine (`packages/sim`,
-`packages/content`, and the in-progress renderer/input/app packages) runs
-only in development containers and local checkouts; there is no live
-server, database, or user-facing endpoint to disclose. This document will
-be expanded with infrastructure-specific details (scope, bounty policy, PGP
-key if warranted) once a live deployment exists.
+Bash Fighter has no public deployment yet. `packages/sim`, `packages/content`,
+`packages/render`, `packages/input`, `packages/net`, `packages/app`, and
+`server/` run in development containers and local checkouts today; there
+is no live server or user-facing endpoint on the public internet to
+disclose against yet. This document will be expanded with
+infrastructure-specific scope once a live deployment exists.
 
 ## Reporting a vulnerability
 
-If you find a security issue in this codebase — including but not limited
-to: a flaw in the sim that could be exploited once netplay exists, a
-supply-chain risk in a dependency, or a design flaw in the planned
-authoritative server model — please report it privately rather than
-opening a public issue.
+Please do not open a public GitHub issue for a security vulnerability.
+Use GitHub's private vulnerability reporting instead:
 
-- Open a private security advisory on the GitHub repository once it exists
-  under `BashEntertainment` (GitHub Security Advisories, "Report a
-  vulnerability" under the repo's Security tab), **or**
-- If that isn't available yet, open a regular issue titled generically
-  (e.g. "Security contact needed") without vulnerability details, and a
-  maintainer will follow up with a private channel.
+1. Go to the repository's **Security** tab.
+2. Click **Report a vulnerability** to open a private advisory.
 
-Please include:
+This reaches maintainers privately without disclosing details publicly
+before a fix is available.
+
+If private reporting is not available to you for some reason, open a
+regular issue with a generic title (e.g. "Security contact needed") and no
+vulnerability details, and a maintainer will follow up with a private
+channel. We do not have a public email address for security reports.
+
+Please include, where you can:
 
 - A description of the issue and its potential impact.
 - Steps to reproduce, or a minimal proof of concept.
@@ -32,17 +33,20 @@ Please include:
 
 ## Response process
 
-There is no dedicated security team yet — this is a small open-source
-project. A maintainer will acknowledge reports within a reasonable time
-and work with the reporter on a fix before any public disclosure. Please
-give us the opportunity to patch before disclosing publicly.
+There is no dedicated security team; this is a small open-source project.
+A maintainer will acknowledge reports within a reasonable time and work
+with the reporter on a fix before any public disclosure. Please give us
+the opportunity to patch before disclosing publicly.
 
 ## Scope notes
 
-- Determinism bugs in `packages/sim` that could desync a future rollback
-  match are a legitimate security-adjacent concern (they undermine
-  competitive integrity) and are welcome here, not just as regular bug
-  reports.
-- Once a live server exists on the Bash Entertainment Hetzner
-  infrastructure, this document will gain a scope section covering that
-  deployment specifically.
+- Determinism bugs in `packages/sim` that could let a client desync from
+  the authoritative server, or diverge from other clients, are a
+  legitimate security-adjacent concern (they undermine match integrity)
+  and are welcome here, not just as regular bug reports.
+- Anything that would let a client affect another client's or the
+  server's state outside the documented wire protocol (see
+  `docs/ARCHITECTURE.md` and `docs/PROTOCOL.md`) is in scope.
+- Once a live server exists on Bash Entertainment's infrastructure, this
+  document will gain a scope section covering that deployment
+  specifically.

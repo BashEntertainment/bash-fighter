@@ -1,0 +1,49 @@
+name: Feature request
+description: Suggest an idea or design change
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What's missing or awkward today? Who does it affect (players, contributors, operators)?
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: What you'd like to see. Reference the relevant design doc if there is one (docs/ARCHITECTURE.md, or a wiki page if you have access).
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches you thought about and why you didn't pick them.
+    validations:
+      required: false
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Scope / affected packages
+      multiple: true
+      options:
+        - sim
+        - render
+        - input
+        - net
+        - content
+        - app
+        - server
+        - docs
+    validations:
+      required: false
+  - type: checkboxes
+    id: breaking
+    attributes:
+      label: Breaking change
+      options:
+        - label: This would be a breaking change to an existing data format or API
+          required: false

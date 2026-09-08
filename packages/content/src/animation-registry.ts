@@ -7,6 +7,7 @@ import { PLACEHOLDER_ANIMATION } from './characters/placeholder/animation.ts';
 import { BALLAST_ANIMATION } from './characters/ballast/animation.ts';
 import { VOLTLING_ANIMATION } from './characters/voltling/animation.ts';
 import { REED_ANIMATION } from './characters/reed/animation.ts';
+import { WISP_ANIMATION } from './characters/wisp/animation.ts';
 import { ZEPHYR_ANIMATION } from './characters/zephyr/animation.ts';
 import { ANCHOR_ANIMATION } from './characters/anchor/animation.ts';
 import { SCRAPPER_ANIMATION } from './characters/scrapper/animation.ts';
@@ -20,6 +21,7 @@ export const ANIMATION_BY_CHARACTER_NAME: Readonly<Record<string, AnimationParam
   Ballast: BALLAST_ANIMATION,
   Voltling: VOLTLING_ANIMATION,
   Reed: REED_ANIMATION,
+  Wisp: WISP_ANIMATION,
   Zephyr: ZEPHYR_ANIMATION,
   Anchor: ANCHOR_ANIMATION,
   Scrapper: SCRAPPER_ANIMATION,

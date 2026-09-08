@@ -7,6 +7,7 @@ import { PLACEHOLDER_CHARACTER } from './characters/placeholder/data.ts';
 import { BALLAST_CHARACTER } from './characters/ballast/data.ts';
 import { VOLTLING_CHARACTER } from './characters/voltling/data.ts';
 import { REED_CHARACTER } from './characters/reed/data.ts';
+import { WISP_CHARACTER } from './characters/wisp/data.ts';
 import { ZEPHYR_CHARACTER } from './characters/zephyr/data.ts';
 import { ANCHOR_CHARACTER } from './characters/anchor/data.ts';
 import { SCRAPPER_CHARACTER } from './characters/scrapper/data.ts';
@@ -27,6 +28,7 @@ export const ALL_CHARACTERS: readonly CharacterEntry[] = [
   { id: 'ballast', character: BALLAST_CHARACTER },
   { id: 'voltling', character: VOLTLING_CHARACTER },
   { id: 'reed', character: REED_CHARACTER },
+  { id: 'wisp', character: WISP_CHARACTER },
   { id: 'zephyr', character: ZEPHYR_CHARACTER },
   { id: 'anchor', character: ANCHOR_CHARACTER },
   { id: 'scrapper', character: SCRAPPER_CHARACTER },

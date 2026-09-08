@@ -102,10 +102,14 @@ function setNetStatus(state: ConnectionState, detail?: string): void {
 }
 
 const onlineButton = document.createElement('button');
-onlineButton.className = 'btn';
+onlineButton.className = 'btn btn-primary';
 onlineButton.id = 'online-btn';
-onlineButton.textContent = 'PLAY ONLINE';
-startScreen.root.appendChild(onlineButton);
+onlineButton.textContent = 'Play online';
+// Mounted in the start screen's primary-action slot: online play is the
+// game, and local two-player is the side door. It used to be appended to
+// the end of the screen, below the local key bindings and off the bottom
+// of most viewports.
+(startScreen.root.querySelector('#primary-actions') ?? startScreen.root).appendChild(onlineButton);
 onlineButton.addEventListener('click', () => {
   void beginOnlineMatch();
 });

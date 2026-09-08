@@ -175,6 +175,67 @@ html, body {
   background: var(--accent);
 }
 
+/* Online play is the game; give it the visual weight to match. */
+.btn-primary {
+  font-size: 19px;
+  padding: 18px 56px;
+  background: var(--accent);
+  color: var(--bg);
+}
+
+.btn-primary:hover {
+  background: var(--ink);
+}
+
+.btn-secondary {
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid #2c3037;
+  font-weight: 600;
+}
+
+.btn-secondary:hover {
+  background: transparent;
+  border-color: var(--ink-dim);
+}
+
+/* Local two-player is a side door, folded away by default so it cannot be
+   mistaken for the main way to play. */
+.local-play {
+  border-top: 1px solid #1c1f24;
+  padding-top: 18px;
+  width: min(720px, 90vw);
+}
+
+.local-play summary {
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--ink-dim);
+  list-style: none;
+}
+
+.local-play summary::before {
+  content: '+ ';
+  color: var(--accent);
+}
+
+.local-play[open] summary::before {
+  content: '\2212 ';
+}
+
+.local-play summary:hover {
+  color: var(--ink);
+}
+
+.local-play > .select-row {
+  justify-content: center;
+  margin: 20px 0 18px;
+}
+
+.local-play > .hint {
+  margin-top: 14px;
+}
+
 .hint {
   font-size: 13px;
   color: var(--ink-dim);

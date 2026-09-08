@@ -26,21 +26,26 @@ export class StartScreen {
     this.root.id = 'start-screen';
     this.root.innerHTML = `
       <div class="wordmark">BASH FIGHTER</div>
-      <div class="subtitle">Local test build — two players, one keyboard or gamepads.</div>
-      <div class="roster-label">CHOOSE YOUR FIGHTER (Player 1)</div>
+      <div class="subtitle">Twenty fighters, one arena, last one standing. Free and open source, plays in your browser.</div>
+      <div class="roster-label">Choose your fighter</div>
       <div id="roster-mount"></div>
-      <div class="select-row">
-        <div class="select-card p1">
-          <h3>PLAYER 1</h3>
-          <pre class="bindings">${bindingLines(DEFAULT_P1_BINDING)}</pre>
+      <div id="primary-actions"></div>
+      <div class="hint">The arena shrinks as fighters are eliminated. Empty slots are filled by bots so a match always starts.</div>
+      <details class="local-play">
+        <summary>Play locally on one keyboard</summary>
+        <div class="select-row">
+          <div class="select-card p1">
+            <h3>Player 1</h3>
+            <pre class="bindings">${bindingLines(DEFAULT_P1_BINDING)}</pre>
+          </div>
+          <div class="select-card p2">
+            <h3>Player 2</h3>
+            <pre class="bindings">${bindingLines(DEFAULT_P2_BINDING)}</pre>
+          </div>
         </div>
-        <div class="select-card p2">
-          <h3>PLAYER 2 (Placeholder)</h3>
-          <pre class="bindings">${bindingLines(DEFAULT_P2_BINDING)}</pre>
-        </div>
-      </div>
-      <button class="btn" id="start-btn">START MATCH</button>
-      <div class="hint">Either player can plug in a gamepad to take over their slot. F3 toggles the debug overlay.</div>
+        <button class="btn btn-secondary" id="start-btn">Start local match</button>
+        <div class="hint">Either player can plug in a gamepad to take over their slot. F3 toggles the debug overlay.</div>
+      </details>
     `;
     parent.appendChild(this.root);
 

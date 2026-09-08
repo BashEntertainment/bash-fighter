@@ -21,7 +21,7 @@ import {
 } from '@bash-fighter/net/src/protocol.ts';
 import { RoomManager, DEFAULT_CAPACITY, DEFAULT_MINIMUM } from './rooms.ts';
 import { tickMetricsSnapshot } from './tick-metrics.ts';
-import type { Match } from './match.ts';
+import { SNAPSHOT_EVERY_N_TICKS, type Match } from './match.ts';
 
 export interface ServerOptions {
   port?: number;
@@ -69,6 +69,37 @@ function watcherSet(matchId: string): Set<string> {
   }
   return s;
 }
+
+// A connection counts as a live player only while it holds an un-eliminated
+// seat and never opted into pure spectating. Everyone else -- pre-join
+// sockets (slot -1), explicit spectators, and eliminated fighters whose
+// seat keeps ticking in the sim on neutral input -- gets the reduced
+// spectator stream below. Re-derived from match/seat state on every
+// snapshot rather than cached on ClientConn, since elimination flips a
+// seat from live to spectator mid-match with no separate event needed here.
+function isSpectatorConn(conn: ClientConn, match: Match): boolean {
+  if (conn.spectating || conn.slot < 0) return true;
+  const seat = match.seats[conn.slot];
+  return !seat || seat.eliminated;
+}
+
+// Snapshot rate for spectator connections, as a divisor of the live 20Hz
+// rate (SNAPSHOT_HZ in packages/net/src/protocol.ts). 2 -> 10Hz.
+//
+// Why 10Hz and not lower: per wiki "Netplay Chaos Part 1", a 20-player
+// match spends most of its connected-client-seconds with few fighters left
+// and many spectators (a Last-Fighter-Standing match ends 19/20
+// eliminated), so spectator egress dominates total server egress for most
+// of a match's duration even though spectators need less fidelity than a
+// live player reconciling their own position. Halving the rate halves
+// spectator egress (~68 KB/s -> ~35 KB/s per the wiki's own 10Hz number)
+// while staying comfortably above the ~5-8Hz floor where platform-fighter
+// motion starts to visibly step even with interpolation (short, fast
+// hops/dashes need enough samples to look continuous). 4x (5Hz) was
+// measured to look noticeably steppier during visual verification (see
+// commit message / final report) with the same interpolation code, so 2x
+// is the number actually shipped, not just estimated.
+const SPECTATOR_SNAPSHOT_DIVISOR = 2;
 
 function broadcastLobby(match: Match): void {
   const msg: ServerControlMessage = {
@@ -118,10 +149,23 @@ function makeEventsFor(matchId: string) {
       if (!match || !match.sim) return;
       const buf = match.sim.createStateBuffer();
       match.sim.saveState(buf);
+      // This callback already only fires once per SNAPSHOT_EVERY_N_TICKS
+      // (20Hz) -- skip alternate firings for spectator connections to land
+      // on ~10Hz for them (SPECTATOR_SNAPSHOT_DIVISOR), without touching
+      // the 60Hz sim tick or the live-player rate at all.
+      const sendToSpectatorsThisTick = (tick / SNAPSHOT_EVERY_N_TICKS) % SPECTATOR_SNAPSHOT_DIVISOR === 0;
       for (const cid of watcherSet(matchId)) {
         const c = clients.get(cid);
         if (!c) continue;
-        const ackedInputTick = c.spectating ? 0 : acked.get(c.slot) ?? 0;
+        const spectator = isSpectatorConn(c, match);
+        if (spectator && !sendToSpectatorsThisTick) continue;
+        // ackedInputTick only means anything to a client replaying its own
+        // buffered inputs during reconciliation (packages/app's
+        // net-match.ts); a spectator/eliminated connection never predicts
+        // or reconciles a fighter of its own, so it's dead weight -- always
+        // 0 for them rather than a per-slot lookup that has no meaning for
+        // that connection.
+        const ackedInputTick = spectator ? 0 : acked.get(c.slot) ?? 0;
         const snap: WireSnapshot = { tick, ackedInputTick, state: buf };
         sendBinary(c, encodeSnapshot(snap));
       }

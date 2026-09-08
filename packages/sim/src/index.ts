@@ -12,3 +12,4 @@ export * from './arena/default-arena.ts';
 export * from './match-settings.ts';
 export * from './arena-shrink.ts';
 export * from './broadphase.ts';
+export * from './ai/bot.ts';

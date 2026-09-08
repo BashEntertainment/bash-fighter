@@ -99,6 +99,14 @@ function broadcastMatchStart(match: Match): void {
 
 function makeEventsFor(matchId: string) {
   return {
+    onStart() {
+      const match = manager.getMatch(matchId);
+      if (match) broadcastMatchStart(match);
+    },
+    onLobbyUpdate() {
+      const match = manager.getMatch(matchId);
+      if (match && match.phase === 'lobby') broadcastLobby(match);
+    },
     onSnapshot(tick: number, acked: Map<number, number>) {
       const match = manager.getMatch(matchId);
       if (!match || !match.sim) return;

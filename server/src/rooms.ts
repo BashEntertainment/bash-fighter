@@ -65,6 +65,7 @@ export class RoomManager {
     this.countdownTimer = setInterval(() => {
       ticksLeft -= TICK_HZ / 5;
       match.countdownTicksRemaining = Math.max(0, ticksLeft);
+      match.events.onLobbyUpdate?.();
       if (ticksLeft <= 0) {
         this.clearCountdown();
         if (match.phase === 'lobby') {

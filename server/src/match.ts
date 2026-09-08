@@ -23,6 +23,14 @@ export interface Seat {
 export type MatchPhase = 'lobby' | 'playing' | 'ended';
 
 export interface MatchEvents {
+  /** Fired when the match leaves the lobby and the sim starts. The transport
+   *  layer must tell every watcher, otherwise a match started by the lobby
+   *  countdown (rather than by filling every slot) begins ticking on the
+   *  server while its clients sit forever on "waiting for players". */
+  onStart?: () => void;
+  /** Fired while the lobby is filling or counting down, so clients see a
+   *  countdown that actually moves. */
+  onLobbyUpdate?: () => void;
   onSnapshot: (tick: number, ackedInputTick: Map<number, number>) => void;
   onEliminated: (slot: number, placement: number, tick: number) => void;
   onMatchEnd: (winner: number | null, leaderboard: number[], tick: number) => void;
@@ -117,6 +125,7 @@ export class Match {
     this.lastTickAt = Date.now();
     this.accumulatorMs = 0;
     this.timer = setInterval(() => this.loop(), TICK_MS);
+    this.events.onStart?.();
   }
 
   stop(): void {

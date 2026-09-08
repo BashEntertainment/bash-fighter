@@ -20,6 +20,7 @@ import {
   type WireSnapshot,
 } from '@bash-fighter/net/src/protocol.ts';
 import { RoomManager, DEFAULT_CAPACITY, DEFAULT_MINIMUM } from './rooms.ts';
+import { tickMetricsSnapshot } from './tick-metrics.ts';
 import type { Match } from './match.ts';
 
 export interface ServerOptions {
@@ -147,6 +148,11 @@ const MINIMUM = Number(process.env.MATCH_MINIMUM ?? DEFAULT_MINIMUM);
 const manager = new RoomManager(makeEventsFor, CAPACITY, MINIMUM);
 
 const server = http.createServer((req, res) => {
+  if (req.url === '/api/metrics') {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify(tickMetricsSnapshot()));
+    return;
+  }
   if (req.url === '/api/health') {
     res.writeHead(200, { 'content-type': 'application/json' });
     res.end(

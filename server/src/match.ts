@@ -6,6 +6,7 @@ import { Sim, makeInputFrame, type InputFrame, type MatchSettings } from '@bash-
 import { BotController, BotDifficulty, deriveBotSeed, type BotDifficultyValue } from '@bash-fighter/sim/src/ai/bot.ts';
 import { createMatchSim, resolveCharacterId, DEFAULT_CHARACTER_ID } from '@bash-fighter/content/src/index.ts';
 import { SNAPSHOT_HZ } from '@bash-fighter/net/src/protocol.ts';
+import { recordTickDurationMs } from './tick-metrics.ts';
 
 // --- Reconnection (see wiki "Netcode Design Part 3") ------------------------
 // A dropped socket does not remove the fighter from the sim: it keeps being
@@ -335,7 +336,9 @@ export class Match {
       const bot = this.bots.get(s.slot);
       return bot ? bot.nextInput(sim) : s.pendingInput;
     });
+    const tickStart = process.hrtime.bigint();
     sim.advance(inputs);
+    recordTickDurationMs(Number(process.hrtime.bigint() - tickStart) / 1e6);
     this.tick++;
 
     for (const seat of this.seats) {

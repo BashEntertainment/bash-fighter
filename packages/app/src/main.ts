@@ -7,6 +7,7 @@ import { SpectatorBanner } from './ui/spectator-banner.ts';
 import { SimMatchAdapter } from './spectator/sim-adapter.ts';
 import { SpectatorController } from './spectator/controller.ts';
 import { NetMatch, type ConnectionState } from './net-match.ts';
+import { PLACEHOLDER_CHARACTER, resolveCharacterId } from '@bash-fighter/content';
 import type { ArenaBounds } from '@bash-fighter/render';
 import { AudioManager } from '@bash-fighter/audio';
 
@@ -142,6 +143,7 @@ async function beginOnlineMatch(): Promise<void> {
   canvasRoot.innerHTML = '';
 
   const name = `Fighter${Math.floor(Math.random() * 1000)}`;
+  const characterId = startScreen.selectedCharacterId;
   const net = new NetMatch(serverUrl(), {
     onStateChange: (state, detail) => setNetStatus(state, detail),
     onLobby: (players, capacity, countdownTicks) => {
@@ -156,7 +158,7 @@ async function beginOnlineMatch(): Promise<void> {
   }, audio);
   netMatch = net;
   await net.init(canvasRoot);
-  net.connect(name);
+  net.connect(name, characterId);
 
   // Same HUD widget the local match uses (packages/app/src/ui/hud.ts),
   // fed from NetMatch.currentSnapshots() -- see that method's comment for
@@ -200,7 +202,11 @@ async function beginMatch(): Promise<void> {
   }
 
   audio.play('match_start');
-  const localMatch: Match = new Match(canvasRoot, undefined, Date.now() & 0xffffffff, {
+  // Player 1 (the local slot) gets the chosen character; slot 1 stays the
+  // default placeholder -- this local harness is 2 human-controlled slots,
+  // not bot-filled, so there is no bot roster to randomize here.
+  const localCharacters = [resolveCharacterId(startScreen.selectedCharacterId), PLACEHOLDER_CHARACTER];
+  const localMatch: Match = new Match(canvasRoot, localCharacters, Date.now() & 0xffffffff, {
     onMatchOver: (winnerIndex) => {
       hud.hide();
       audio.play('match_end');

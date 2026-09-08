@@ -6,6 +6,13 @@
 export * from './validate.ts';
 export { PLACEHOLDER_CHARACTER } from './characters/placeholder/data.ts';
 export { BALLAST_CHARACTER } from './characters/ballast/data.ts';
+export {
+  ALL_CHARACTERS,
+  DEFAULT_CHARACTER_ID,
+  resolveCharacterId,
+  isKnownCharacterId,
+  type CharacterEntry,
+} from './characters.ts';
 export { BATTLE_ROYALE_20_ARENA } from './arenas/battle-royale-20/data.ts';
 export { BASH_FIGHTER_ITEM_SET } from './items/data.ts';
 export { BASH_FIGHTER_HAZARD } from './hazards/data.ts';

@@ -13,7 +13,8 @@ import {
   type FighterSnapshot,
   type InputFrame,
 } from '@bash-fighter/sim';
-import { PLACEHOLDER_CHARACTER, createMatchSim } from '@bash-fighter/content';
+import { PLACEHOLDER_CHARACTER, createMatchSim, resolveCharacterId, DEFAULT_CHARACTER_ID } from '@bash-fighter/content';
+import type { CharacterData } from '@bash-fighter/sim';
 import { InputManager } from '@bash-fighter/input';
 import {
   Renderer,
@@ -138,6 +139,8 @@ export class NetMatch {
   private localSim: Sim | null = null;
   private renderSim: Sim | null = null; // scratch sim used only to decode remote snapshot buffers
   private numFighters = 0;
+  private characterId = DEFAULT_CHARACTER_ID;
+  private characters: CharacterData[] = [];
   private mySlot = -1;
   private spectating = false;
   private matchStarted = false;
@@ -174,8 +177,9 @@ export class NetMatch {
     this.input.attach(window);
   }
 
-  connect(name: string): void {
+  connect(name: string, characterId: string = DEFAULT_CHARACTER_ID): void {
     this.name = name;
+    this.characterId = characterId;
     this.stopped = false;
     this.reconnectAttempt = 0;
     this.events.onStateChange?.('connecting');
@@ -197,6 +201,7 @@ export class NetMatch {
     ws.addEventListener('open', () => {
       const hello: Record<string, unknown> = { t: 'hello', protocolVersion: PROTOCOL_VERSION, name: this.name };
       if (this.resumeToken) hello.resume = this.resumeToken;
+      if (this.characterId) hello.characterId = this.characterId;
       ws.send(JSON.stringify(hello));
     });
     ws.addEventListener('message', (ev) => {
@@ -275,7 +280,7 @@ export class NetMatch {
         this.events.onLobby?.(msg.players, msg.capacity, msg.countdownTicks);
         break;
       case 'matchStart':
-        this.startMatch(msg.numFighters, msg.seed, msg.slot);
+        this.startMatch(msg.numFighters, msg.seed, msg.slot, msg.characterIds);
         break;
       case 'eliminated':
         if (msg.slot === this.mySlot && !this.spectating) {
@@ -303,15 +308,22 @@ export class NetMatch {
     }
   }
 
-  private startMatch(numFighters: number, seed: number, slot: number): void {
+  private startMatch(numFighters: number, seed: number, slot: number, characterIds?: string[]): void {
     this.numFighters = numFighters;
     this.mySlot = slot;
     this.spectating = slot < 0;
     this.matchStarted = true;
-    // Must match the server's construction exactly, or prediction silently
-    // diverges from authority. See createMatchSim.
-    this.localSim = createMatchSim(seed, numFighters);
-    this.renderSim = createMatchSim(seed, numFighters);
+    // Per-seat characters as resolved server-side (characterIds is a
+    // parallel array to slot index). Falls back to placeholder-for-all if
+    // an older server ever omits the field, matching createMatchSim's own
+    // default. Must match the server's construction exactly, or
+    // prediction silently diverges from authority -- see createMatchSim.
+    this.characters = (characterIds ?? []).map((id) => resolveCharacterId(id));
+    if (this.characters.length !== numFighters) {
+      this.characters = new Array(numFighters).fill(PLACEHOLDER_CHARACTER);
+    }
+    this.localSim = createMatchSim(seed, numFighters, undefined, this.characters);
+    this.renderSim = createMatchSim(seed, numFighters, undefined, this.characters);
     // The server always builds matches via createMatchSim too (see
     // server/src/*), so this.localSim.getArena() is the arena actually
     // being played on -- feed the renderer that, not a default guess.
@@ -520,7 +532,10 @@ export class NetMatch {
 
     const frame: RenderFrame = {
       fighters,
-      characters: new Array(this.numFighters).fill(PLACEHOLDER_CHARACTER),
+      characters:
+        this.characters.length === this.numFighters
+          ? this.characters
+          : new Array(this.numFighters).fill(PLACEHOLDER_CHARACTER),
       items,
       hazards,
       tick: this.currSnapTick,

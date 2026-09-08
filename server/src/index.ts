@@ -97,6 +97,7 @@ function broadcastMatchStart(match: Match): void {
       settings: {},
       arenaId: 'battle-royale-20',
       names: match.seats.map((s) => s.name),
+      characterIds: match.seats.map((s) => s.characterId),
     });
   }
 }
@@ -285,6 +286,7 @@ function handleResume(conn: ClientConn, token: string): void {
     settings: {},
     arenaId: 'battle-royale-20',
     names: match.seats.map((s) => s.name),
+    characterIds: match.seats.map((s) => s.characterId),
   });
 }
 
@@ -313,7 +315,7 @@ function handleText(conn: ClientConn, text: string): void {
       }
 
       const name = sanitiseName(msg.name);
-      const { match, slot } = manager.joinLobby(name);
+      const { match, slot } = manager.joinLobby(name, msg.characterId);
       conn.match = match;
       conn.slot = slot;
       watcherSet(match.id).add(conn.id);

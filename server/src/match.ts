@@ -4,7 +4,7 @@
 import { randomBytes } from 'node:crypto';
 import { Sim, makeInputFrame, type InputFrame, type MatchSettings } from '@bash-fighter/sim/src/index.ts';
 import { BotController, BotDifficulty, deriveBotSeed, type BotDifficultyValue } from '@bash-fighter/sim/src/ai/bot.ts';
-import { createMatchSim } from '@bash-fighter/content/src/index.ts';
+import { createMatchSim, resolveCharacterId, DEFAULT_CHARACTER_ID } from '@bash-fighter/content/src/index.ts';
 import { SNAPSHOT_HZ } from '@bash-fighter/net/src/protocol.ts';
 
 // --- Reconnection (see wiki "Netcode Design Part 3") ------------------------
@@ -63,6 +63,11 @@ export interface Seat {
    *  A bot seat has no ClientConn/websocket, is never a broadcast watcher,
    *  and its input comes from a BotController rather than the network. */
   isBot: boolean;
+  /** Requested character id (from @bash-fighter/content's roster),
+   *  resolved to CharacterData when the sim is built in start(). Defaults
+   *  to DEFAULT_CHARACTER_ID for bots and for any client that didn't send
+   *  one -- see resolveCharacterId's fallback for unknown ids too. */
+  characterId: string;
   /** Latest input received for this slot. Empty (neutral) input is used for
    *  ticks where nothing has arrived yet, or once disconnected -- unchanged
    *  from before reconnection existed. */
@@ -140,7 +145,7 @@ export class Match {
     return this.seats.length;
   }
 
-  addSeat(name: string, isBot = false): Seat {
+  addSeat(name: string, isBot = false, characterId: string = DEFAULT_CHARACTER_ID): Seat {
     const slot = this.seats.length;
     const seat: Seat = {
       slot,
@@ -148,6 +153,7 @@ export class Match {
       connected: true,
       eliminated: false,
       isBot,
+      characterId,
       pendingInput: makeInputFrame(),
       lastInputTick: -1,
       resumeToken: isBot ? null : generateResumeToken(),
@@ -247,7 +253,9 @@ export class Match {
     if (this.phase !== 'lobby') return;
     this.phase = 'playing';
     this.seed = seedFromMatchId(this.id);
-    const characters = undefined; // default placeholder character for every slot, for now
+    // Per-seat character, resolved from each seat's requested id (see
+    // Seat.characterId's comment for the bot/unset/unknown-id fallback).
+    const characters = this.seats.map((seat) => resolveCharacterId(seat.characterId));
     const settingsOverride: Partial<MatchSettings> = {};
     // Test/CI hook only: lets the integration test force a short match
     // instead of waiting out the real multi-minute battle-royale shrink

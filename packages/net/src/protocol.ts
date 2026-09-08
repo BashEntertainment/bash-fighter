@@ -51,6 +51,12 @@ export interface HelloMessage {
    *  ONLY way to reclaim a seat; there is no other path that hands a seat
    *  back based on slot number or match id alone. */
   resume?: string;
+  /** Requested character id from @bash-fighter/content's roster (e.g.
+   *  'placeholder', 'ballast'). Optional and defaults to the placeholder
+   *  character server-side -- required for backward compatibility with
+   *  any client built before character selection existed. Unrecognised
+   *  ids are also treated as absent by the server, never rejected. */
+  characterId?: string;
 }
 
 /** Sent by a client that wants to keep watching after being eliminated. */
@@ -117,6 +123,15 @@ export interface MatchStartMessage {
   /** Identifier of the arena in @bash-fighter/content. */
   arenaId: string;
   names: string[];
+  /** Character id (from @bash-fighter/content's roster) for each seat, in
+   *  slot order -- parallel array to `names`. Lets every client build a
+   *  local Sim with the exact same per-slot CharacterData the server used,
+   *  which is load-bearing for determinism (character weight affects
+   *  knockback) and for rendering the right silhouette for remote
+   *  fighters. Always present and always resolved server-side (never
+   *  'unknown'), so older clients that ignore it lose nothing and newer
+   *  clients never need a fallback for this field specifically. */
+  characterIds: string[];
 }
 
 export interface EliminatedMessage {
@@ -274,11 +289,14 @@ export function parseClientControl(text: string): ClientControlMessage | null {
       if (typeof obj.protocolVersion !== 'number') return null;
       if (typeof obj.name !== 'string') return null;
       const resume = typeof obj.resume === 'string' && obj.resume.length > 0 ? obj.resume : undefined;
+      const characterId =
+        typeof obj.characterId === 'string' && obj.characterId.length > 0 ? obj.characterId : undefined;
       return {
         t: 'hello',
         protocolVersion: obj.protocolVersion,
         name: sanitiseName(obj.name),
         ...(resume ? { resume } : {}),
+        ...(characterId ? { characterId } : {}),
       };
     }
     case 'spectate':

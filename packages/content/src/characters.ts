@@ -7,6 +7,7 @@ import { PLACEHOLDER_CHARACTER } from './characters/placeholder/data.ts';
 import { BALLAST_CHARACTER } from './characters/ballast/data.ts';
 import { VOLTLING_CHARACTER } from './characters/voltling/data.ts';
 import { REED_CHARACTER } from './characters/reed/data.ts';
+import { SCRAPPER_CHARACTER } from './characters/scrapper/data.ts';
 
 export interface CharacterEntry {
   /** Stable wire/storage identifier -- never the display name, so
@@ -24,6 +25,7 @@ export const ALL_CHARACTERS: readonly CharacterEntry[] = [
   { id: 'ballast', character: BALLAST_CHARACTER },
   { id: 'voltling', character: VOLTLING_CHARACTER },
   { id: 'reed', character: REED_CHARACTER },
+  { id: 'scrapper', character: SCRAPPER_CHARACTER },
 ];
 
 /** Resolves a wire-supplied character id to its CharacterData, falling

@@ -9,6 +9,7 @@ import { PALETTE } from './palette.ts';
 import { drawBallastSilhouette } from './fighter-shape-ballast.ts';
 import { drawVoltlingSilhouette } from './fighter-shape-voltling.ts';
 import { drawReedSilhouette } from './fighter-shape-reed.ts';
+import { drawScrapperSilhouette } from './fighter-shape-scrapper.ts';
 import { computePose, NEUTRAL_POSE, type Pose, type PoseInput } from './fighter-pose.ts';
 import type { AnimationParams } from '@bash-fighter/content';
 import type { CharacterData, FighterStateValue } from '@bash-fighter/sim';
@@ -136,6 +137,8 @@ export class FighterSprite {
       drawVoltlingSilhouette(g, tint, state.facing, pose);
     } else if (state.characterName === 'Reed') {
       drawReedSilhouette(g, tint, state.facing, pose);
+    } else if (state.characterName === 'Scrapper') {
+      drawScrapperSilhouette(g, tint, state.facing, pose);
     } else {
       drawPlaceholderSilhouette(g, tint, state.facing, pose);
     }

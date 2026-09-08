@@ -8,6 +8,7 @@ export { PLACEHOLDER_CHARACTER } from './characters/placeholder/data.ts';
 export { BALLAST_CHARACTER } from './characters/ballast/data.ts';
 export { VOLTLING_CHARACTER } from './characters/voltling/data.ts';
 export { REED_CHARACTER } from './characters/reed/data.ts';
+export { SCRAPPER_CHARACTER } from './characters/scrapper/data.ts';
 export {
   ALL_CHARACTERS,
   DEFAULT_CHARACTER_ID,
@@ -24,4 +25,5 @@ export { PLACEHOLDER_ANIMATION } from './characters/placeholder/animation.ts';
 export { BALLAST_ANIMATION } from './characters/ballast/animation.ts';
 export { VOLTLING_ANIMATION } from './characters/voltling/animation.ts';
 export { REED_ANIMATION } from './characters/reed/animation.ts';
+export { SCRAPPER_ANIMATION } from './characters/scrapper/animation.ts';
 export { ANIMATION_BY_CHARACTER_NAME, resolveAnimation } from './animation-registry.ts';

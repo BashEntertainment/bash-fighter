@@ -66,18 +66,20 @@ fi
 
 cd "$RELEASE_DIR"
 
-echo "==> Installing production dependencies"
+# Dev dependencies are required to BUILD (esbuild for the server bundle,
+# vite for the client). They are installed here and are not used at run
+# time -- the service runs a single bundled file.
+echo "==> Installing dependencies (including build tooling)"
 if [ -f package-lock.json ]; then
-  npm ci --omit=dev
+  npm ci
 else
-  npm install --omit=dev
+  npm install
 fi
 
 echo "==> Building (server + client)"
-# These scripts are expected to exist once the game code lands; kept
-# as no-ops (|| true) so this script can be exercised against an empty
-# or partial repo without failing the whole deploy.
-npm run build --if-present || true
+# A build failure must abort the deploy BEFORE any symlink is swapped,
+# so the currently-serving release keeps serving.
+npm run build
 
 if [ ! -d "$RELEASE_DIR/server/dist" ]; then
   echo "WARNING: $RELEASE_DIR/server/dist not found -- service will fail to start until the server build exists." >&2
@@ -87,12 +89,14 @@ echo "==> Pointing current -> $RELEASE_DIR"
 ln -sfn "$RELEASE_DIR" "$CURRENT.new"
 mv -Tf "$CURRENT.new" "$CURRENT"
 
-if [ -d "$RELEASE_DIR/client/dist" ]; then
+CLIENT_DIST="$RELEASE_DIR/packages/app/dist"
+if [ -d "$CLIENT_DIST" ]; then
   echo "==> Publishing static client -> $STATIC"
-  ln -sfn "$RELEASE_DIR/client/dist" "$STATIC.new"
+  ln -sfn "$CLIENT_DIST" "$STATIC.new"
   mv -Tf "$STATIC.new" "$STATIC"
 else
-  echo "==> No client/dist in this release; leaving $STATIC untouched."
+  echo "ERROR: no built client at $CLIENT_DIST" >&2
+  exit 1
 fi
 
 echo "==> Restarting $SERVICE"

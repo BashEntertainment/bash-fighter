@@ -8,6 +8,7 @@
     "server"
   ],
   "scripts": {
+    "build": "npm run build -w @bash-fighter/server && npm run build -w @bash-fighter/app",
     "test": "node --test packages/*/test/**/*.test.ts",
     "test:vitest": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.json",

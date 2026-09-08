@@ -2,7 +2,7 @@
 // a rematch option that resets the match in place.
 import { PALETTE } from '@bash-fighter/render';
 
-const PLAYER_HEX = PALETTE.fighters.map((c) => `#${c.toString(16).padStart(6, '0')}`);
+const PLAYER_HEX = PALETTE.playerColors.map((c) => `#${c.toString(16).padStart(6, '0')}`);
 
 export class WinScreen {
   readonly root: HTMLDivElement;

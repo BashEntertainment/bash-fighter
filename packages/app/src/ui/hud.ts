@@ -13,7 +13,7 @@ export interface HudFighterExtra {
   placement: number | null;
 }
 
-const PLAYER_HEX = PALETTE.fighters.map((c) => `#${c.toString(16).padStart(6, '0')}`);
+const PLAYER_HEX = PALETTE.playerColors.map((c) => `#${c.toString(16).padStart(6, '0')}`);
 
 export class Hud {
   readonly root: HTMLDivElement;
@@ -63,7 +63,7 @@ export class Hud {
     }
   }
 
-  update(snapshots: readonly FighterSnapshot[], extras?: readonly HudFighterExtra[]): void {
+  update(snapshots: readonly FighterSnapshot[], extras?: readonly HudFighterExtra[], localIndex = -1): void {
     this.ensureCards(snapshots.length);
     let survivors = 0;
     for (let i = 0; i < snapshots.length; i++) {
@@ -79,6 +79,7 @@ export class Hud {
       const card = this.cards[i] as HTMLDivElement;
       card.style.display = '';
       card.classList.toggle('eliminated', eliminated);
+      card.classList.toggle('is-you', i === localIndex);
       card.style.borderLeftColor = PLAYER_HEX[i % PLAYER_HEX.length] as string;
       const pctEl = card.querySelector('.pct') as HTMLDivElement;
       const stocksEl = card.querySelector('.stocks') as HTMLDivElement;

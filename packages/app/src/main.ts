@@ -174,7 +174,7 @@ async function beginOnlineMatch(): Promise<void> {
         audio.play('match_start');
       }
       hud.show();
-      hud.update(netMatch.currentSnapshots());
+      hud.update(netMatch.currentSnapshots(), undefined, netMatch.localSlot());
     } else {
       hud.hide();
     }

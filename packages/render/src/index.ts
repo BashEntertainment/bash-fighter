@@ -106,6 +106,10 @@ export interface RenderFrame {
   /** Hit/block/elimination effects observed since the last render() call. */
   hitEffects?: readonly PendingHitEffect[];
   eliminationEffects?: readonly PendingEliminationEffect[];
+  /** Index into `fighters` of this client's own fighter, if any (absent
+   * while spectating). Draws a persistent above-head marker so the local
+   * player stays findable in a 20-fighter crowd. Presentation-only. */
+  localPlayerIndex?: number;
   /** Wall-clock ms to hold the previous frame's drawing before applying
    * new positions this call -- a presentation-only "freeze frame" on a
    * strong hit. Renderer decides internally how long based on strength;
@@ -137,7 +141,7 @@ function mainGroundY(stage: StageBounds): number {
   return stage.platforms[0]?.y ?? 0;
 }
 
-const PLAYER_COLOR_COUNT = PALETTE.fighters.length;
+const PLAYER_COLOR_COUNT = PALETTE.playerColors.length;
 
 export class Renderer {
   readonly app = new Application();
@@ -345,6 +349,7 @@ export class Renderer {
         moveFrame: f.moveFrame,
         character: char,
         anim: char ? resolveAnimation(char.name) : undefined,
+        isLocalPlayer: frame.localPlayerIndex === i,
       });
     }
 

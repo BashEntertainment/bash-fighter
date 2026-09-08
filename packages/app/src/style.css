@@ -319,6 +319,26 @@ html, body {
   color: var(--ink-dim) !important;
 }
 
+/* The local player's own HUD card: a solid border (not just the left
+   accent strip) plus a small "YOU" tag, so it stays findable by scanning
+   card *shape* even in a dense 20-card grid, not colour alone. */
+.hud-card.is-you {
+  border: 1px solid var(--ink);
+  background: rgba(232, 230, 223, 0.08);
+  position: relative;
+}
+
+.hud-card.is-you::before {
+  content: 'YOU';
+  position: absolute;
+  top: 2px;
+  right: 6px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  color: var(--ink);
+}
+
 .spectator-banner {
   position: absolute;
   bottom: 18px;

@@ -37,6 +37,11 @@ export interface FighterVisualState {
   moveFrame?: number;
   character?: CharacterData;
   anim?: AnimationParams;
+  /** True for exactly one fighter per local client: the player's own.
+   * Draws a persistent marker above the fighter that survives a 20-player
+   * crowd. Presentation-only -- never read by the sim, never sent over
+   * the wire. */
+  isLocalPlayer?: boolean;
 }
 
 // World units, not pixels — the root container is scaled by the camera's
@@ -70,10 +75,13 @@ export class FighterSprite {
   private lastState: FighterStateValue | undefined;
   private stateTicks = 0;
 
+  private readonly localMarker = new Graphics();
+
   constructor(playerIndex: number) {
-    this.bodyColor = PALETTE.fighters[playerIndex % PALETTE.fighters.length] as number;
+    this.bodyColor = PALETTE.playerColors[playerIndex % PALETTE.playerColors.length] as number;
     this.root.addChild(this.body);
     this.root.addChild(this.shieldGfx);
+    this.root.addChild(this.localMarker);
   }
 
   draw(state: FighterVisualState): void {
@@ -131,6 +139,23 @@ export class FighterSprite {
 
     this.shieldGfx.clear();
     if (state.shieldActive) this.drawShieldBubble(state);
+
+    this.localMarker.clear();
+    if (state.isLocalPlayer) this.drawLocalMarker();
+  }
+
+  /** A small downward-pointing chevron hovering above the fighter's head,
+   * flat white against the dark arena, plus a thin ring around the feet.
+   * Two independent cues so the marker still reads even if the crowd
+   * partially occludes one of them, without adding any colour, glow, or
+   * animation that could be mistaken for game state. */
+  private drawLocalMarker(): void {
+    const markerY = -(BODY_HEIGHT + HEAD_RADIUS * 2 + 10);
+    const m = this.localMarker;
+    m.moveTo(-6, markerY).lineTo(0, markerY + 7).lineTo(6, markerY).closePath();
+    m.fill({ color: PALETTE.hud });
+    m.circle(0, -1, BODY_WIDTH * 0.85);
+    m.stroke({ color: PALETTE.hud, width: 2, alpha: 0.9 });
   }
 
   private drawShieldBubble(state: FighterVisualState): void {

@@ -9,7 +9,37 @@ export const PALETTE = {
   hud: 0xe8e6df,
   hudDim: 0x8a8f98,
   danger: 0xd7593f,
-  fighters: [0xe8b23c, 0x4fa3c4] as const, // P1 amber, P2 cyan-blue
+  fighters: [0xe8b23c, 0x4fa3c4] as const, // P1 amber, P2 cyan-blue -- kept for any code that still only knows two slots
+  // 20-entry FFA player palette. Hues are spread roughly every ~18deg
+  // around the wheel (no two adjacent slots reading as the same colour) at
+  // high saturation and a lightness tuned for strong contrast against the
+  // #0a0a0a-class background and against each other. Two meanings are
+  // reserved elsewhere in this vocabulary -- danger (red, ~6deg hue) and
+  // hazardWarning/amber (~38deg) -- so every entry here is deliberately
+  // pushed clear of those hues; none of these should read as "you are
+  // being hit" or "incoming hazard" at a glance.
+  playerColors: [
+    0xf2c94c, // 0  gold-yellow
+    0x9bd94c, // 1  lime
+    0x4cd97a, // 2  green
+    0x4cd9b0, // 3  teal
+    0x4cc9d9, // 4  cyan
+    0x4c9ed9, // 5  sky blue
+    0x4c6fd9, // 6  blue
+    0x7a4cd9, // 7  indigo
+    0xac4cd9, // 8  violet
+    0xd94cc9, // 9  magenta
+    0xd94c8f, // 10 rose
+    0xc97a6a, // 11 dusty coral (kept well clear of pure danger-red hue)
+    0xd9a34c, // 12 ochre
+    0xc9d94c, // 13 chartreuse
+    0x6fd94c, // 14 grass green
+    0x4cd9d0, // 15 aqua
+    0x4c8fd9, // 16 azure
+    0x8f4cd9, // 17 purple
+    0xd94ca3, // 18 pink
+    0xe6e6e6, // 19 near-white (last slot, still reads flat against near-black)
+  ] as const,
   fighterOutline: 0x0b0d10,
   hitbox: 0xd7593f,
   hurtbox: [0xf0cf7c, 0x9cc9de] as const, // per-owner, dimmer than fill

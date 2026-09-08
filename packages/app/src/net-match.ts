@@ -430,6 +430,12 @@ export class NetMatch {
    * bookkeeping needed. */
   /** True once startMatch() has run and there is a real sim/arena to show a
    * HUD for -- guards main.ts from showing fighter cards during lobby wait. */
+  /** Index of this client's own fighter, or -1 while unassigned/spectating.
+   * Used by the HUD to mark the local player's card distinctly. */
+  localSlot(): number {
+    return !this.spectating && this.mySlot >= 0 ? this.mySlot : -1;
+  }
+
   hasStarted(): boolean {
     return this.localSim !== null;
   }
@@ -542,6 +548,7 @@ export class NetMatch {
       hash: '',
       hitEffects: this.pendingHitEffects,
       eliminationEffects: this.pendingEliminationEffects,
+      localPlayerIndex: !this.spectating && this.mySlot >= 0 ? this.mySlot : undefined,
     };
     this.pendingHitEffects = [];
     this.pendingEliminationEffects = [];

@@ -16,7 +16,6 @@ export function drawAnchorSilhouette(g: Graphics, tint: number, facing: 1 | -1, 
   // slightly rounded corners -- reads as an immovable block rather than
   // any curved/angular shape used elsewhere.
   const topY = -HEIGHT;
-  const botY = 0;
   g.roundRect(-HALF_W, topY, HALF_W * 2, HEIGHT, 4);
   g.fill({ color: tint });
   g.stroke({ color: PALETTE.fighterOutline, width: 3.5 });

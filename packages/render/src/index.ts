@@ -277,6 +277,19 @@ export class Renderer {
     // the last render() call into screen space using *this* frame's
     // camera, then hand them to the effects layer. This is the only place
     // world coordinates ever get turned into shake/particle positions.
+    // DEV-ONLY debug hook, inert unless a developer explicitly sets
+    // window.__debugFreezeOnNextEffect = true from the console/devtools
+    // (e.g. via a browser_batch javascript step right before landing a
+    // hit while testing). Lets you screenshot a live flash/spark/shake
+    // frame despite screenshot round-trip latency exceeding the effect's
+    // natural lifetime. Ships inert: this block only ever does anything
+    // if that global was set, which nothing in the app does on its own.
+    const win = typeof window !== 'undefined' ? (window as unknown as Record<string, unknown>) : undefined;
+    if (win?.__debugUnfreeze) {
+      this.freezeRemainingMs = 0;
+      win.__debugUnfreeze = false;
+    }
+
     for (const hit of frame.hitEffects ?? []) {
       const screen = worldToScreen(hit.worldX, hit.worldY, cam, vw, vh);
       // Direction is a vector, not a point: flip Y (world Y-up -> screen
@@ -388,6 +401,15 @@ export class Renderer {
       this.debugText.text = formatDebugText(debugInputs, frame.tick, frame.hash);
     } else {
       this.debugLayer.clear();
+    }
+
+    // DEV-ONLY debug freeze trigger: only arms *after* this frame -- which
+    // just drew the flash/spark/shake/elimination-ring -- has been fully
+    // rendered, so the frozen picture is the effect itself, not the frame
+    // before it. See the __debugUnfreeze check near the top of render().
+    if (win?.__debugFreezeOnNextEffect && ((frame.hitEffects?.length ?? 0) > 0 || (frame.eliminationEffects?.length ?? 0) > 0)) {
+      win.__debugFreezeOnNextEffect = false;
+      this.freezeRemainingMs = Number.POSITIVE_INFINITY; // held until __debugUnfreeze is set
     }
   }
 

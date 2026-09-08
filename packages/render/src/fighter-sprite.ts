@@ -4,6 +4,7 @@
 // the renderer's structure.
 import { Graphics } from 'pixi.js';
 import { PALETTE } from './palette.ts';
+import { drawBallastSilhouette } from './fighter-shape-ballast.ts';
 
 export interface FighterVisualState {
   facing: 1 | -1;
@@ -15,6 +16,11 @@ export interface FighterVisualState {
    * through the post-hit flash this fighter currently is. 0 = normal
    * colour. Purely presentational; never read by the sim. */
   flashAmount?: number;
+  /** CharacterData.name for this fighter, if known. Additive: selects an
+   * alternate silhouette (see fighter-shape-ballast.ts) for characters
+   * other than the placeholder capsule. Undefined/unknown falls back to
+   * the default capsule-plus-head shape below. */
+  characterName?: string;
 }
 
 // World units, not pixels — the root container is scaled by the camera's
@@ -56,6 +62,12 @@ export class FighterSprite {
     const baseTint = state.hitstun > 0 ? PALETTE.danger : this.bodyColor;
     const tint = flash > 0 ? lerpColor(baseTint, PALETTE.hud, flash * 0.85) : baseTint;
 
+    if (state.characterName === 'Ballast') {
+      drawBallastSilhouette(g, tint, state.facing);
+      if (state.shieldActive) this.drawShieldBubble(state);
+      return;
+    }
+
     // Torso (capsule): rounded rect centered on origin, feet at y=0 going up.
     g.roundRect(-BODY_WIDTH / 2, -BODY_HEIGHT, BODY_WIDTH, BODY_HEIGHT - HEAD_RADIUS * 0.6, 10);
     g.fill({ color: tint });
@@ -77,11 +89,13 @@ export class FighterSprite {
     g.fill({ color: PALETTE.fighterOutline });
 
     // Shield bubble.
-    if (state.shieldActive) {
-      const r = BODY_WIDTH * 0.95;
-      g.circle(0, -BODY_HEIGHT / 2, r);
-      g.stroke({ color: PALETTE.hud, width: 2, alpha: 0.5 + 0.5 * state.shieldHealthFrac });
-      g.fill({ color: PALETTE.hud, alpha: 0.08 + 0.1 * state.shieldHealthFrac });
-    }
+    if (state.shieldActive) this.drawShieldBubble(state);
+  }
+
+  private drawShieldBubble(state: FighterVisualState): void {
+    const r = BODY_WIDTH * 0.95;
+    this.root.circle(0, -BODY_HEIGHT / 2, r);
+    this.root.stroke({ color: PALETTE.hud, width: 2, alpha: 0.5 + 0.5 * state.shieldHealthFrac });
+    this.root.fill({ color: PALETTE.hud, alpha: 0.08 + 0.1 * state.shieldHealthFrac });
   }
 }

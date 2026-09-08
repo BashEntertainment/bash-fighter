@@ -337,6 +337,7 @@ export class Renderer {
         shieldHealthFrac: fx.toFloat(f.shieldHealth) / 100,
         isDead: f.state === FighterStateId.DEAD,
         flashAmount: this.effects.flashAmount(i),
+        characterName: frame.characters[i]?.name,
       });
     }
 

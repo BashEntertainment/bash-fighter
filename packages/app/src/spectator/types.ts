@@ -1,11 +1,7 @@
-// The interface the spectator system needs from the match/sim. Branch
-// 19890 (packages/sim generalisation) is landing real eliminated /
-// eliminationTick / placement / koCount fields and live shrinking arena
-// bounds; until that's on main, StubMatchAdapter (stub-adapter.ts)
-// approximates it from the fields the current 2-fighter sim already
-// exposes (stocks). Swap the adapter's internals, not this interface,
-// once the real fields land — nothing outside spectator/ should need to
-// change.
+// The interface the spectator system needs from the match/sim.
+// SimMatchAdapter (sim-adapter.ts) implements this directly off packages/sim's
+// real eliminated / eliminationTick / placement / koCount fields and its
+// live shrinking blast rect (both landed in commits 6b3db1e/0a33710).
 export interface FighterMatchStatus {
   eliminated: boolean;
   eliminationTick: number | null;

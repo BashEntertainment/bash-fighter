@@ -4,7 +4,7 @@ import { StartScreen } from './ui/start-screen.ts';
 import { WinScreen } from './ui/win-screen.ts';
 import { Hud } from './ui/hud.ts';
 import { SpectatorBanner } from './ui/spectator-banner.ts';
-import { StubMatchAdapter } from './spectator/stub-adapter.ts';
+import { SimMatchAdapter } from './spectator/sim-adapter.ts';
 import { SpectatorController } from './spectator/controller.ts';
 import { NetMatch, type ConnectionState } from './net-match.ts';
 import type { ArenaBounds } from '@bash-fighter/render';
@@ -34,7 +34,7 @@ debugHint.textContent = 'F3 debug · TAB cycle survivors · O overview';
 appRoot.appendChild(debugHint);
 
 let match: Match | null = null;
-let adapter: StubMatchAdapter | null = null;
+let adapter: SimMatchAdapter | null = null;
 let spectator: SpectatorController | null = null;
 let matchGeneration = 0;
 let lastFrameTimeMs: number | null = null;
@@ -185,7 +185,7 @@ async function beginMatch(): Promise<void> {
     },
   });
   match = localMatch;
-  adapter = new StubMatchAdapter(localMatch);
+  adapter = new SimMatchAdapter(localMatch);
   spectator = new SpectatorController(adapter, LOCAL_SLOT, {
     centerX: (STATIC_ARENA.minX + STATIC_ARENA.maxX) / 2,
     centerY: (STATIC_ARENA.minY + STATIC_ARENA.maxY) / 2,
@@ -199,7 +199,7 @@ async function beginMatch(): Promise<void> {
     if (generation !== matchGeneration) return;
     if (match && adapter) {
       const extras = Array.from({ length: adapter.fighterCount }, (_, i) => {
-        const status = (adapter as StubMatchAdapter).status(i);
+        const status = (adapter as SimMatchAdapter).status(i);
         return { eliminated: status.eliminated, placement: status.placement };
       });
       hud.update(match.currentSnapshots(), extras);

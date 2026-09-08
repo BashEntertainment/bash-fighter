@@ -46,6 +46,11 @@ export const MAX_FIGHTERS = 32;
 export const GRAVITY: Fixed = fx.fromFloat(-0.85);
 export const GROUND_Y: Fixed = fx.fromInt(0);
 export const JUMP_VELOCITY: Fixed = fx.fromFloat(14.0);
+// Aerial (second) jump is slightly weaker than the grounded jump: gives
+// recovery options without matching the grounded jump's height 1:1,
+// which reads better and avoids trivializing edgeguards. 0.85x chosen by
+// feel per the wiki's "Combat Model" doc guidance to document tuning calls.
+export const DOUBLE_JUMP_VELOCITY: Fixed = fx.fromFloat(14.0 * 0.85);
 export const MOVE_SPEED: Fixed = fx.fromFloat(4.5);
 export const TERMINAL_VELOCITY: Fixed = fx.fromFloat(-20.0);
 /** Safety margin for hit-resolution broad-phase queries: comfortably
@@ -146,8 +151,14 @@ const FighterField = {
   ELIMINATED: 20, // 0/1: out of the match for good (DEAD, no more lives)
   ELIMINATED_TICK: 21, // tick this fighter was eliminated, -1 if not
   PLACEMENT: 22, // 1 = winner, N = first eliminated; 0 = not yet decided
-  FIELD_COUNT: 23,
+  JUMPS_USED: 23, // jumps taken since last grounded; reset to 0 on landing
+  PREV_JUMP_HELD: 24, // 0/1: BUTTON_JUMP state last tick, for edge-triggering
+  FIELD_COUNT: 25,
 } as const;
+
+/** Max jumps allowed per airborne phase: one grounded jump + one aerial
+ * ("double") jump, matching standard platform-fighter convention. */
+export const MAX_JUMPS = 2;
 
 const RNG_FIELD_WORDS = 4; // s0 lo/hi, s1 lo/hi
 const TICK_WORDS = 1;
@@ -192,6 +203,7 @@ export interface FighterSnapshot {
   eliminated: boolean;
   eliminatedTick: number; // -1 if not eliminated
   placement: number; // 0 until decided; 1 = winner
+  jumpsUsed: number; // jumps taken since last grounded (0..MAX_JUMPS)
 }
 
 export interface ItemSnapshot {
@@ -349,6 +361,8 @@ export class Sim {
     d[base + FighterField.ELIMINATED] = 0;
     d[base + FighterField.ELIMINATED_TICK] = -1;
     d[base + FighterField.PLACEMENT] = 0;
+    d[base + FighterField.JUMPS_USED] = 0;
+    d[base + FighterField.PREV_JUMP_HELD] = 0;
   }
 
   /** Mid-match life reset after a non-final KO: position/percent/shield
@@ -371,6 +385,8 @@ export class Sim {
     d[base + FighterField.GROUNDED] = 1;
     d[base + FighterField.RESPAWN_TIMER] = 0;
     d[base + FighterField.INVULN_TIMER] = this.settings.respawnInvulnTicks;
+    d[base + FighterField.JUMPS_USED] = 0;
+    d[base + FighterField.PREV_JUMP_HELD] = 0;
     this.setState(base, FighterStateId.IDLE);
   }
 
@@ -480,6 +496,7 @@ export class Sim {
       eliminated: (d[base + FighterField.ELIMINATED] as number) !== 0,
       eliminatedTick: d[base + FighterField.ELIMINATED_TICK] as number,
       placement: d[base + FighterField.PLACEMENT] as number,
+      jumpsUsed: d[base + FighterField.JUMPS_USED] as number,
     };
   }
 
@@ -706,6 +723,14 @@ export class Sim {
       d[base + FighterField.INVULN_TIMER] = (d[base + FighterField.INVULN_TIMER] as number) - 1;
     }
 
+    // Edge-trigger bookkeeping for the jump button: updated unconditionally
+    // every tick (even through hitstun/attack/respawn states) so a held
+    // button never queues up a jump that fires the instant control returns
+    // to the player — only the tick the button transitions low->high counts.
+    const jumpHeldNow = (input.buttons & BUTTON_JUMP) !== 0;
+    const jumpEdge = jumpHeldNow && (d[base + FighterField.PREV_JUMP_HELD] as number) === 0;
+    d[base + FighterField.PREV_JUMP_HELD] = jumpHeldNow ? 1 : 0;
+
     if (state === FighterStateId.DEAD) {
       // Eliminated for good: no physics, no input, no timers.
       return;
@@ -848,10 +873,14 @@ export class Sim {
     if (velX > 0) facing = 1;
     else if (velX < 0) facing = -1;
 
-    if (grounded && (input.buttons & BUTTON_JUMP) !== 0) {
-      velY = JUMP_VELOCITY;
+    let jumpsUsed = d[base + FighterField.JUMPS_USED] as number;
+    if (grounded) jumpsUsed = 0; // landed (or never left): both jumps refreshed
+    if (jumpEdge && jumpsUsed < MAX_JUMPS) {
+      velY = grounded ? JUMP_VELOCITY : DOUBLE_JUMP_VELOCITY;
       grounded = false;
+      jumpsUsed = (jumpsUsed + 1) | 0;
     }
+    d[base + FighterField.JUMPS_USED] = jumpsUsed;
 
     if (!grounded) {
       velY = fx.add(velY, GRAVITY);

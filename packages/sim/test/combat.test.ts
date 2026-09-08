@@ -193,7 +193,7 @@ describe('Sim: meteor knockback off-stage', () => {
     // separate question of whether an attack can connect at range.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const view = (sim as any).data as Int32Array;
-    const FIELD_COUNT = 23;
+    const FIELD_COUNT = 25; // FighterField.FIELD_COUNT (kept in sync manually; see sim.ts)
     const STATE = 4;
     const GROUNDED = 6;
     const POS_X = 0;

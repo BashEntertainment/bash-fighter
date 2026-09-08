@@ -1,9 +1,17 @@
-// In-match HUD: percent + stocks per fighter. Built as a data-driven list
-// (not "left card / right card") so it degrades from two big readouts to a
-// compact row/list as fighter count grows toward a 20-player FFA, without
-// a structural rewrite — same markup, denser CSS class for N>4.
+// In-match HUD: percent + stocks per fighter, plus a survivors-remaining
+// count once fighters start getting eliminated. Built as a data-driven
+// list (not "left card / right card") so it degrades from two big
+// readouts to a compact row/list as fighter count grows toward a
+// 20-player FFA, without a structural rewrite — same markup, denser CSS
+// class for N>4. Eliminated status is optional per-card input, sourced
+// from spectator/types.ts's MatchAdapter once wired up.
 import { fixed as fx, FighterStateId, type FighterSnapshot } from '@bash-fighter/sim';
 import { PALETTE } from '@bash-fighter/render';
+
+export interface HudFighterExtra {
+  eliminated: boolean;
+  placement: number | null;
+}
 
 const PLAYER_HEX = PALETTE.fighters.map((c) => `#${c.toString(16).padStart(6, '0')}`);
 
@@ -12,12 +20,17 @@ export class Hud {
   private readonly list: HTMLDivElement;
   private cards: HTMLDivElement[] = [];
 
+  private readonly survivorsLine: HTMLDivElement;
+
   constructor(parent: HTMLElement) {
     this.root = document.createElement('div');
     this.root.id = 'hud';
     this.root.className = 'hidden';
+    this.survivorsLine = document.createElement('div');
+    this.survivorsLine.className = 'survivors-line';
     this.list = document.createElement('div');
     this.list.className = 'hud-list';
+    this.root.appendChild(this.survivorsLine);
     this.root.appendChild(this.list);
     parent.appendChild(this.root);
   }
@@ -44,20 +57,32 @@ export class Hud {
     }
   }
 
-  update(snapshots: readonly FighterSnapshot[]): void {
+  update(snapshots: readonly FighterSnapshot[], extras?: readonly HudFighterExtra[]): void {
     this.ensureCards(snapshots.length);
+    let survivors = 0;
     for (let i = 0; i < snapshots.length; i++) {
       const s = snapshots[i] as FighterSnapshot;
+      const extra = extras?.[i];
+      const eliminated = extra?.eliminated ?? false;
+      if (!eliminated) survivors++;
       const card = this.cards[i] as HTMLDivElement;
       card.style.display = '';
+      card.classList.toggle('eliminated', eliminated);
       card.style.borderLeftColor = PLAYER_HEX[i % PLAYER_HEX.length] as string;
       const pctEl = card.querySelector('.pct') as HTMLDivElement;
       const stocksEl = card.querySelector('.stocks') as HTMLDivElement;
       const pct = Math.round(fx.toFloat(s.percent));
       pctEl.textContent = `${pct}%`;
       pctEl.style.color = s.state === FighterStateId.DEAD ? '#666' : pct >= 100 ? PALETTE_DANGER_HEX : '';
-      stocksEl.textContent = '●'.repeat(Math.max(0, s.stocks)) || '—';
+      if (eliminated) {
+        stocksEl.textContent = extra?.placement ? `OUT · ${extra.placement}` : 'OUT';
+      } else {
+        stocksEl.textContent = '●'.repeat(Math.max(0, s.stocks)) || '—';
+      }
     }
+    this.survivorsLine.textContent =
+      snapshots.length > 2 || extras ? `${survivors} / ${snapshots.length} remaining` : '';
+    this.survivorsLine.style.display = this.survivorsLine.textContent ? '' : 'none';
   }
 }
 

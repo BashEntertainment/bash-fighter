@@ -5,12 +5,15 @@
 import { Application, Container, Graphics } from 'pixi.js';
 import { fixed as fx, FighterStateId, type CharacterData, type FighterStateValue } from '@bash-fighter/sim';
 import { PALETTE } from './palette.ts';
-import { computeCamera, worldToScreen, type CameraConfig } from './camera.ts';
+import { computeCamera, worldToScreen, type ArenaBounds, type CameraConfig, type CameraView } from './camera.ts';
 import { drawStage, type StageBounds } from './stage.ts';
 import { FighterSprite } from './fighter-sprite.ts';
 import { drawDebugBoxes, makeDebugText, formatDebugText, type DebugFighterInput } from './debug-overlay.ts';
 
 export type { StageBounds } from './stage.ts';
+export type { ArenaBounds, CameraView, CameraConfig } from './camera.ts';
+export { computeCamera, worldToScreen } from './camera.ts';
+export { computeFollowCamera, computeOverviewCamera, SmoothedCamera, type FollowConfig } from './spectator-camera.ts';
 export { PALETTE, FONT_FAMILY, UI_FONT_FAMILY } from './palette.ts';
 
 /** One fighter's render-ready state: world-space floats, already
@@ -26,6 +29,9 @@ export interface RenderFighterState {
   stocks: number;
   shieldHealth: number; // Fixed
   hitstun: number;
+  /** Match-level elimination (battle-royale "out"), distinct from the
+   * sim's per-life DEAD state. An eliminated fighter is never drawn. */
+  eliminated?: boolean;
 }
 
 export interface RenderFrame {
@@ -33,6 +39,15 @@ export interface RenderFrame {
   characters: readonly CharacterData[];
   tick: number;
   hash: string;
+  /** Live arena bounds (e.g. a shrinking battle-royale blast zone) to
+   * draw and frame instead of the static stage bounds. Falls back to the
+   * Renderer's static StageBounds-derived arena when omitted. */
+  liveArenaBounds?: ArenaBounds;
+  /** When set, the renderer paints with this exact camera instead of
+   * computing its own fit-everyone camera. This is how the app layer's
+   * spectator camera (follow / overview / smoothed) takes over — the
+   * renderer stays a dumb painter and never decides spectate policy. */
+  cameraOverride?: CameraView;
 }
 
 // Fighters spread by roughly a screen-width during normal play; a
@@ -125,19 +140,35 @@ export class Renderer {
   render(frame: RenderFrame): void {
     if (!this.ready) return;
     const { width: vw, height: vh } = this.viewSize;
-    const n = frame.fighters.length;
-    this.ensureSpritePool(n);
+    const liveFighters = frame.fighters.filter((f) => !f.eliminated);
+    this.ensureSpritePool(frame.fighters.length);
 
-    const cam = computeCamera(
-      frame.fighters.map((f) => ({ x: f.x, y: f.y })),
-      cameraConfig(this.stageBounds, vw, vh),
-    );
+    const stageForDraw: StageBounds = frame.liveArenaBounds
+      ? {
+          ...this.stageBounds,
+          blastMinX: frame.liveArenaBounds.minX,
+          blastMaxX: frame.liveArenaBounds.maxX,
+          blastMinY: frame.liveArenaBounds.minY,
+          blastMaxY: frame.liveArenaBounds.maxY,
+        }
+      : this.stageBounds;
 
-    drawStage(this.stageLayer, this.stageBounds, cam, vw, vh);
+    const cam =
+      frame.cameraOverride ??
+      computeCamera(
+        liveFighters.map((f) => ({ x: f.x, y: f.y })),
+        cameraConfig(stageForDraw, vw, vh),
+      );
 
-    for (let i = 0; i < n; i++) {
+    drawStage(this.stageLayer, stageForDraw, cam, vw, vh);
+
+    for (let i = 0; i < frame.fighters.length; i++) {
       const f = frame.fighters[i] as RenderFighterState;
       const sprite = this.sprites[i] as FighterSprite;
+      if (f.eliminated) {
+        sprite.root.visible = false;
+        continue;
+      }
       sprite.root.visible = true;
       const screen = worldToScreen(f.x, f.y, cam, vw, vh);
       sprite.root.position.set(screen.x, screen.y);
@@ -152,16 +183,19 @@ export class Renderer {
     }
 
     if (this.debugOn) {
-      const debugInputs: DebugFighterInput[] = frame.fighters.map((f, i) => ({
-        x: f.x,
-        y: f.y,
-        facing: f.facing,
-        state: f.state,
-        moveId: f.moveId,
-        moveFrame: f.moveFrame,
-        percent: f.percent,
-        character: frame.characters[i] as CharacterData,
-      }));
+      const debugInputs: DebugFighterInput[] = frame.fighters
+        .map((f, i) => ({ f, i }))
+        .filter(({ f }) => !f.eliminated)
+        .map(({ f, i }) => ({
+          x: f.x,
+          y: f.y,
+          facing: f.facing,
+          state: f.state,
+          moveId: f.moveId,
+          moveFrame: f.moveFrame,
+          percent: f.percent,
+          character: frame.characters[i] as CharacterData,
+        }));
       drawDebugBoxes(this.debugLayer, debugInputs, cam, vw, vh);
       this.debugText.text = formatDebugText(debugInputs, frame.tick, frame.hash);
     } else {

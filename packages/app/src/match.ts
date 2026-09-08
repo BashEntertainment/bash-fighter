@@ -1,10 +1,9 @@
 // Glue: owns the Sim, the InputManager, and the Renderer, and drives them
-// from the fixed-timestep loop. Iterates fighters by NUM_FIGHTERS (from
+// from the fixed-timestep loop. Iterates fighters by this.sim.numFighters (
 // the sim) rather than assuming 2, so the app layer isn't what blocks a
 // future N-fighter sim.
 import {
   Sim,
-  NUM_FIGHTERS,
   fixed as fx,
   hashStateBuffer,
   type StateBuffer,
@@ -37,6 +36,10 @@ export const STAGE_BOUNDS: StageBounds = {
 export interface MatchEvents {
   onStockLost?(fighterIndex: number, stocksRemaining: number): void;
   onMatchOver?(winnerIndex: number | null): void;
+  /** Runs right before a frame is handed to the renderer. Lets the app
+   * layer (spectator camera, elimination flags) rewrite the frame
+   * without the Match/Renderer needing to know about spectate policy. */
+  transformFrame?(frame: RenderFrame): RenderFrame;
 }
 
 function lerp(a: number, b: number, t: number): number {
@@ -44,7 +47,7 @@ function lerp(a: number, b: number, t: number): number {
 }
 
 /** Runs one local match: fixed 60Hz sim + interpolated render + input
- * sampling. Fighter count comes from NUM_FIGHTERS, read once, not 2
+ * sampling. Fighter count comes from this.sim.numFighters, read once, not 2
  * literals scattered through this file. */
 export class Match {
   readonly sim: Sim;
@@ -58,14 +61,18 @@ export class Match {
   private over = false;
   private readonly hashBuf: StateBuffer;
 
+  private readonly numFighters: number;
+
   constructor(
     parent: HTMLElement,
-    characters: CharacterData[] = new Array(NUM_FIGHTERS).fill(PLACEHOLDER_CHARACTER),
+    characters: CharacterData[] = new Array(2).fill(PLACEHOLDER_CHARACTER),
     seed: number = 1,
     private readonly events: MatchEvents = {},
+    sim?: Sim,
   ) {
     this.characters = characters;
-    this.sim = new Sim(seed, characters as [CharacterData, CharacterData]);
+    this.sim = sim ?? new Sim(seed, characters.length, characters);
+    this.numFighters = this.sim.numFighters;
     this.renderer = new Renderer(STAGE_BOUNDS);
     this.prevSnapshots = this.snapshotAll();
     this.currSnapshots = this.snapshotAll();
@@ -102,7 +109,7 @@ export class Match {
 
   private snapshotAll(): FighterSnapshot[] {
     const out: FighterSnapshot[] = [];
-    for (let i = 0; i < NUM_FIGHTERS; i++) out.push(this.sim.getFighter(i));
+    for (let i = 0; i < this.numFighters; i++) out.push(this.sim.getFighter(i));
     return out;
   }
 
@@ -114,7 +121,7 @@ export class Match {
     this.prevSnapshots = this.currSnapshots;
     this.currSnapshots = this.snapshotAll();
 
-    for (let i = 0; i < NUM_FIGHTERS; i++) {
+    for (let i = 0; i < this.numFighters; i++) {
       const stocks = (this.currSnapshots[i] as FighterSnapshot).stocks;
       if (stocks < (this.lastStocks[i] as number)) {
         this.events.onStockLost?.(i, stocks);
@@ -130,7 +137,7 @@ export class Match {
 
   private renderFrame(alpha: number): void {
     const fighters: RenderFighterState[] = [];
-    for (let i = 0; i < NUM_FIGHTERS; i++) {
+    for (let i = 0; i < this.numFighters; i++) {
       const prev = this.prevSnapshots[i] as FighterSnapshot;
       const curr = this.currSnapshots[i] as FighterSnapshot;
       fighters.push({
@@ -152,7 +159,7 @@ export class Match {
       tick: this.sim.getTick(),
       hash: this.currentHash(),
     };
-    this.renderer.render(frame);
+    this.renderer.render(this.events.transformFrame ? this.events.transformFrame(frame) : frame);
   }
 
   currentSnapshots(): readonly FighterSnapshot[] {

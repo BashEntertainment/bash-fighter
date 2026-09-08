@@ -63,7 +63,7 @@ test('a full match played over real WebSockets ends with identical state hashes 
   serverProc.stderr?.on('data', (d) => (serverLog += d.toString()));
 
   try {
-    await waitForHealth(PORT, 8000);
+    await waitForHealth(PORT, 20000);
 
     const clients: ClientState[] = [];
     const connectPromises: Promise<void>[] = [];

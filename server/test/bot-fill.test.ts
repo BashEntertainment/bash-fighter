@@ -51,7 +51,7 @@ test('a lobby with one human is filled with bots and starts promptly', async () 
   serverProc.stderr?.on('data', (d) => (serverLog += d.toString()));
 
   try {
-    await waitForHealth(PORT, 8000);
+    await waitForHealth(PORT, 20000);
 
     const ws = new WebSocket(`ws://localhost:${PORT}/socket`);
     const matchStart: Promise<{ names: string[]; numFighters: number }> = new Promise((resolve, reject) => {

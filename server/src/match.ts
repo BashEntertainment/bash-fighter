@@ -1,7 +1,7 @@
 // One Match = one Sim + one fixed-tick loop + the connected clients playing
 // or spectating it. Matches are fully isolated: no shared mutable state
 // between matches, no global game instance.
-import { Sim, makeInputFrame, type InputFrame } from '@bash-fighter/sim/src/index.ts';
+import { Sim, makeInputFrame, type InputFrame, type MatchSettings } from '@bash-fighter/sim/src/index.ts';
 import { BATTLE_ROYALE_20_ARENA } from '@bash-fighter/content/src/index.ts';
 import { SNAPSHOT_HZ } from '@bash-fighter/net/src/protocol.ts';
 
@@ -107,7 +107,13 @@ export class Match {
     this.phase = 'playing';
     this.seed = seedFromMatchId(this.id);
     const characters = undefined; // default placeholder character for every slot, for now
-    this.sim = new Sim(this.seed, this.seats.length, characters, BATTLE_ROYALE_20_ARENA);
+    const settingsOverride: Partial<MatchSettings> = {};
+    // Test/CI hook only: lets the integration test force a short match
+    // instead of waiting out the real multi-minute battle-royale shrink
+    // clock. Never set in production (systemd unit does not set it).
+    const shrinkOverride = process.env.MATCH_SHRINK_FULLY_CLOSED_TICK;
+    if (shrinkOverride) settingsOverride.shrinkFullyClosedTick = Number(shrinkOverride);
+    this.sim = new Sim(this.seed, this.seats.length, characters, BATTLE_ROYALE_20_ARENA, settingsOverride);
     this.lastTickAt = Date.now();
     this.accumulatorMs = 0;
     this.timer = setInterval(() => this.loop(), TICK_MS);

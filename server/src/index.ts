@@ -1,6 +1,12 @@
 // Bash Fighter authoritative match server. Server-owned deterministic sim,
 // one per match; clients only send inputs and receive snapshots. See
 // docs/PROTOCOL.md for the wire format.
+//
+// Module-level state (clients/watchers/manager) is fine here: one process
+// runs one server. Tests that want an isolated instance run this in a
+// child process or import createBashFighterServer, which is exercised by
+// server/test/integration.test.ts via a spawned child process so multiple
+// test runs never share this module's state.
 import http from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { WebSocketServer, WebSocket } from 'ws';
@@ -14,11 +20,13 @@ import {
   type WireSnapshot,
 } from '@bash-fighter/net/src/protocol.ts';
 import { RoomManager, DEFAULT_CAPACITY, DEFAULT_MINIMUM } from './rooms.ts';
-import type { Match, Seat } from './match.ts';
+import type { Match } from './match.ts';
 
-const PORT = Number(process.env.PORT ?? 8081);
-const CAPACITY = Number(process.env.MATCH_CAPACITY ?? DEFAULT_CAPACITY);
-const MINIMUM = Number(process.env.MATCH_MINIMUM ?? DEFAULT_MINIMUM);
+export interface ServerOptions {
+  port?: number;
+  capacity?: number;
+  minimum?: number;
+}
 
 interface ClientConn {
   id: string;
@@ -27,7 +35,6 @@ interface ClientConn {
   slot: number; // -1 = pure spectator / not yet assigned
   spectating: boolean;
   helloed: boolean;
-  alive: boolean;
 }
 
 const clients = new Map<string, ClientConn>();
@@ -44,8 +51,8 @@ function sendBinary(conn: ClientConn, bytes: Uint8Array): void {
   conn.ws.send(bytes);
 }
 
-function closeWithError(conn: ClientConn, code: ServerControlMessage extends { code: infer C } ? C : never, message: string): void {
-  send(conn, { t: 'error', code: code as never, message });
+function closeWithError(conn: ClientConn, code: 'protocol_mismatch' | 'bad_message' | 'match_full' | 'server_error', message: string): void {
+  send(conn, { t: 'error', code, message });
   conn.ws.close();
 }
 
@@ -122,6 +129,8 @@ function makeEventsFor(matchId: string) {
   };
 }
 
+const CAPACITY = Number(process.env.MATCH_CAPACITY ?? DEFAULT_CAPACITY);
+const MINIMUM = Number(process.env.MATCH_MINIMUM ?? DEFAULT_MINIMUM);
 const manager = new RoomManager(makeEventsFor, CAPACITY, MINIMUM);
 
 const server = http.createServer((req, res) => {
@@ -151,7 +160,6 @@ wss.on('connection', (ws) => {
     slot: -1,
     spectating: false,
     helloed: false,
-    alive: true,
   };
   clients.set(conn.id, conn);
 
@@ -169,8 +177,10 @@ wss.on('connection', (ws) => {
   });
 
   ws.on('close', () => {
-    if (conn.match) conn.match.markDisconnected(conn.slot);
-    if (conn.match) watcherSet(conn.match.id).delete(conn.id);
+    if (conn.match) {
+      conn.match.markDisconnected(conn.slot);
+      watcherSet(conn.match.id).delete(conn.id);
+    }
     clients.delete(conn.id);
   });
 
@@ -228,9 +238,10 @@ function handleBinary(conn: ClientConn, data: Buffer): void {
   conn.match.setInput(conn.slot, { buttons: input.buttons, stickX: input.stickX, stickY: input.stickY }, input.tick);
 }
 
-setInterval(() => manager.reap(), 30_000);
+setInterval(() => manager.reap(), 30_000).unref();
 
+const PORT = Number(process.env.PORT ?? 8081);
 server.listen(PORT, () => {
   // eslint-disable-next-line no-console
-  console.log(`bash-fighter server listening on :${PORT} (capacity=${CAPACITY}, minimum=${MINIMUM})`);
+  console.log(`bash-fighter server listening on :${PORT} (capacity=${manager.capacity}, minimum=${manager.minimum})`);
 });

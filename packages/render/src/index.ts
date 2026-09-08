@@ -23,6 +23,7 @@ export type { ArenaBounds, CameraView, CameraConfig } from './camera.ts';
 export { computeCamera, worldToScreen } from './camera.ts';
 export { computeFollowCamera, computeOverviewCamera, SmoothedCamera, type FollowConfig } from './spectator-camera.ts';
 export { PALETTE, FONT_FAMILY, UI_FONT_FAMILY } from './palette.ts';
+export { renderCharacterIcon } from './character-icon.ts';
 
 /** One fighter's render-ready state: world-space floats, already
  * interpolated between the two most recent sim ticks by the app layer. */

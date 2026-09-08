@@ -9,9 +9,13 @@ import { PALETTE } from './palette.ts';
 import type { Pose } from './fighter-pose.ts';
 
 // Wider and shorter than the placeholder's BODY_WIDTH=14/BODY_HEIGHT=26 --
-// a low centre of gravity that reads as "always closing distance".
-const HALF_W = 9;
-const HEIGHT = 22;
+// a low centre of gravity that reads as "always closing distance". Pushed
+// wider and flatter still (was 18x22) so the bounding box itself reads as
+// a squashed-wide slab, clear of Zephyr's smaller rounded squat shape and
+// Ballast's round one -- Scrapper is the only silhouette in the cast
+// distinctly wider than it is tall by this much.
+const HALF_W = 13;
+const HEIGHT = 15;
 
 export function drawScrapperSilhouette(g: Graphics, tint: number, facing: 1 | -1, pose: Pose): void {
   // Body: a wide flat-topped trapezoid -- broad shoulders tapering to a

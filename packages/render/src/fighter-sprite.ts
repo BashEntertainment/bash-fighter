@@ -6,13 +6,8 @@
 // exactly as before; everything pose-driven lives on the `body` child.
 import { Container, Graphics } from 'pixi.js';
 import { PALETTE } from './palette.ts';
-import { drawBallastSilhouette } from './fighter-shape-ballast.ts';
-import { drawVoltlingSilhouette } from './fighter-shape-voltling.ts';
-import { drawReedSilhouette } from './fighter-shape-reed.ts';
-import { drawScrapperSilhouette } from './fighter-shape-scrapper.ts';
-import { drawAnchorSilhouette } from './fighter-shape-anchor.ts';
-import { drawZephyrSilhouette } from './fighter-shape-zephyr.ts';
-import { drawWispSilhouette } from './fighter-shape-wisp.ts';
+import { drawSilhouetteForCharacter } from './silhouette-dispatch.ts';
+import { BODY_WIDTH, BODY_HEIGHT, HEAD_RADIUS } from './fighter-shape-placeholder.ts';
 import { computePose, NEUTRAL_POSE, type Pose, type PoseInput } from './fighter-pose.ts';
 import type { AnimationParams } from '@bash-fighter/content';
 import type { CharacterData, FighterStateValue } from '@bash-fighter/sim';
@@ -54,10 +49,6 @@ export interface FighterVisualState {
 // Sized to read clearly against a stage a few hundred units wide rather
 // than to match the sim's (much smaller) hurtbox exactly; the debug
 // overlay is what shows the real hurtbox.
-const BODY_WIDTH = 14;
-const BODY_HEIGHT = 26;
-const HEAD_RADIUS = 6;
-
 function lerpColor(a: number, b: number, t: number): number {
   const ar = (a >> 16) & 0xff, ag = (a >> 8) & 0xff, ab = a & 0xff;
   const br = (b >> 16) & 0xff, bg = (b >> 8) & 0xff, bb = b & 0xff;
@@ -134,23 +125,7 @@ export class FighterSprite {
     const baseTint = state.hitstun > 0 ? PALETTE.danger : this.bodyColor;
     const tint = flash > 0 ? lerpColor(baseTint, PALETTE.hud, flash * 0.85) : baseTint;
 
-    if (state.characterName === 'Ballast') {
-      drawBallastSilhouette(g, tint, state.facing, pose);
-    } else if (state.characterName === 'Voltling') {
-      drawVoltlingSilhouette(g, tint, state.facing, pose);
-    } else if (state.characterName === 'Reed') {
-      drawReedSilhouette(g, tint, state.facing, pose);
-    } else if (state.characterName === 'Scrapper') {
-      drawScrapperSilhouette(g, tint, state.facing, pose);
-    } else if (state.characterName === 'Anchor') {
-      drawAnchorSilhouette(g, tint, state.facing, pose);
-    } else if (state.characterName === 'Zephyr') {
-      drawZephyrSilhouette(g, tint, state.facing, pose);
-    } else if (state.characterName === 'Wisp') {
-      drawWispSilhouette(g, tint, state.facing, pose);
-    } else {
-      drawPlaceholderSilhouette(g, tint, state.facing, pose);
-    }
+    drawSilhouetteForCharacter(g, tint, state.facing, pose, state.characterName);
 
     this.shieldGfx.clear();
     if (state.shieldActive) this.drawShieldBubble(state);
@@ -179,29 +154,4 @@ export class FighterSprite {
     this.shieldGfx.stroke({ color: PALETTE.hud, width: 2, alpha: 0.5 + 0.5 * state.shieldHealthFrac });
     this.shieldGfx.fill({ color: PALETTE.hud, alpha: 0.08 + 0.1 * state.shieldHealthFrac });
   }
-}
-
-function drawPlaceholderSilhouette(g: Graphics, tint: number, facing: 1 | -1, pose: Pose): void {
-  // Torso (capsule): rounded rect centered on origin, feet at y=0 going up.
-  g.roundRect(-BODY_WIDTH / 2, -BODY_HEIGHT, BODY_WIDTH, BODY_HEIGHT - HEAD_RADIUS * 0.6, 10);
-  g.fill({ color: tint });
-  g.stroke({ color: PALETTE.fighterOutline, width: 2 });
-
-  // Head.
-  const headCy = -BODY_HEIGHT + HEAD_RADIUS * 0.4;
-  g.circle(0, headCy, HEAD_RADIUS);
-  g.fill({ color: tint });
-  g.stroke({ color: PALETTE.fighterOutline, width: 2 });
-
-  // Facing limb: a wedge off the head that swings with the pose's
-  // limbAngle/limbExtend instead of always sitting as a static "nose".
-  // At rest (limbExtend=0) it collapses back to the original nose wedge.
-  const restLen = HEAD_RADIUS * 1.5;
-  const len = restLen + pose.limbExtend * HEAD_RADIUS * 2.5;
-  const ang = pose.limbAngle;
-  const baseX = facing * HEAD_RADIUS * 0.6;
-  const tipX = baseX + facing * Math.cos(ang) * len;
-  const tipY = headCy + Math.sin(ang) * len * 0.6;
-  g.poly([baseX, headCy - 4, tipX, tipY, baseX, headCy + 4]);
-  g.fill({ color: PALETTE.fighterOutline });
 }

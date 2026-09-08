@@ -10,9 +10,12 @@ import type { Pose } from './fighter-pose.ts';
 
 // Smaller and narrower than the placeholder's BODY_WIDTH=14/BODY_HEIGHT=26
 // and much smaller than Ballast's RADIUS=15 circle -- a light, fast
-// fighter should read as physically small at a glance.
-const HALF_W = 6;
-const HEIGHT = 20;
+// fighter should read as physically small at a glance. Pulled in further
+// (was 12x20) so the overall bounding box is unambiguously the smallest
+// pointed shape in the cast, clear of Zephyr's squat-but-wider silhouette
+// even with all colour and internal detail removed.
+const HALF_W = 5;
+const HEIGHT = 15;
 
 export function drawVoltlingSilhouette(g: Graphics, tint: number, facing: 1 | -1, pose: Pose): void {
   // Body: a narrow diamond (kite shape) instead of a capsule or circle --

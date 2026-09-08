@@ -3,11 +3,13 @@
 // switching on known ids, so a third character becomes selectable the
 // moment it's added to that package's roster, with no change here.
 import { ALL_CHARACTERS } from '@bash-fighter/content';
+import { renderCharacterIcon } from '@bash-fighter/render';
 
-// Deterministic per-id color instead of a per-character asset: keeps this
-// screen from needing to know how to draw any given character's shape,
-// which is a rendering concern that already lives in packages/render's
-// fighter-sprite dispatch (by character name) for the actual match.
+// Deterministic per-id color, used both as the card's tint and as the fill
+// colour handed to renderCharacterIcon -- the icon is the character's own
+// FighterSprite silhouette (see packages/render/src/character-icon.ts), not
+// a stand-in asset, so this screen shows exactly what a fighter looks like
+// in a match, just recoloured per id like every other player slot.
 const SWATCH_PALETTE = ['#e8b23c', '#4fa3c4', '#8a5fd1', '#5fd18a', '#d75f8a', '#d7593f', '#3fbfa0'];
 
 function colorForId(id: string): string {
@@ -34,8 +36,15 @@ export class CharacterSelect {
 
       const swatch = document.createElement('div');
       swatch.className = 'roster-swatch';
-      swatch.style.background = colorForId(entry.id);
-      swatch.textContent = entry.character.name.charAt(0).toUpperCase();
+      swatch.style.background = 'transparent';
+      const icon = document.createElement('img');
+      icon.className = 'roster-icon';
+      icon.alt = `${entry.character.name} silhouette`;
+      swatch.appendChild(icon);
+      const tint = Number.parseInt(colorForId(entry.id).slice(1), 16);
+      renderCharacterIcon(entry.character.name, tint).then((url) => {
+        icon.src = url;
+      });
 
       const name = document.createElement('div');
       name.className = 'roster-name';

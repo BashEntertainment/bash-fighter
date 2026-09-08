@@ -13,8 +13,11 @@ import type { Pose } from './fighter-pose.ts';
 // (HEIGHT above placeholder's BODY_HEIGHT=26 and Ballast's RADIUS*2=30)
 // -- reads as a slim upright stalk, matching the data's narrow-but-tall
 // hurtbox (width 10 / height 36).
+// Bumped closer to the sim's actual 36-unit-tall hurtbox (was 30) so
+// Reed stays unambiguously the tallest, thinnest body in the cast now
+// that Wisp has been shortened -- the two no longer share a height band.
 const HALF_W = 4;
-const HEIGHT = 30;
+const HEIGHT = 34;
 
 export function drawReedSilhouette(g: Graphics, tint: number, facing: 1 | -1, pose: Pose): void {
   // Body: a long thin tapered stalk (narrow hexagon) instead of a

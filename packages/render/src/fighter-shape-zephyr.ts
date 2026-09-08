@@ -7,9 +7,13 @@ import { PALETTE } from './palette.ts';
 import type { Pose } from './fighter-pose.ts';
 
 // Shorter than every other character (matches its 13x24 hurtbox, the
-// shortest in the cast) and narrow -- a compact, crouched shape.
-const HALF_W = 6.5;
-const HEIGHT = 17;
+// shortest in the cast) and, unlike Voltling's narrow pointed diamond,
+// pushed wider than it is tall -- a squat, rounded, low-slung shape so
+// the two small/light characters don't converge on the same silhouette
+// once colour and internal detail are stripped away. Still much smaller
+// overall than Ballast's big circle or Scrapper's wide trapezoid.
+const HALF_W = 8;
+const HEIGHT = 13;
 
 export function drawZephyrSilhouette(g: Graphics, tint: number, facing: 1 | -1, pose: Pose): void {
   // Body: a rounded teardrop leaning back -- narrower at the top,

@@ -7,18 +7,25 @@ import { PALETTE } from './palette.ts';
 import type { Pose } from './fighter-pose.ts';
 
 // Narrower than every other character (matches its 11x30 hurtbox) but
-// not as tall as Reed -- a small, slight, drifting shape.
-const HALF_W = 4.5;
-const HEIGHT = 24;
+// not as tall as Reed -- a small, slight, drifting shape. Shortened from
+// 24 to 18 so its aspect ratio doesn't converge with Reed's tall stalk,
+// and hovers FLOAT_GAP above the ground (feet position) instead of
+// standing on it -- a gap of visible background beneath the body reads
+// as "floating" even as a single flat silhouette, which no other
+// character does, so it can't be confused with anyone on proportion
+// alone even if the body shape itself were similar.
+const HALF_W = 4;
+const HEIGHT = 18;
+const FLOAT_GAP = 5;
 
 export function drawWispSilhouette(g: Graphics, tint: number, facing: 1 | -1, pose: Pose): void {
   // Body: a wavering vertical sliver -- a soft lens shape rather than
   // any straight-sided silhouette used elsewhere, with a lower alpha
   // stroke so it reads as light/insubstantial next to the cast's solid
   // bodies.
-  const topY = -HEIGHT;
-  const botY = 0;
-  const midY = -HEIGHT * 0.5;
+  const topY = -HEIGHT - FLOAT_GAP;
+  const botY = -FLOAT_GAP;
+  const midY = (topY + botY) / 2;
   g.poly([0, topY, HALF_W, midY, HALF_W * 0.55, botY, -HALF_W * 0.55, botY, -HALF_W, midY]);
   g.fill({ color: tint, alpha: 0.92 });
   g.stroke({ color: PALETTE.fighterOutline, width: 1.5 });

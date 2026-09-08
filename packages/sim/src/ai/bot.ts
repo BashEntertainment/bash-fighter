@@ -17,6 +17,7 @@ import type { Fixed } from '../math/fixed.ts';
 import { seedRng, nextBounded, type RngState } from '../math/prng.ts';
 import { BUTTON_JUMP, BUTTON_ATTACK, BUTTON_SHIELD, makeInputFrame, type InputFrame } from '../types.ts';
 import type { Sim, FighterSnapshot } from '../sim.ts';
+import { MAX_JUMPS } from '../sim.ts';
 
 export const BotDifficulty = {
   EASY: 0,
@@ -78,6 +79,26 @@ const ITEM_SEEK_RANGE_X: Fixed = fx.fromFloat(60.0);
  * before the bot treats "stand your ground" as unsafe and prioritises
  * moving inward over anything else — chasing a target or an item. */
 const EDGE_SAFETY_MARGIN: Fixed = fx.fromFloat(18.0);
+/** Anti-clumping: fighters within this radius of a candidate target count
+ * toward its "crowded" score (see BotController.pickTarget). Squared
+ * float units to avoid a sqrt per candidate pair. */
+const CLUSTER_RADIUS_SQ = 12.0 * 12.0;
+/** Score penalty in squared-distance units (scoring uses squared
+ * distance throughout to avoid a sqrt/transcendental call, which
+ * packages/sim's lint rule forbids for determinism) added per other
+ * fighter already near a candidate target. ~150 is equivalent to that
+ * target being roughly 12 world units farther away per crowder, enough
+ * that a target already flanked by 1-2 others loses out to a lone
+ * opponent noticeably farther off. */
+const CLUSTER_PENALTY = 150.0;
+/** Score bonus (squared-distance units) for keeping the current target,
+ * so equally-good candidates don't cause flicker between decisions. */
+const STICKINESS_BONUS = 400.0;
+/** Decisions a target lock lasts before pickTarget re-rolls, in addition
+ * to the jittered extra below. At MEDIUM's ~230ms/decision this is
+ * roughly 1.8-3.2s per lock — long enough to actually fight, short enough
+ * that pairs don't orbit for a whole match. */
+const TARGET_LOCK_DECISIONS = 8;
 const ONE = fx.ONE;
 
 function clampStick(v: Fixed): Fixed {
@@ -103,6 +124,17 @@ export class BotController {
   private rng: RngState;
   private decisionCooldown = 0;
   private cached: InputFrame = makeInputFrame();
+  /** Sticky target index (-1 = none yet). Kept across decisions so bots
+   * don't flicker between two equally-close opponents; only re-evaluated
+   * on the normal decision cadence, plus forced re-rolls (see
+   * targetLockTicks) so a mutual stare-down eventually breaks up. */
+  private targetIndex = -1;
+  /** Decisions remaining before this bot is willing to switch target even
+   * if a clearly better one exists (prevents rapid flicker), decremented
+   * once per decision. Forced to 0 periodically to break up orbiting
+   * pairs/clumps and to keep targets changing over a match. */
+  private targetLockDecisions = 0;
+  private targetSwitchCount = 0;
 
   /**
    * @param seed Deterministic per-bot seed. Callers should derive this from
@@ -156,20 +188,18 @@ export class BotController {
 
     const blast = sim.getCurrentBlastRect();
     const unsafe = this.unsafeDirection(self, blast);
+    const target = this.pickTarget(sim, self);
 
     // --- Recovery / edge safety takes priority over everything else. ---
     if (unsafe !== 0) {
       stickX = unsafe;
-      if (self.grounded && (self.velX === 0 || signOf(self.velX) !== unsafe)) {
-        // Nudge toward center; jump only helps if there is something to
-        // jump onto, which we can't easily tell here, so stay grounded and
-        // run — clampToPlatform keeps a grounded bot from walking off a
-        // platform it's already standing on.
-      }
-      if (!self.grounded && self.velY < 0) {
-        // Falling and off the safe zone: no double jump exists in this
-        // sim, so the only lever is DI (stick) toward the stage, already
-        // set above via `unsafe`.
+      // Double jump for recovery: if airborne, still have a jump banked,
+      // and either off the safe zone or sinking fast, use it — the only
+      // other lever (DI via `unsafe`) is weak on its own, which is exactly
+      // why bots used to lose stocks a human wouldn't. `requestJump` below
+      // handles turning this into a real button-press edge.
+      if (!self.grounded && self.jumpsUsed < MAX_JUMPS && self.velY < 0) {
+        if (this.requestJump()) buttons |= BUTTON_JUMP;
       }
     } else {
       // --- Item seeking: closest reachable world item, if any. ---
@@ -177,7 +207,6 @@ export class BotController {
       const heldItemSlot = this.findHeldItemSlot(sim);
       if (heldItemSlot >= 0) {
         // Holding an item: use it on a nearby target, same button as attack.
-        const target = this.findNearestTarget(sim);
         if (target && this.inAttackRange(self, target)) {
           buttons |= BUTTON_ATTACK;
           stickX = signOf(fx.sub(target.posX, self.posX));
@@ -186,29 +215,23 @@ export class BotController {
         }
       } else if (itemTarget) {
         stickX = signOf(fx.sub(itemTarget.posX, self.posX));
-      } else {
-        const target = this.findNearestTarget(sim);
-        if (target) {
-          const dx = fx.sub(target.posX, self.posX);
-          const dy = fx.sub(target.posY, self.posY);
-          stickX = signOf(dx);
-          stickY = signOf(dy);
-          if (this.inAttackRange(self, target) && this.rollPerMille() >= tuning.hesitationPerMille) {
-            buttons |= BUTTON_ATTACK;
-            // Aim: grounded jab/ftilt picked by |stickX| threshold in
-            // sim.ts, airborne uair/dair picked by stickY sign — steer the
-            // stick to request the appropriate move for the target's
-            // relative position rather than always spamming forward-tilt.
-            if (!self.grounded) {
-              stickY = dy < 0 ? fx.neg(ONE) : ONE;
-            } else if (fx.abs(dx) > fx.fromFloat(1.5)) {
-              stickX = signOf(dx);
-            } else {
-              stickX = 0; // close-range: jab, not forward-tilt.
-            }
-          } else if (!self.grounded && dy > fx.fromFloat(2.0) && self.grounded === false) {
-            // Airborne and target well below: no special action, just
-            // drift down toward them via normal gravity + stickX chase.
+      } else if (target) {
+        const dx = fx.sub(target.posX, self.posX);
+        const dy = fx.sub(target.posY, self.posY);
+        stickX = signOf(dx);
+        stickY = signOf(dy);
+        if (this.inAttackRange(self, target) && this.rollPerMille() >= tuning.hesitationPerMille) {
+          buttons |= BUTTON_ATTACK;
+          // Aim: grounded jab/ftilt picked by |stickX| threshold in
+          // sim.ts, airborne uair/dair picked by stickY sign — steer the
+          // stick to request the appropriate move for the target's
+          // relative position rather than always spamming forward-tilt.
+          if (!self.grounded) {
+            stickY = dy < 0 ? fx.neg(ONE) : ONE;
+          } else if (fx.abs(dx) > fx.fromFloat(1.5)) {
+            stickX = signOf(dx);
+          } else {
+            stickX = 0; // close-range: jab, not forward-tilt.
           }
         }
       }
@@ -217,24 +240,36 @@ export class BotController {
     // Occasional shield vs. an incoming close, active attacker — cheap
     // "defensive" behaviour: if someone else is mid-attack right next to
     // us on the ground, sometimes hold shield instead of always trading.
-    if (unsafe === 0 && self.grounded && this.rollPerMille() < 40) {
-      const threat = this.findNearestTarget(sim);
-      if (threat && this.inAttackRange(self, threat)) {
+    // Kept rare (and slightly rarer than before) so fights keep moving
+    // instead of stalling into shield-standoffs.
+    if (unsafe === 0 && self.grounded && this.rollPerMille() < 25) {
+      if (target && this.inAttackRange(self, target)) {
         buttons |= BUTTON_SHIELD;
         buttons &= ~BUTTON_ATTACK;
       }
     }
 
-    // Jump to chase a target on a higher platform, or to escape a hazard
-    // directly overhead.
+    // Jump to chase a target on a higher platform, close the last bit of
+    // horizontal gap with an air approach, or escape a hazard overhead.
+    // Also spend a banked double jump to close distance faster when a
+    // target is nearby but not yet in range — keeps engagements moving
+    // instead of a long ground walk-up every time.
     if (unsafe === 0 && self.grounded) {
-      const target = this.findNearestTarget(sim);
       if (target && target.posY > fx.add(self.posY, fx.fromFloat(4.0)) && fx.abs(fx.sub(target.posX, self.posX)) < fx.fromFloat(20.0)) {
         buttons |= BUTTON_JUMP;
       }
       if (this.nearOverheadHazard(sim, self)) {
         buttons |= BUTTON_JUMP;
       }
+    } else if (
+      unsafe === 0 &&
+      !self.grounded &&
+      target &&
+      self.jumpsUsed < MAX_JUMPS &&
+      fx.abs(fx.sub(target.posX, self.posX)) > fx.fromFloat(6.0) &&
+      !this.inAttackRange(self, target)
+    ) {
+      if (this.requestJump()) buttons |= BUTTON_JUMP;
     }
 
     // Imprecision: wobble the stick rather than the decision itself, so a
@@ -245,6 +280,106 @@ export class BotController {
     }
 
     return { buttons, stickX: clampStick(stickX), stickY: clampStick(stickY) };
+  }
+
+  /** Turns a desire to jump right now into a genuine button-press edge.
+   * The sim only counts a jump on a 0->1 transition of the jump button
+   * (`jumpEdge` in sim.ts); this.cached can hold the button pressed for
+   * many ticks (decisions are infrequent), so pressing again while it's
+   * already held would silently do nothing. If the last frame we emitted
+   * already had the button down, release it for one tick (returning
+   * false — caller omits the bit) and force an immediate re-decision so
+   * the very next tick presses again and gets a fresh edge. */
+  private requestJump(): boolean {
+    const alreadyHeld = (this.cached.buttons & BUTTON_JUMP) !== 0;
+    if (alreadyHeld) {
+      this.decisionCooldown = 1;
+      return false;
+    }
+    return true;
+  }
+
+  /** Picks the fighter to fight/flee, scoring by proximity but penalising
+   * targets already crowded by other fighters (broken-up clumping) and
+   * favouring the current target somewhat (stickiness, avoids flicker).
+   * Periodically forces a fresh look even if the current target still
+   * scores fine, so a match doesn't settle into fixed pairs for its whole
+   * duration. */
+  private pickTarget(sim: Sim, self: FighterSnapshot): (FighterSnapshot & { index: number }) | null {
+    const candidates: (FighterSnapshot & { index: number })[] = [];
+    for (let i = 0; i < sim.numFighters; i++) {
+      if (i === this.fighterIndex) continue;
+      const f = sim.getFighter(i);
+      if (f.eliminated) continue;
+      candidates.push({ ...f, index: i });
+    }
+    if (candidates.length === 0) {
+      this.targetIndex = -1;
+      return null;
+    }
+
+    // Cluster density around each candidate: how many *other* fighters
+    // (excluding self and the candidate) sit within CLUSTER_RADIUS of it.
+    // A candidate already surrounded scores worse, nudging idle bots
+    // toward opponents elsewhere in the arena instead of piling on.
+    const density = (c: FighterSnapshot & { index: number }): number => {
+      let n = 0;
+      for (const other of candidates) {
+        if (other.index === c.index) continue;
+        const dx = fx.toFloat(fx.sub(other.posX, c.posX));
+        const dy = fx.toFloat(fx.sub(other.posY, c.posY));
+        if (dx * dx + dy * dy <= CLUSTER_RADIUS_SQ) n++;
+      }
+      return n;
+    };
+
+    // Squared distance (plain float arithmetic — no sqrt/transcendental
+    // calls, which packages/sim's lint rule forbids for determinism).
+    // Ranking only needs a monotonic proxy for distance, so skipping the
+    // sqrt is free; the other terms are scaled to match squared-distance
+    // units (see CLUSTER_PENALTY/STICKINESS_BONUS_SQ comments).
+    const distSqTo = (c: FighterSnapshot & { index: number }): number => {
+      const dx = fx.toFloat(fx.sub(c.posX, self.posX));
+      const dy = fx.toFloat(fx.sub(c.posY, self.posY));
+      return dx * dx + dy * dy;
+    };
+
+    const score = (c: FighterSnapshot & { index: number }): number => {
+      let s = distSqTo(c) + density(c) * CLUSTER_PENALTY;
+      if (c.index === this.targetIndex) s -= STICKINESS_BONUS;
+      return s;
+    };
+
+    let best = candidates[0]!;
+    let bestScore = score(best);
+    for (let i = 1; i < candidates.length; i++) {
+      const s = score(candidates[i]!);
+      if (s < bestScore) {
+        bestScore = s;
+        best = candidates[i]!;
+      }
+    }
+
+    // Force periodic re-rolls: even a "sticky" pair breaks up once the
+    // lock expires, and if there is a genuinely different opponent
+    // available we pick a *different* one than last time's target
+    // (weighted-random among the top few, not just nearest) so 20 bots
+    // don't converge onto the single globally-nearest pairing pattern.
+    if (this.targetLockDecisions <= 0 && candidates.length > 1) {
+      const sorted = candidates
+        .map((c) => ({ c, s: score(c) }))
+        .sort((a, b) => a.s - b.s)
+        .slice(0, Math.min(3, candidates.length));
+      const roll = this.rollPerMille() % sorted.length;
+      best = sorted[roll]!.c;
+      this.targetLockDecisions = TARGET_LOCK_DECISIONS + (this.rollPerMille() % 4);
+    } else {
+      this.targetLockDecisions -= 1;
+    }
+
+    if (best.index !== this.targetIndex) this.targetSwitchCount++;
+    this.targetIndex = best.index;
+    return best;
   }
 
   /** Returns -1/0/1 (fixed ONE units) for "move this way to stay inside the
@@ -261,25 +396,6 @@ export class BotController {
       return self.posX > 0 ? fx.neg(ONE) : ONE;
     }
     return 0;
-  }
-
-  private findNearestTarget(sim: Sim): FighterSnapshot & { index: number } {
-    const self = sim.getFighter(this.fighterIndex);
-    let best: (FighterSnapshot & { index: number }) | null = null;
-    let bestDist = Number.POSITIVE_INFINITY;
-    for (let i = 0; i < sim.numFighters; i++) {
-      if (i === this.fighterIndex) continue;
-      const f = sim.getFighter(i);
-      if (f.eliminated) continue;
-      const dx = fx.toFloat(fx.sub(f.posX, self.posX));
-      const dy = fx.toFloat(fx.sub(f.posY, self.posY));
-      const dist = dx * dx + dy * dy;
-      if (dist < bestDist) {
-        bestDist = dist;
-        best = { ...f, index: i };
-      }
-    }
-    return best as FighterSnapshot & { index: number };
   }
 
   private inAttackRange(self: FighterSnapshot, target: FighterSnapshot): boolean {

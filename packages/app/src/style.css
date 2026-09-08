@@ -219,6 +219,31 @@ html, body {
   z-index: 5;
 }
 
+.mute-btn {
+  position: absolute;
+  top: 12px;
+  right: 16px;
+  z-index: 30;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--ink-dim);
+  background: var(--panel);
+  border: 1px solid var(--ink-dim);
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.mute-btn:hover {
+  color: var(--ink);
+  border-color: var(--ink);
+}
+
+.mute-btn[data-muted='true'] {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
 .survivors-line {
   font-family: var(--font-mono);
   font-size: 12px;
@@ -290,6 +315,11 @@ html, body {
 #net-status[data-state='in-match'] {
   color: #9be89b;
   border-color: rgba(120, 220, 120, 0.3);
+}
+
+#net-status[data-state='reconnecting'] {
+  color: #f0c869;
+  border-color: rgba(240, 200, 105, 0.35);
 }
 
 #net-status.hidden {

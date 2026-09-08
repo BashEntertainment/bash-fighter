@@ -28,6 +28,9 @@ import {
   type StageBounds,
 } from '@bash-fighter/render';
 import { FixedTimestepLoop } from './loop.ts';
+import { AudioManager } from '@bash-fighter/audio';
+import { detectFighterEvents, detectItemEvents } from './effects-events.ts';
+import { EffectsAudioBridge } from './effects-audio.ts';
 
 // Item HELD state id (mirrors packages/sim/src/sim.ts's private ItemState
 // enum: 0=world, 1=held, 2=thrown, 3=armed). Not exported by the sim
@@ -78,9 +81,12 @@ export class Match {
   private currHazardSnapshots: HazardSnapshot[];
   private lastStocks: number[];
   private over = false;
+  private pendingEvents: import('./effects-events.ts').EffectEvent[] = [];
   private readonly hashBuf: StateBuffer;
 
   private readonly numFighters: number;
+  readonly audio: AudioManager;
+  private readonly effectsBridge: EffectsAudioBridge;
 
   constructor(
     parent: HTMLElement,
@@ -88,8 +94,11 @@ export class Match {
     seed: number = 1,
     private readonly events: MatchEvents = {},
     sim?: Sim,
+    audio: AudioManager = new AudioManager(),
   ) {
     this.characters = characters;
+    this.audio = audio;
+    this.effectsBridge = new EffectsAudioBridge(audio);
     this.sim = sim ?? new Sim(seed, characters.length, characters);
     this.numFighters = this.sim.numFighters;
     this.renderer = new Renderer(arenaDataToStageBounds(this.sim.getArena()));
@@ -159,6 +168,10 @@ export class Match {
     this.currItemSnapshots = this.snapshotItems();
     this.prevHazardSnapshots = this.currHazardSnapshots;
     this.currHazardSnapshots = this.snapshotHazards();
+
+    const fighterEvents = detectFighterEvents(this.prevSnapshots, this.currSnapshots, this.numFighters);
+    const itemEvents = detectItemEvents(this.prevItemSnapshots, this.currItemSnapshots, MAX_ITEMS);
+    this.pendingEvents.push(...fighterEvents, ...itemEvents);
 
     for (let i = 0; i < this.numFighters; i++) {
       const stocks = (this.currSnapshots[i] as FighterSnapshot).stocks;
@@ -244,6 +257,9 @@ export class Match {
       hazards.push({ active: true, x, y, halfWidth: HAZARD_MARKER_HALF_WIDTH });
     }
 
+    const { hitEffects, eliminationEffects } = this.effectsBridge.consume(this.pendingEvents, this.currSnapshots);
+    this.pendingEvents = [];
+
     const frame: RenderFrame = {
       fighters,
       characters: this.characters,
@@ -251,6 +267,8 @@ export class Match {
       hazards,
       tick: this.sim.getTick(),
       hash: this.currentHash(),
+      hitEffects,
+      eliminationEffects,
     };
     this.renderer.render(this.events.transformFrame ? this.events.transformFrame(frame) : frame);
   }

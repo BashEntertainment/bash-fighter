@@ -11,6 +11,10 @@ export interface FighterVisualState {
   shieldActive: boolean;
   shieldHealthFrac: number; // 0..1
   isDead: boolean;
+  /** 0..1, driven by EffectsLayer.flashAmount(fighterIndex) -- how far
+   * through the post-hit flash this fighter currently is. 0 = normal
+   * colour. Purely presentational; never read by the sim. */
+  flashAmount?: number;
 }
 
 // World units, not pixels — the root container is scaled by the camera's
@@ -21,6 +25,15 @@ export interface FighterVisualState {
 const BODY_WIDTH = 14;
 const BODY_HEIGHT = 26;
 const HEAD_RADIUS = 6;
+
+function lerpColor(a: number, b: number, t: number): number {
+  const ar = (a >> 16) & 0xff, ag = (a >> 8) & 0xff, ab = a & 0xff;
+  const br = (b >> 16) & 0xff, bg = (b >> 8) & 0xff, bb = b & 0xff;
+  const r = Math.round(ar + (br - ar) * t);
+  const g = Math.round(ag + (bg - ag) * t);
+  const bl = Math.round(ab + (bb - ab) * t);
+  return (r << 16) | (g << 8) | bl;
+}
 
 export class FighterSprite {
   readonly root = new Graphics();
@@ -35,7 +48,13 @@ export class FighterSprite {
     g.clear();
     if (state.isDead) return;
 
-    const tint = state.hitstun > 0 ? PALETTE.danger : this.bodyColor;
+    // Base tint: danger-red while in hitstun (existing behaviour), else
+    // the fighter's own colour blended toward a bright flash colour for
+    // the brief post-hit window -- the flash reads as "impact" even after
+    // hitstun itself has ended (hitstun on a light jab can be very short).
+    const flash = state.flashAmount ?? 0;
+    const baseTint = state.hitstun > 0 ? PALETTE.danger : this.bodyColor;
+    const tint = flash > 0 ? lerpColor(baseTint, PALETTE.hud, flash * 0.85) : baseTint;
 
     // Torso (capsule): rounded rect centered on origin, feet at y=0 going up.
     g.roundRect(-BODY_WIDTH / 2, -BODY_HEIGHT, BODY_WIDTH, BODY_HEIGHT - HEAD_RADIUS * 0.6, 10);

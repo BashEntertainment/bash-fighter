@@ -11,8 +11,10 @@ import { FighterSprite } from './fighter-sprite.ts';
 import { ItemSprite } from './item-sprite.ts';
 import { HazardSprite } from './hazard-sprite.ts';
 import { drawDebugBoxes, makeDebugText, formatDebugText, type DebugFighterInput } from './debug-overlay.ts';
+import { EffectsLayer } from './effects.ts';
 
 export { RenderItemTypeId } from './item-sprite.ts';
+export { EffectsLayer, type HitEffectInput } from './effects.ts';
 
 export type { StageBounds, StagePlatform } from './stage.ts';
 export { arenaDataToStageBounds } from './arena-adapter.ts';
@@ -64,6 +66,26 @@ export interface RenderHazardState {
   halfWidth: number;
 }
 
+/** A hit/elimination the app layer observed this tick, queued for the
+ * renderer to translate from world to screen space using this frame's own
+ * camera (the app layer does not know the camera, on purpose -- the
+ * renderer stays the only thing that computes it). Presentation-only:
+ * consumed once per render() call and never fed back into the sim. */
+export interface PendingHitEffect {
+  fighterIndex: number;
+  worldX: number;
+  worldY: number;
+  dirX: number; // world-space direction (Y-up), need not be normalized
+  dirY: number;
+  strength: number; // 0..1
+  strong: boolean; // true = heavy hit, drives longer flash + optional freeze
+}
+
+export interface PendingEliminationEffect {
+  worldX: number;
+  worldY: number;
+}
+
 export interface RenderFrame {
   fighters: readonly RenderFighterState[];
   characters: readonly CharacterData[];
@@ -80,6 +102,13 @@ export interface RenderFrame {
    * spectator camera (follow / overview / smoothed) takes over — the
    * renderer stays a dumb painter and never decides spectate policy. */
   cameraOverride?: CameraView;
+  /** Hit/block/elimination effects observed since the last render() call. */
+  hitEffects?: readonly PendingHitEffect[];
+  eliminationEffects?: readonly PendingEliminationEffect[];
+  /** Wall-clock ms to hold the previous frame's drawing before applying
+   * new positions this call -- a presentation-only "freeze frame" on a
+   * strong hit. Renderer decides internally how long based on strength;
+   * the app layer only tells it a strong hit happened via hitEffects. */
 }
 
 // Fighters spread by roughly a screen-width during normal play; a
@@ -125,6 +154,13 @@ export class Renderer {
   private readonly hazardContainer = new Container();
   private readonly debugText = makeDebugText();
   private stageBounds: StageBounds;
+  private readonly effects = new EffectsLayer();
+  private lastFrameTimeMs: number | null = null;
+  // Freeze-frame ("hitstop") state: purely a rendering hold -- the sim
+  // keeps advancing at 60Hz underneath regardless. See render()'s early
+  // return. Duration is short and capped so it reads as a punch landing,
+  // not as lag.
+  private freezeRemainingMs = 0;
 
   constructor(stageBounds: StageBounds) {
     this.stageBounds = stageBounds;
@@ -150,6 +186,7 @@ export class Renderer {
     this.world.addChild(this.hazardContainer);
     this.world.addChild(this.spriteContainer);
     this.world.addChild(this.itemContainer);
+    this.world.addChild(this.effects.root);
     this.world.addChild(this.debugLayer);
     this.app.stage.addChild(this.world);
 
@@ -210,6 +247,11 @@ export class Renderer {
 
   render(frame: RenderFrame): void {
     if (!this.ready) return;
+
+    const now = performance.now();
+    const dtMs = this.lastFrameTimeMs === null ? 16.6667 : Math.min(50, now - this.lastFrameTimeMs);
+    this.lastFrameTimeMs = now;
+
     const { width: vw, height: vh } = this.viewSize;
     const liveFighters = frame.fighters.filter((f) => !f.eliminated);
     this.ensureSpritePool(frame.fighters.length);
@@ -231,6 +273,37 @@ export class Renderer {
         cameraConfig(stageForDraw, vw, vh),
       );
 
+    // Translate any hit/elimination effects the app layer observed since
+    // the last render() call into screen space using *this* frame's
+    // camera, then hand them to the effects layer. This is the only place
+    // world coordinates ever get turned into shake/particle positions.
+    for (const hit of frame.hitEffects ?? []) {
+      const screen = worldToScreen(hit.worldX, hit.worldY, cam, vw, vh);
+      // Direction is a vector, not a point: flip Y (world Y-up -> screen
+      // Y-down) without translating.
+      this.effects.spawnHit({ x: screen.x, y: screen.y, dirX: hit.dirX, dirY: -hit.dirY, strength: hit.strength });
+      this.effects.flashFighter(hit.fighterIndex, hit.strong);
+      if (hit.strong) this.freezeRemainingMs = Math.max(this.freezeRemainingMs, 55);
+    }
+    for (const elim of frame.eliminationEffects ?? []) {
+      const screen = worldToScreen(elim.worldX, elim.worldY, cam, vw, vh);
+      this.effects.spawnElimination(screen.x, screen.y);
+    }
+
+    // Freeze-frame: hold the last drawn picture for a few milliseconds on
+    // a strong hit. This never touches the sim -- it just skips this
+    // render() call's redraw, so whatever was on screen a moment ago
+    // stays there. Shake/particle timers still advance underneath so the
+    // freeze blends into the shake rather than looking like a stall.
+    if (this.freezeRemainingMs > 0) {
+      this.freezeRemainingMs -= dtMs;
+      this.effects.update(dtMs);
+      return;
+    }
+
+    const shake = this.effects.update(dtMs);
+    this.world.position.set(shake.x, shake.y);
+
     drawStage(this.stageLayer, stageForDraw, cam, vw, vh);
 
     for (let i = 0; i < frame.fighters.length; i++) {
@@ -250,6 +323,7 @@ export class Renderer {
         shieldActive: f.state === FighterStateId.SHIELD,
         shieldHealthFrac: fx.toFloat(f.shieldHealth) / 100,
         isDead: f.state === FighterStateId.DEAD,
+        flashAmount: this.effects.flashAmount(i),
       });
     }
 

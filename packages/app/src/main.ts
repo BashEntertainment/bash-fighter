@@ -8,6 +8,7 @@ import { SimMatchAdapter } from './spectator/sim-adapter.ts';
 import { SpectatorController } from './spectator/controller.ts';
 import { NetMatch, type ConnectionState } from './net-match.ts';
 import type { ArenaBounds } from '@bash-fighter/render';
+import { AudioManager } from '@bash-fighter/audio';
 
 // This local build has no networking, so "the local player" is just
 // whichever slot we choose to watch from. Slot 0 (P1) is the one that,
@@ -39,6 +40,35 @@ let spectator: SpectatorController | null = null;
 let matchGeneration = 0;
 let lastFrameTimeMs: number | null = null;
 
+// One AudioManager for the whole app -- both local Match and NetMatch
+// play through it, so the mute control and voice cap are global rather
+// than per-match. Initialized lazily on the first user gesture anywhere
+// on the page (autoplay policy); safe to call init multiple times.
+const audio = new AudioManager();
+window.addEventListener(
+  'pointerdown',
+  () => {
+    audio.initOnGesture();
+    audio.startAmbient();
+  },
+  { once: true },
+);
+
+const muteButton = document.createElement('button');
+muteButton.id = 'mute-btn';
+muteButton.className = 'mute-btn';
+function refreshMuteLabel(): void {
+  muteButton.textContent = audio.isMuted ? 'SOUND OFF' : 'SOUND ON';
+  muteButton.dataset.muted = String(audio.isMuted);
+}
+refreshMuteLabel();
+muteButton.addEventListener('click', () => {
+  audio.initOnGesture();
+  audio.toggleMuted();
+  refreshMuteLabel();
+});
+appRoot.appendChild(muteButton);
+
 const hud = new Hud(appRoot);
 const spectatorBanner = new SpectatorBanner(appRoot);
 
@@ -63,6 +93,7 @@ function setNetStatus(state: ConnectionState, detail?: string): void {
     'in-match': 'In match',
     spectating: 'Spectating',
     disconnected: 'Disconnected',
+    reconnecting: 'Reconnecting…',
     error: 'Connection error',
   };
   netStatus.textContent = detail ? `${label[state]} — ${detail}` : label[state];
@@ -119,9 +150,10 @@ async function beginOnlineMatch(): Promise<void> {
     },
     onMatchOver: (winnerIndex) => {
       hud.hide();
+      audio.play('match_end');
       winScreen.show(winnerIndex);
     },
-  });
+  }, audio);
   netMatch = net;
   await net.init(canvasRoot);
   net.connect(name);
@@ -131,9 +163,14 @@ async function beginOnlineMatch(): Promise<void> {
   // why it is a safe drop-in for Match.currentSnapshots(). Shown once a
   // match has actually started so it never shows fighter cards over the
   // waiting-for-players screen.
+  let announcedStart = false;
   const onlineHudTick = (): void => {
     if (generation !== matchGeneration) return;
     if (netMatch && netMatch.hasStarted()) {
+      if (!announcedStart) {
+        announcedStart = true;
+        audio.play('match_start');
+      }
       hud.show();
       hud.update(netMatch.currentSnapshots());
     } else {
@@ -162,9 +199,11 @@ async function beginMatch(): Promise<void> {
     canvasRoot.innerHTML = '';
   }
 
+  audio.play('match_start');
   const localMatch: Match = new Match(canvasRoot, undefined, Date.now() & 0xffffffff, {
     onMatchOver: (winnerIndex) => {
       hud.hide();
+      audio.play('match_end');
       winScreen.show(winnerIndex);
       match?.stop();
     },
@@ -202,7 +241,7 @@ async function beginMatch(): Promise<void> {
 
       return { ...frame, fighters, liveArenaBounds: arena, cameraOverride };
     },
-  });
+  }, undefined, audio);
   match = localMatch;
   adapter = new SimMatchAdapter(localMatch);
   spectator = new SpectatorController(adapter, LOCAL_SLOT, {

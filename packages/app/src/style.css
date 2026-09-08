@@ -233,3 +233,33 @@ html, body {
   font-size: 11px;
   color: var(--ink-dim);
 }
+
+#net-status {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  padding: 6px 12px;
+  font-family: 'JetBrains Mono', 'Menlo', monospace;
+  font-size: 13px;
+  color: #e8e8e8;
+  background: rgba(20, 20, 24, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+  letter-spacing: 0.02em;
+  z-index: 20;
+}
+
+#net-status[data-state='error'],
+#net-status[data-state='disconnected'] {
+  color: #ff8a8a;
+  border-color: rgba(255, 100, 100, 0.35);
+}
+
+#net-status[data-state='in-match'] {
+  color: #9be89b;
+  border-color: rgba(120, 220, 120, 0.3);
+}
+
+#net-status.hidden {
+  display: none;
+}

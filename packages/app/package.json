@@ -14,7 +14,8 @@
     "@bash-fighter/sim": "*",
     "@bash-fighter/content": "*",
     "@bash-fighter/input": "*",
-    "@bash-fighter/render": "*"
+    "@bash-fighter/render": "*",
+    "@bash-fighter/net": "*"
   },
   "devDependencies": {
     "vite": "^5"

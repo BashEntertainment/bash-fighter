@@ -6,6 +6,7 @@ import { Hud } from './ui/hud.ts';
 import { SpectatorBanner } from './ui/spectator-banner.ts';
 import { StubMatchAdapter } from './spectator/stub-adapter.ts';
 import { SpectatorController } from './spectator/controller.ts';
+import { NetMatch, type ConnectionState } from './net-match.ts';
 import type { ArenaBounds } from '@bash-fighter/render';
 
 // This local build has no networking, so "the local player" is just
@@ -44,6 +45,79 @@ const spectatorBanner = new SpectatorBanner(appRoot);
 const startScreen = new StartScreen(appRoot, () => {
   void beginMatch();
 });
+
+// Online mode is additive: a second button on the same start screen, and a
+// small always-visible status line so connection state is never a silent
+// blank screen. Local-match mode above is untouched and remains the
+// offline/dev test harness.
+const netStatus = document.createElement('div');
+netStatus.id = 'net-status';
+netStatus.className = 'hidden';
+appRoot.appendChild(netStatus);
+
+function setNetStatus(state: ConnectionState, detail?: string): void {
+  netStatus.classList.remove('hidden');
+  const label: Record<ConnectionState, string> = {
+    connecting: 'Connecting…',
+    waiting: 'Waiting for players…',
+    'in-match': 'In match',
+    spectating: 'Spectating',
+    disconnected: 'Disconnected',
+    error: 'Connection error',
+  };
+  netStatus.textContent = detail ? `${label[state]} — ${detail}` : label[state];
+  netStatus.dataset.state = state;
+}
+
+const onlineButton = document.createElement('button');
+onlineButton.className = 'btn';
+onlineButton.id = 'online-btn';
+onlineButton.textContent = 'PLAY ONLINE';
+startScreen.root.appendChild(onlineButton);
+onlineButton.addEventListener('click', () => {
+  void beginOnlineMatch();
+});
+
+let netMatch: NetMatch | null = null;
+
+function serverUrl(): string {
+  const params = new URLSearchParams(location.search);
+  return params.get('server') ?? `ws://${location.hostname}:8081/socket`;
+}
+
+async function beginOnlineMatch(): Promise<void> {
+  startScreen.hide();
+  winScreen.hide();
+  spectatorBanner.hide();
+  hud.hide();
+
+  if (match) {
+    match.stop();
+    match.renderer.destroy();
+    match = null;
+  }
+  if (netMatch) {
+    netMatch.stop();
+    netMatch.renderer.destroy();
+    netMatch = null;
+  }
+  canvasRoot.innerHTML = '';
+
+  const name = `Fighter${Math.floor(Math.random() * 1000)}`;
+  const net = new NetMatch(serverUrl(), {
+    onStateChange: (state, detail) => setNetStatus(state, detail),
+    onLobby: (players, capacity, countdownTicks) => {
+      const countdown = countdownTicks >= 0 ? ` — starting in ${Math.ceil(countdownTicks / 60)}s` : '';
+      setNetStatus('waiting', `${players}/${capacity} players${countdown}`);
+    },
+    onMatchOver: (winnerIndex) => {
+      winScreen.show(winnerIndex);
+    },
+  });
+  netMatch = net;
+  await net.init(canvasRoot);
+  net.connect(name);
+}
 
 const winScreen = new WinScreen(appRoot, () => {
   void beginMatch();
@@ -133,6 +207,7 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'F3') {
     e.preventDefault();
     match?.toggleDebug();
+    netMatch?.toggleDebug();
   } else if (e.code === 'Tab' && spectator?.isActive) {
     e.preventDefault();
     spectator.cycleNext();

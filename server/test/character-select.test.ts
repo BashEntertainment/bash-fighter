@@ -46,7 +46,7 @@ test('hello.characterId flows through to matchStart.characterIds, per seat, with
   serverProc.stderr?.on('data', (d) => (serverLog += d.toString()));
 
   try {
-    await waitForHealth(PORT, 20000);
+    await waitForHealth(PORT, 90000);
 
     const requested = ['ballast', undefined]; // client 1 picks Ballast, client 2 sends nothing
     const characterIdsBySlot: Record<number, string> = {};

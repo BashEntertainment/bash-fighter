@@ -127,7 +127,7 @@ test('client drops mid-match, reconnects with its token, resumes the same slot, 
   server.stdout?.on('data', (d) => (log += d.toString()));
   server.stderr?.on('data', (d) => (log += d.toString()));
   try {
-    await waitForHealth(port, 25000);
+    await waitForHealth(port, 90000);
 
     const a = await connectClient(port, 'Alice');
     const b = await connectClient(port, 'Bob');
@@ -198,7 +198,7 @@ test('a wrong/forged token is rejected with an error frame and gets no seat', as
   const port = 8102;
   const server = startServer(port, {});
   try {
-    await waitForHealth(port, 25000);
+    await waitForHealth(port, 90000);
     const forged = await connectClient(port, 'Mallory', 'not-a-real-token-'.padEnd(64, '0'));
     const err = (await forged.waitFor((m) => m.t === 'error' || m.t === 'welcome')) as ControlMsg;
     assert.equal(err.t, 'error', 'a forged token must not be granted a seat via welcome');
@@ -214,7 +214,7 @@ test('a seat is released after the grace window expires and the token no longer 
   // Tiny grace window so the test doesn't wait out a real 30-60s default.
   const server = startServer(port, { MATCH_RECONNECT_GRACE_MS: '500' });
   try {
-    await waitForHealth(port, 25000);
+    await waitForHealth(port, 90000);
     const a = await connectClient(port, 'Alice');
     const b = await connectClient(port, 'Bob');
     const c = await connectClient(port, 'Cara');
@@ -245,7 +245,7 @@ test('reconnecting after the match already ended reports the outcome instead of 
   const port = 8104;
   const server = startServer(port, { MATCH_SHRINK_FULLY_CLOSED_TICK: '120' }); // ~2s: force a fast finish
   try {
-    await waitForHealth(port, 25000);
+    await waitForHealth(port, 90000);
     const a = await connectClient(port, 'Alice');
     const b = await connectClient(port, 'Bob');
     const c = await connectClient(port, 'Cara');

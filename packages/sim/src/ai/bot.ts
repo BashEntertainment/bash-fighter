@@ -46,15 +46,44 @@ interface DifficultyTuning {
   /** Probability in [0,1000) that an in-range attack decision is skipped
    * this decision tick (a missed opening a human would sometimes miss). */
   hesitationPerMille: number;
+  /** Probability in [0,1000) that this decision the bot ignores whatever
+   * target it would otherwise chase and just idles/wanders instead --
+   * models a genuinely passive bot rather than a merely slow-and-sloppy
+   * one. 0 at MEDIUM/HARD (unchanged prior behaviour). */
+  passiveChancePerMille: number;
+  /** Flat score penalty added when scoring a candidate target that is in
+   * this bot's `protectedIndices` set (see BotController constructor).
+   * Large at EASY so a passive bot goes out of its way to avoid piling
+   * onto a human player when any other opponent is remotely competitive
+   * as a target; 0 at MEDIUM/HARD, where a human is just another fighter. */
+  protectedTargetPenalty: number;
+  /** Multiplier applied to the existing anti-clump density penalty
+   * (CLUSTER_PENALTY) specifically when the candidate being scored is a
+   * protected index -- makes an already-crowded human even less
+   * appealing to a fresh EASY bot than the generic anti-clump term alone
+   * would, without touching how bots treat each other. 1 (no change) at
+   * MEDIUM/HARD. */
+  protectedClusterMultiplier: number;
 }
 
 const TUNING: Record<BotDifficultyValue, DifficultyTuning> = {
+  // EASY was tuned in the past to still be a reasonably active fighter --
+  // slow and sloppy, but chasing and swinging just as readily as MEDIUM.
+  // That is not what "easy" means to a first-time player dropped into a
+  // 20-fighter FFA: reaction delay and imprecision alone cannot save you
+  // from being the nearest target to several bots at once. EASY now adds
+  // genuine passivity (often doesn't chase at all) and a strong aversion
+  // to piling onto a protected (human) target on top of the existing
+  // reaction/wobble/hesitation slowdowns.
   [BotDifficulty.EASY]: {
-    reactionTicks: 24, // 400ms
-    reactionJitterTicks: 10,
-    wobbleChancePerMille: 350,
-    wobbleMagnitude: fx.fromFloat(0.6),
-    hesitationPerMille: 300,
+    reactionTicks: 40, // ~667ms
+    reactionJitterTicks: 16,
+    wobbleChancePerMille: 500,
+    wobbleMagnitude: fx.fromFloat(0.8),
+    hesitationPerMille: 550,
+    passiveChancePerMille: 400,
+    protectedTargetPenalty: 900.0,
+    protectedClusterMultiplier: 3.0,
   },
   [BotDifficulty.MEDIUM]: {
     reactionTicks: 14, // ~230ms
@@ -62,6 +91,9 @@ const TUNING: Record<BotDifficultyValue, DifficultyTuning> = {
     wobbleChancePerMille: 180,
     wobbleMagnitude: fx.fromFloat(0.35),
     hesitationPerMille: 120,
+    passiveChancePerMille: 0,
+    protectedTargetPenalty: 0,
+    protectedClusterMultiplier: 1.0,
   },
   [BotDifficulty.HARD]: {
     reactionTicks: 6, // 100ms
@@ -69,6 +101,9 @@ const TUNING: Record<BotDifficultyValue, DifficultyTuning> = {
     wobbleChancePerMille: 60,
     wobbleMagnitude: fx.fromFloat(0.15),
     hesitationPerMille: 30,
+    passiveChancePerMille: 0,
+    protectedTargetPenalty: 0,
+    protectedClusterMultiplier: 1.0,
   },
 };
 
@@ -100,6 +135,7 @@ const STICKINESS_BONUS = 400.0;
  * that pairs don't orbit for a whole match. */
 const TARGET_LOCK_DECISIONS = 8;
 const ONE = fx.ONE;
+const EMPTY_SET: ReadonlySet<number> = new Set();
 
 function clampStick(v: Fixed): Fixed {
   return fx.clamp(v, fx.neg(ONE), ONE);
@@ -141,10 +177,18 @@ export class BotController {
    *   the match seed and fighterIndex (e.g. `matchSeed ^ (fighterIndex * 0x9e3779b1)`)
    *   so a rerun of the same match seed reproduces the same bot decisions.
    */
-  constructor(fighterIndex: number, difficulty: BotDifficultyValue, seed: number) {
+  /** Fighter indices this bot should go out of its way to avoid piling
+   * onto (in practice: human-controlled seats). Only has teeth at EASY,
+   * where protectedTargetPenalty/protectedClusterMultiplier are non-zero.
+   * Empty by default so existing callers (tests, bot-vs-bot metrics) are
+   * unaffected. */
+  private readonly protectedIndices: ReadonlySet<number>;
+
+  constructor(fighterIndex: number, difficulty: BotDifficultyValue, seed: number, protectedIndices?: ReadonlySet<number>) {
     this.fighterIndex = fighterIndex;
     this.difficulty = difficulty;
     this.rng = seedRng(seed);
+    this.protectedIndices = protectedIndices ?? EMPTY_SET;
   }
 
   private rollPerMille(): number {
@@ -188,7 +232,13 @@ export class BotController {
 
     const blast = sim.getCurrentBlastRect();
     const unsafe = this.unsafeDirection(self, blast);
-    const target = this.pickTarget(sim, self);
+    // Passivity: at EASY, this decision has a real chance of skipping
+    // target-chasing entirely -- a genuinely passive bot, not merely a
+    // slow-and-sloppy one. Recovery (unsafe !== 0) always overrides this;
+    // standing still off-stage is not "passive", it is falling to your
+    // death, which is not the point.
+    const passive = tuning.passiveChancePerMille > 0 && this.rollPerMille() < tuning.passiveChancePerMille;
+    const target = passive ? null : this.pickTarget(sim, self);
 
     // --- Recovery / edge safety takes priority over everything else. ---
     if (unsafe !== 0) {
@@ -344,8 +394,11 @@ export class BotController {
       return dx * dx + dy * dy;
     };
 
+    const tuning = TUNING[this.difficulty];
     const score = (c: FighterSnapshot & { index: number }): number => {
-      let s = distSqTo(c) + density(c) * CLUSTER_PENALTY;
+      const clusterMult = this.protectedIndices.has(c.index) ? tuning.protectedClusterMultiplier : 1.0;
+      let s = distSqTo(c) + density(c) * CLUSTER_PENALTY * clusterMult;
+      if (this.protectedIndices.has(c.index)) s += tuning.protectedTargetPenalty;
       if (c.index === this.targetIndex) s -= STICKINESS_BONUS;
       return s;
     };

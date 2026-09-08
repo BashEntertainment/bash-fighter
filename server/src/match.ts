@@ -287,10 +287,15 @@ export class Match {
     if (shrinkOverride) settingsOverride.shrinkFullyClosedTick = Number(shrinkOverride);
     this.sim = createMatchSim(this.seed, this.seats.length, settingsOverride, characters);
     const difficulty = botDifficultyFromEnv();
+    // Human (non-bot) seats, passed to every bot so EASY's anti-dogpile
+    // tuning (protectedTargetPenalty/protectedClusterMultiplier in
+    // packages/sim/src/ai/bot.ts) knows which fighters are real players.
+    // No-op at MEDIUM/HARD, where those tuning values are 0.
+    const humanSlots = new Set(this.seats.filter((s) => !s.isBot).map((s) => s.slot));
     this.bots.clear();
     for (const seat of this.seats) {
       if (seat.isBot) {
-        this.bots.set(seat.slot, new BotController(seat.slot, difficulty, deriveBotSeed(this.seed, seat.slot)));
+        this.bots.set(seat.slot, new BotController(seat.slot, difficulty, deriveBotSeed(this.seed, seat.slot), humanSlots));
       }
     }
     this.lastTickAt = Date.now();

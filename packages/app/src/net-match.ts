@@ -84,6 +84,11 @@ export interface NetMatchEvents {
   onStateChange?(state: ConnectionState, detail?: string): void;
   onLobby?(players: number, capacity: number, countdownTicks: number): void;
   onMatchOver?(winnerIndex: number | null): void;
+  /** Fired once, the moment the local player is eliminated online.
+   * placement is 1-based finish position (e.g. 17 of 20). Lets the UI show
+   * a specific "you placed Nth" + play-again offer instead of leaving the
+   * player in an unexplained spectate view. */
+  onEliminated?(placement: number, totalFighters: number): void;
 }
 
 const SNAPSHOT_INTERVAL_MS = 1000 / SNAPSHOT_HZ;
@@ -299,6 +304,7 @@ export class NetMatch {
         if (msg.slot === this.mySlot && !this.spectating) {
           this.spectating = true;
           this.events.onStateChange?.('spectating', `placement ${msg.placement}`);
+          this.events.onEliminated?.(msg.placement, this.numFighters);
         }
         break;
       case 'matchEnd':

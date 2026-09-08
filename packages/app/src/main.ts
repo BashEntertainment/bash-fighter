@@ -7,6 +7,8 @@ import { SpectatorBanner } from './ui/spectator-banner.ts';
 import { SimMatchAdapter } from './spectator/sim-adapter.ts';
 import { SpectatorController } from './spectator/controller.ts';
 import { NetMatch, type ConnectionState } from './net-match.ts';
+import { MatchOverlay } from './ui/match-overlay.ts';
+import { ControlsHint } from './ui/controls-hint.ts';
 import { PLACEHOLDER_CHARACTER, resolveCharacterId } from '@bash-fighter/content';
 import type { ArenaBounds } from '@bash-fighter/render';
 import { AudioManager } from '@bash-fighter/audio';
@@ -72,6 +74,8 @@ appRoot.appendChild(muteButton);
 
 const hud = new Hud(appRoot);
 const spectatorBanner = new SpectatorBanner(appRoot);
+const matchOverlay = new MatchOverlay(appRoot);
+const controlsHint = new ControlsHint(appRoot);
 
 const startScreen = new StartScreen(appRoot, () => {
   void beginMatch();
@@ -131,6 +135,7 @@ async function beginOnlineMatch(): Promise<void> {
   startScreen.hide();
   winScreen.hide();
   spectatorBanner.hide();
+  matchOverlay.hide();
   hud.hide();
   const generation = ++matchGeneration;
 
@@ -149,15 +154,48 @@ async function beginOnlineMatch(): Promise<void> {
   const name = `Fighter${Math.floor(Math.random() * 1000)}`;
   const characterId = startScreen.selectedCharacterId;
   const net = new NetMatch(serverUrl(), {
-    onStateChange: (state, detail) => setNetStatus(state, detail),
+    onStateChange: (state, detail) => {
+      setNetStatus(state, detail);
+      if (state === 'disconnected' || state === 'error') {
+        matchOverlay.show({
+          kicker: 'CONNECTION LOST',
+          title: state === 'error' ? 'Could not reach the match server' : 'Disconnected from the match',
+          message: 'The connection dropped and could not be resumed automatically. Your last match is over, but you can jump straight back into a new one.',
+          tone: 'danger',
+          actions: [{ label: 'Retry', onClick: () => void beginOnlineMatch() }],
+        });
+      } else if (state === 'reconnecting') {
+        matchOverlay.show({
+          kicker: 'RECONNECTING',
+          title: 'Connection dropped, reconnecting…',
+          message: 'Trying to get you back into your match. This usually takes a few seconds.',
+          tone: 'danger',
+          actions: [{ label: 'Give up and start a new match', onClick: () => void beginOnlineMatch(), kind: 'plain' }],
+        });
+      } else {
+        matchOverlay.hide();
+      }
+    },
     onLobby: (players, capacity, countdownTicks) => {
       const countdown = countdownTicks >= 0 ? ` — starting in ${Math.ceil(countdownTicks / 60)}s` : '';
       setNetStatus('waiting', `${players}/${capacity} players${countdown}`);
     },
     onMatchOver: (winnerIndex) => {
       hud.hide();
+      matchOverlay.hide();
       audio.play('match_end');
       winScreen.show(winnerIndex);
+    },
+    onEliminated: (placement, totalFighters) => {
+      matchOverlay.show({
+        kicker: 'ELIMINATED',
+        title: `You finished ${placement} of ${totalFighters}`,
+        message: 'You can jump straight into a new match, or keep watching this one play out.',
+        actions: [
+          { label: 'Play again', onClick: () => void beginOnlineMatch() },
+          { label: 'Keep spectating', onClick: () => matchOverlay.hide(), kind: 'plain' },
+        ],
+      });
     },
   }, audio);
   netMatch = net;
@@ -176,6 +214,7 @@ async function beginOnlineMatch(): Promise<void> {
       if (!announcedStart) {
         announcedStart = true;
         audio.play('match_start');
+        controlsHint.maybeShow();
       }
       hud.show();
       hud.update(netMatch.currentSnapshots(), undefined, netMatch.localSlot());
@@ -195,7 +234,9 @@ async function beginMatch(): Promise<void> {
   winScreen.hide();
   startScreen.hide();
   spectatorBanner.hide();
+  matchOverlay.hide();
   hud.show();
+  controlsHint.maybeShow();
   const generation = ++matchGeneration;
   lastFrameTimeMs = null;
 

@@ -51,7 +51,11 @@ function sendBinary(conn: ClientConn, bytes: Uint8Array): void {
   conn.ws.send(bytes);
 }
 
-function closeWithError(conn: ClientConn, code: 'protocol_mismatch' | 'bad_message' | 'match_full' | 'server_error', message: string): void {
+function closeWithError(
+  conn: ClientConn,
+  code: 'protocol_mismatch' | 'bad_message' | 'match_full' | 'server_error' | 'resume_invalid' | 'resume_expired' | 'resume_seat_taken',
+  message: string,
+): void {
   send(conn, { t: 'error', code, message });
   conn.ws.close();
 }
@@ -185,10 +189,12 @@ wss.on('connection', (ws) => {
   });
 
   ws.on('close', () => {
-    if (conn.match) {
+    // A spectator or not-yet-assigned socket has no seat to hold open; only
+    // a real fighter slot gets the disconnect/grace-period treatment.
+    if (conn.match && !conn.spectating && conn.slot >= 0) {
       conn.match.markDisconnected(conn.slot);
-      watcherSet(conn.match.id).delete(conn.id);
     }
+    if (conn.match) watcherSet(conn.match.id).delete(conn.id);
     clients.delete(conn.id);
   });
 
@@ -196,6 +202,91 @@ wss.on('connection', (ws) => {
     ws.close();
   });
 });
+
+/** Handles a `hello` that carries a `resume` token instead of joining a
+ *  fresh lobby. Presenting a token is the ONLY path that can hand a
+ *  connection someone else's seat -- there is no lookup by matchId+slot
+ *  alone -- and a wrong/expired/already-connected token always fails with
+ *  an explicit `error` frame rather than silently falling back to a new
+ *  join, so a client bug can't accidentally end up spectating or dropped
+ *  into a random lobby without knowing why. */
+function handleResume(conn: ClientConn, token: string): void {
+  const found = manager.findReclaim(token);
+  if (!found) {
+    if (manager.isTokenForConnectedSeat(token)) {
+      // Valid token, but that seat already has a live socket -- reject the
+      // newcomer, never kick the incumbent.
+      closeWithError(conn, 'resume_seat_taken', 'this seat already has an active connection');
+    } else {
+      closeWithError(conn, 'resume_invalid', 'resume token not recognised or expired');
+    }
+    return;
+  }
+  const { match, slot } = found;
+  const seat = match.seats[slot];
+
+  if (match.phase === 'ended') {
+    // Told the outcome instead of erroring (edge case: reconnect after the
+    // match already ended). The seat is not re-marked connected -- there is
+    // no sim ticking any more to reconnect *to* -- this is purely informing
+    // the client so it can show a result screen instead of hanging.
+    conn.match = match;
+    conn.slot = slot;
+    watcherSet(match.id).add(conn.id);
+    send(conn, {
+      t: 'welcome',
+      protocolVersion: PROTOCOL_VERSION,
+      clientId: conn.id,
+      slot,
+      matchId: match.id,
+      resumeToken: null,
+      resumed: true,
+    });
+    const sim = match.sim;
+    send(conn, {
+      t: 'matchEnd',
+      winner: sim ? sim.getWinner() : null,
+      leaderboard: sim ? sim.getLeaderboard() : [],
+      tick: match.tick,
+    });
+    return;
+  }
+
+  if (!match.reclaimSeat(slot)) {
+    // Lost a race (e.g. grace timer fired between findReclaim and here, or
+    // someone else's connection beat us to it) -- fail cleanly rather than
+    // handing over a seat that is no longer actually reclaimable.
+    closeWithError(conn, 'resume_expired', 'seat is no longer reclaimable');
+    return;
+  }
+
+  conn.match = match;
+  conn.slot = slot;
+  watcherSet(match.id).add(conn.id);
+  send(conn, {
+    t: 'welcome',
+    protocolVersion: PROTOCOL_VERSION,
+    clientId: conn.id,
+    slot,
+    matchId: match.id,
+    resumeToken: seat.resumeToken,
+    resumed: true,
+  });
+  // Re-tell the reconnecting client the match parameters (seed, arena,
+  // names) so it can rebuild its sim from scratch rather than trusting any
+  // stale client-side state -- it will resync from the very next
+  // authoritative snapshot regardless.
+  send(conn, {
+    t: 'matchStart',
+    matchId: match.id,
+    seed: match.seed,
+    numFighters: match.seats.length,
+    slot,
+    settings: {},
+    arenaId: 'battle-royale-20',
+    names: match.seats.map((s) => s.name),
+  });
+}
 
 function handleText(conn: ClientConn, text: string): void {
   const msg = parseClientControl(text);
@@ -215,12 +306,26 @@ function handleText(conn: ClientConn, text: string): void {
       }
       if (conn.helloed) return; // ignore duplicate hello
       conn.helloed = true;
+
+      if (msg.resume) {
+        handleResume(conn, msg.resume);
+        return;
+      }
+
       const name = sanitiseName(msg.name);
       const { match, slot } = manager.joinLobby(name);
       conn.match = match;
       conn.slot = slot;
       watcherSet(match.id).add(conn.id);
-      send(conn, { t: 'welcome', protocolVersion: PROTOCOL_VERSION, clientId: conn.id, slot, matchId: match.id });
+      send(conn, {
+        t: 'welcome',
+        protocolVersion: PROTOCOL_VERSION,
+        clientId: conn.id,
+        slot,
+        matchId: match.id,
+        resumeToken: match.seats[slot].resumeToken,
+        resumed: false,
+      });
       if (match.phase === 'lobby') {
         broadcastLobby(match);
       } else {

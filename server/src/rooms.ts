@@ -54,6 +54,30 @@ export class RoomManager {
     return this.matches.get(id);
   }
 
+  /** Finds the match/seat a resume token reclaims, across every match this
+   *  manager still knows about (a client does not know its old matchId is
+   *  still needed, so it just presents the token). Not indexed separately
+   *  by token: match/seat counts are small (capacity 20, matchCount bounded
+   *  by reap()) and this only runs on the rare reconnect path, not the hot
+   *  60Hz tick path. */
+  findReclaim(token: string): { match: Match; slot: number } | undefined {
+    for (const match of this.matches.values()) {
+      const seat = match.findReclaimableSeat(token);
+      if (seat) return { match, slot: seat.slot };
+    }
+    return undefined;
+  }
+
+  /** True if `token` belongs to a seat that is valid but currently
+   *  connected (a duplicate/racing connection), as opposed to simply
+   *  unknown or expired. Used only to choose the more honest error code. */
+  isTokenForConnectedSeat(token: string): boolean {
+    for (const match of this.matches.values()) {
+      if (match.findSeatByAnyToken(token)) return true;
+    }
+    return false;
+  }
+
   /** Finds or creates the match currently filling, adds a seat to it, and
    *  returns both. Starting the match (full, or countdown reaching zero) is
    *  handled here too so callers don't need to poll. */

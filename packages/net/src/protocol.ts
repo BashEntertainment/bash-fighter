@@ -18,7 +18,11 @@
  * reality with no error anywhere.
  */
 
-export const PROTOCOL_VERSION = 1;
+/** Bumped to 2 for resume-token reconnection support (hello may carry a
+ *  `resume` token, welcome always carries one). A mismatch is still refused
+ *  explicitly at the handshake rather than silently misbehaving -- see the
+ *  module comment above. */
+export const PROTOCOL_VERSION = 2;
 
 /** Snapshots per second sent to each client. The sim runs at 60Hz; clients
  *  interpolate between snapshots and predict their own fighter, so the
@@ -40,6 +44,13 @@ export interface HelloMessage {
   protocolVersion: number;
   /** Display name. Server sanitises and truncates; never trusted. */
   name: string;
+  /** Opaque resume token from a previous `welcome`, presented to reclaim a
+   *  disconnected seat in an in-progress (or just-ended) match instead of
+   *  joining a fresh lobby. Absent for a normal new join. Unguessable --
+   *  see server/src/match.ts's token generation -- so presenting one is the
+   *  ONLY way to reclaim a seat; there is no other path that hands a seat
+   *  back based on slot number or match id alone. */
+  resume?: string;
 }
 
 /** Sent by a client that wants to keep watching after being eliminated. */
@@ -67,6 +78,16 @@ export interface WelcomeMessage {
   /** Fighter slot in the match, or -1 for a pure spectator. */
   slot: number;
   matchId: string;
+  /** Opaque resume token for this seat, or null for a pure spectator (a
+   *  spectator holds no reclaimable seat). Present it in a later `hello`'s
+   *  `resume` field to reclaim this exact seat after a disconnect, as long
+   *  as the seat is still within its grace window. Generated with
+   *  crypto.randomBytes server-side -- not derivable from slot or matchId. */
+  resumeToken: string | null;
+  /** True when this welcome is the result of successfully reclaiming a
+   *  disconnected seat via a resume token, so the client knows to treat
+   *  this as "you're back" rather than "you're new". */
+  resumed: boolean;
 }
 
 /** Sent while a match is filling, so the client can show something honest
@@ -117,7 +138,14 @@ export interface MatchEndMessage {
 
 export interface ErrorMessage {
   t: 'error';
-  code: 'protocol_mismatch' | 'bad_message' | 'match_full' | 'server_error';
+  code:
+    | 'protocol_mismatch'
+    | 'bad_message'
+    | 'match_full'
+    | 'server_error'
+    | 'resume_invalid'
+    | 'resume_expired'
+    | 'resume_seat_taken';
   message: string;
 }
 
@@ -242,14 +270,17 @@ export function parseClientControl(text: string): ClientControlMessage | null {
   if (typeof raw !== 'object' || raw === null) return null;
   const obj = raw as Record<string, unknown>;
   switch (obj.t) {
-    case 'hello':
+    case 'hello': {
       if (typeof obj.protocolVersion !== 'number') return null;
       if (typeof obj.name !== 'string') return null;
+      const resume = typeof obj.resume === 'string' && obj.resume.length > 0 ? obj.resume : undefined;
       return {
         t: 'hello',
         protocolVersion: obj.protocolVersion,
         name: sanitiseName(obj.name),
+        ...(resume ? { resume } : {}),
       };
+    }
     case 'spectate':
       return { t: 'spectate' };
     case 'pong':

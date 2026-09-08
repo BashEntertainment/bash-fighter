@@ -2,8 +2,20 @@
 // or spectating it. Matches are fully isolated: no shared mutable state
 // between matches, no global game instance.
 import { Sim, makeInputFrame, type InputFrame, type MatchSettings } from '@bash-fighter/sim/src/index.ts';
+import { BotController, BotDifficulty, deriveBotSeed, type BotDifficultyValue } from '@bash-fighter/sim/src/ai/bot.ts';
 import { BATTLE_ROYALE_20_ARENA } from '@bash-fighter/content/src/index.ts';
 import { SNAPSHOT_HZ } from '@bash-fighter/net/src/protocol.ts';
+
+/** MATCH_BOT_DIFFICULTY env var -> BotDifficulty, following the existing
+ *  MATCH_MINIMUM / MATCH_COUNTDOWN_SECONDS env-configurable pattern.
+ *  Defaults to 'medium'. Unknown values fall back to medium rather than
+ *  throwing, since a typo in a systemd unit should degrade, not crash. */
+function botDifficultyFromEnv(): BotDifficultyValue {
+  const raw = (process.env.MATCH_BOT_DIFFICULTY ?? 'medium').toLowerCase();
+  if (raw === 'easy') return BotDifficulty.EASY;
+  if (raw === 'hard') return BotDifficulty.HARD;
+  return BotDifficulty.MEDIUM;
+}
 
 export const TICK_HZ = 60;
 export const TICK_MS = 1000 / TICK_HZ;
@@ -14,6 +26,10 @@ export interface Seat {
   name: string;
   connected: boolean;
   eliminated: boolean;
+  /** True for a server-filled AI seat (see RoomManager's bot-fill timer).
+   *  A bot seat has no ClientConn/websocket, is never a broadcast watcher,
+   *  and its input comes from a BotController rather than the network. */
+  isBot: boolean;
   /** Latest input received for this slot. Empty (neutral) input is used for
    *  ticks where nothing has arrived yet, or once disconnected. */
   pendingInput: InputFrame;
@@ -56,6 +72,7 @@ export class Match {
   sim: Sim | null = null;
   seed = 0;
   tick = 0;
+  private bots = new Map<number, BotController>();
   private timer: NodeJS.Timeout | null = null;
   private lastTickAt = 0;
   private accumulatorMs = 0;
@@ -75,13 +92,14 @@ export class Match {
     return this.seats.length;
   }
 
-  addSeat(name: string): Seat {
+  addSeat(name: string, isBot = false): Seat {
     const slot = this.seats.length;
     const seat: Seat = {
       slot,
       name,
       connected: true,
       eliminated: false,
+      isBot,
       pendingInput: makeInputFrame(),
       lastInputTick: -1,
     };
@@ -122,6 +140,13 @@ export class Match {
     const shrinkOverride = process.env.MATCH_SHRINK_FULLY_CLOSED_TICK;
     if (shrinkOverride) settingsOverride.shrinkFullyClosedTick = Number(shrinkOverride);
     this.sim = new Sim(this.seed, this.seats.length, characters, BATTLE_ROYALE_20_ARENA, settingsOverride);
+    const difficulty = botDifficultyFromEnv();
+    this.bots.clear();
+    for (const seat of this.seats) {
+      if (seat.isBot) {
+        this.bots.set(seat.slot, new BotController(seat.slot, difficulty, deriveBotSeed(this.seed, seat.slot)));
+      }
+    }
     this.lastTickAt = Date.now();
     this.accumulatorMs = 0;
     this.timer = setInterval(() => this.loop(), TICK_MS);
@@ -151,7 +176,10 @@ export class Match {
   private tickOnce(): void {
     const sim = this.sim;
     if (!sim) return;
-    const inputs: InputFrame[] = this.seats.map((s) => s.pendingInput);
+    const inputs: InputFrame[] = this.seats.map((s) => {
+      const bot = this.bots.get(s.slot);
+      return bot ? bot.nextInput(sim) : s.pendingInput;
+    });
     sim.advance(inputs);
     this.tick++;
 

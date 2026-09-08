@@ -6,6 +6,7 @@
 // it inline for a fighter whose CharacterData.name is 'Voltling'.
 import { Graphics } from 'pixi.js';
 import { PALETTE } from './palette.ts';
+import type { Pose } from './fighter-pose.ts';
 
 // Smaller and narrower than the placeholder's BODY_WIDTH=14/BODY_HEIGHT=26
 // and much smaller than Ballast's RADIUS=15 circle -- a light, fast
@@ -13,7 +14,7 @@ import { PALETTE } from './palette.ts';
 const HALF_W = 6;
 const HEIGHT = 20;
 
-export function drawVoltlingSilhouette(g: Graphics, tint: number, facing: 1 | -1): void {
+export function drawVoltlingSilhouette(g: Graphics, tint: number, facing: 1 | -1, pose: Pose): void {
   // Body: a narrow diamond (kite shape) instead of a capsule or circle --
   // sharp angular silhouette reads as "fast/fragile", the opposite feel
   // of Ballast's soft round weight.
@@ -36,10 +37,11 @@ export function drawVoltlingSilhouette(g: Graphics, tint: number, facing: 1 | -1
   // distance from both other characters' limbs.
   const rootX = facing * HALF_W * 0.9;
   const rootY = midY;
-  const len = HALF_W * 2.2;
-  const tipX = rootX + facing * len;
-  const tipY = rootY;
-  const midX = rootX + facing * len * 0.5;
+  const len = HALF_W * (2.2 + pose.limbExtend * 1.4);
+  const swingY = Math.sin(pose.limbAngle) * len * 0.5;
+  const tipX = rootX + facing * Math.cos(pose.limbAngle) * len;
+  const tipY = rootY + swingY;
+  const midX = rootX + facing * Math.cos(pose.limbAngle) * len * 0.5;
   g.moveTo(rootX, rootY - 2);
   g.lineTo(midX, midY - 4);
   g.lineTo(tipX, tipY);

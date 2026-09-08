@@ -12,6 +12,7 @@ import { ItemSprite } from './item-sprite.ts';
 import { HazardSprite } from './hazard-sprite.ts';
 import { drawDebugBoxes, makeDebugText, formatDebugText, type DebugFighterInput } from './debug-overlay.ts';
 import { EffectsLayer } from './effects.ts';
+import { resolveAnimation } from '@bash-fighter/content';
 
 export { RenderItemTypeId } from './item-sprite.ts';
 export { EffectsLayer, type HitEffectInput } from './effects.ts';
@@ -330,6 +331,7 @@ export class Renderer {
       const screen = worldToScreen(f.x, f.y, cam, vw, vh);
       sprite.root.position.set(screen.x, screen.y);
       sprite.root.scale.set(cam.scale); // silhouette is drawn in world units
+      const char = frame.characters[i] as CharacterData | undefined;
       sprite.draw({
         facing: f.facing,
         hitstun: f.hitstun,
@@ -337,7 +339,12 @@ export class Renderer {
         shieldHealthFrac: fx.toFloat(f.shieldHealth) / 100,
         isDead: f.state === FighterStateId.DEAD,
         flashAmount: this.effects.flashAmount(i),
-        characterName: frame.characters[i]?.name,
+        characterName: char?.name,
+        state: f.state,
+        moveId: f.moveId,
+        moveFrame: f.moveFrame,
+        character: char,
+        anim: char ? resolveAnimation(char.name) : undefined,
       });
     }
 

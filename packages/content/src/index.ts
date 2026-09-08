@@ -18,3 +18,8 @@ export { BATTLE_ROYALE_20_ARENA } from './arenas/battle-royale-20/data.ts';
 export { BASH_FIGHTER_ITEM_SET } from './items/data.ts';
 export { BASH_FIGHTER_HAZARD } from './hazards/data.ts';
 export { createMatchSim } from './match-sim.ts';
+export type { AnimationParams } from './animation/types.ts';
+export { PLACEHOLDER_ANIMATION } from './characters/placeholder/animation.ts';
+export { BALLAST_ANIMATION } from './characters/ballast/animation.ts';
+export { VOLTLING_ANIMATION } from './characters/voltling/animation.ts';
+export { ANIMATION_BY_CHARACTER_NAME, resolveAnimation } from './animation-registry.ts';

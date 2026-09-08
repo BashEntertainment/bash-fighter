@@ -75,7 +75,10 @@ export function drawDebugBoxes(
     if (f.state !== FighterStateId.ATTACK || f.moveId < 0) continue;
     const move = findMove(f.character, f.moveId as never);
     if (!move) continue;
-    const located = windowAtFrame(move, f.moveFrame);
+    // Match sim.ts resolveHitsFor: moveFrame was already incremented for
+    // this tick before hit resolution, so the window that was actually
+    // active is at (moveFrame - 1), not moveFrame.
+    const located = windowAtFrame(move, f.moveFrame - 1);
     if (!located || located.window.kind !== 'active') continue;
     for (const hb of located.window.hitboxes) {
       const offX = f.facing < 0 ? -fx.toFloat(hb.offsetX) : fx.toFloat(hb.offsetX);
@@ -108,7 +111,7 @@ export function formatDebugText(
   for (let i = 0; i < fighters.length; i++) {
     const f = fighters[i] as DebugFighterInput;
     const move = f.moveId >= 0 ? findMove(f.character, f.moveId as never) : undefined;
-    const win = move ? windowAtFrame(move, f.moveFrame) : null;
+    const win = move ? windowAtFrame(move, f.moveFrame - 1) : null;
     const winDesc = win ? `${win.window.kind}:${win.frameInWindow}/${win.window.duration}` : '-';
     lines.push(
       `P${i + 1} ${STATE_NAMES[f.state]}  move=${move ? move.name : '-'} win=${winDesc}  pct=${(f.percent / 65536).toFixed(1)}`,

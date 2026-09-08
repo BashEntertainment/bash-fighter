@@ -37,10 +37,10 @@ const jab: MoveDef = {
       hitboxes: [
         {
           id: 0,
-          offsetX: fromFloat(0.8),
-          offsetY: fromFloat(0.3),
-          width: fromFloat(0.8),
-          height: fromFloat(0.8),
+          offsetX: fromFloat(8),
+          offsetY: fromFloat(3),
+          width: fromFloat(8),
+          height: fromFloat(8),
           angleIdx: 80,
           damage: fromInt(2),
           baseKnockback: fromFloat(2.0),
@@ -64,10 +64,10 @@ const forwardTilt: MoveDef = {
       hitboxes: [
         {
           id: 0,
-          offsetX: fromFloat(1.1),
-          offsetY: fromFloat(0.2),
-          width: fromFloat(1.0),
-          height: fromFloat(0.9),
+          offsetX: fromFloat(11),
+          offsetY: fromFloat(2),
+          width: fromFloat(10),
+          height: fromFloat(9),
           angleIdx: 100,
           damage: fromInt(5),
           baseKnockback: fromFloat(5.5),
@@ -92,9 +92,9 @@ const upAir: MoveDef = {
         {
           id: 0,
           offsetX: fromFloat(0),
-          offsetY: fromFloat(1.4),
-          width: fromFloat(1.2),
-          height: fromFloat(0.9),
+          offsetY: fromFloat(14),
+          width: fromFloat(12),
+          height: fromFloat(9),
           angleIdx: 256, // straight up
           damage: fromInt(7),
           baseKnockback: fromFloat(7.5),
@@ -119,9 +119,9 @@ const downAir: MoveDef = {
         {
           id: 0,
           offsetX: fromFloat(0),
-          offsetY: fromFloat(-1.4),
-          width: fromFloat(1.2),
-          height: fromFloat(1.1),
+          offsetY: fromFloat(-14),
+          width: fromFloat(12),
+          height: fromFloat(11),
           angleIdx: 768, // straight down
           damage: fromInt(8),
           baseKnockback: fromFloat(9.0),
@@ -137,7 +137,7 @@ const downAir: MoveDef = {
 export const VOLTLING_CHARACTER: CharacterData = {
   name: 'Voltling',
   weight: fromFloat(70),
-  hurtboxWidth: fromFloat(1.2),
-  hurtboxHeight: fromFloat(2.6),
+  hurtboxWidth: fromFloat(12),
+  hurtboxHeight: fromFloat(26),
   moves: [jab, forwardTilt, upAir, downAir],
 };

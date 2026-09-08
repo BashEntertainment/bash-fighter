@@ -29,7 +29,7 @@ export const REPLAY_CHARACTERS = [PLACEHOLDER_CHARACTER, PLACEHOLDER_CHARACTER] 
 // forever; the real match recorded below ends well before this.
 const MAX_TICKS = 30000;
 
-const MELEE_RANGE: fx.Fixed = fx.fromFloat(2.2);
+const MELEE_RANGE: fx.Fixed = fx.fromFloat(22);
 const FACING_NUDGE: fx.Fixed = fx.fromFloat(0.05);
 
 function decideBotInput(

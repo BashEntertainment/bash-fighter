@@ -440,7 +440,11 @@ export class Renderer {
         if (!character) continue;
         const move = findMove(character, f.moveId as never);
         if (!move) continue;
-        const found = windowAtFrame(move, f.moveFrame);
+        // sim.ts's resolveHitsFor: moveFrame was already incremented for
+        // this tick before hit resolution runs, so the window that was
+        // actually live is at (moveFrame - 1), not moveFrame. Match that
+        // convention here too or this debug trigger fires one frame late.
+        const found = windowAtFrame(move, f.moveFrame - 1);
         if (found?.window.kind === 'active') {
           win.__debugFreezeOnAttackActive = false;
           this.freezeRemainingMs = Number.POSITIVE_INFINITY;

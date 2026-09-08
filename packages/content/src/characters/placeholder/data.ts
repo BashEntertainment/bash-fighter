@@ -15,10 +15,10 @@ const jab: MoveDef = {
       hitboxes: [
         {
           id: 0,
-          offsetX: fromFloat(1.0),
-          offsetY: fromFloat(0.3),
-          width: fromFloat(1.0),
-          height: fromFloat(1.0),
+          offsetX: fromFloat(10),
+          offsetY: fromFloat(3),
+          width: fromFloat(10),
+          height: fromFloat(10),
           angleIdx: 80,
           damage: fromInt(3),
           baseKnockback: fromFloat(3.0),
@@ -42,10 +42,10 @@ const forwardTilt: MoveDef = {
       hitboxes: [
         {
           id: 0,
-          offsetX: fromFloat(1.3),
-          offsetY: fromFloat(0.2),
-          width: fromFloat(1.2),
-          height: fromFloat(1.0),
+          offsetX: fromFloat(13),
+          offsetY: fromFloat(2),
+          width: fromFloat(12),
+          height: fromFloat(10),
           angleIdx: 100,
           damage: fromInt(6),
           baseKnockback: fromFloat(6.0),
@@ -70,9 +70,9 @@ const upAir: MoveDef = {
         {
           id: 0,
           offsetX: fromFloat(0),
-          offsetY: fromFloat(1.6),
-          width: fromFloat(1.4),
-          height: fromFloat(1.0),
+          offsetY: fromFloat(16),
+          width: fromFloat(14),
+          height: fromFloat(10),
           angleIdx: 256, // straight up
           damage: fromInt(8),
           baseKnockback: fromFloat(8.0),
@@ -97,9 +97,9 @@ const downAir: MoveDef = {
         {
           id: 0,
           offsetX: fromFloat(0),
-          offsetY: fromFloat(-1.6),
-          width: fromFloat(1.4),
-          height: fromFloat(1.2),
+          offsetY: fromFloat(-16),
+          width: fromFloat(14),
+          height: fromFloat(12),
           angleIdx: 768, // straight down
           damage: fromInt(10),
           baseKnockback: fromFloat(10.0),
@@ -115,7 +115,7 @@ const downAir: MoveDef = {
 export const PLACEHOLDER_CHARACTER: CharacterData = {
   name: 'Placeholder',
   weight: fromFloat(100),
-  hurtboxWidth: fromFloat(1.6),
-  hurtboxHeight: fromFloat(3.2),
+  hurtboxWidth: fromFloat(16),
+  hurtboxHeight: fromFloat(32),
   moves: [jab, forwardTilt, upAir, downAir],
 };

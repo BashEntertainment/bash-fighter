@@ -48,6 +48,13 @@ export const GROUND_Y: Fixed = fx.fromInt(0);
 export const JUMP_VELOCITY: Fixed = fx.fromFloat(14.0);
 export const MOVE_SPEED: Fixed = fx.fromFloat(4.5);
 export const TERMINAL_VELOCITY: Fixed = fx.fromFloat(-20.0);
+/** Safety margin for hit-resolution broad-phase queries: comfortably
+ * larger than any character's hurtbox/hitbox half-extent, so a query
+ * against SpatialGrid (which buckets entities by center point, not by
+ * hurtbox extent — see broadphase.ts) always covers the cell(s) an
+ * overlapping defender's center could land in even when the hitbox box
+ * itself sits just on the near side of a cell boundary. */
+export const HIT_QUERY_MARGIN: Fixed = fx.fromInt(20);
 // Retained for backward compatibility with anything referencing the old
 // flat-stage constants directly; real geometry now comes from ArenaData.
 export const STAGE_MIN_X: Fixed = fx.fromInt(-200);
@@ -948,10 +955,27 @@ export class Sim {
       const worldX = fx.add(attackerX, mirroredOffsetX);
       const worldY = fx.add(attackerY, hb.offsetY);
       const box: Box = makeBoxCentered(worldX, worldY, hb.width, hb.height);
-      this.grid.queryBox(box.minX, box.minY, box.maxX, box.maxY, (defender) => {
-        if (defender === attacker) return;
-        this.tryApplyHit(attacker, defender, box, hb, moveInstance);
-      });
+      // The grid buckets each entity by a single point (its center), not
+      // by the extent of its hurtbox (see broadphase.ts SpatialGrid.build).
+      // A defender whose hurtbox overlaps this hitbox's box can still be
+      // centered one cell over — e.g. hitbox box max at x=159.99 with a
+      // defender centered at x=161.47 (cell boundary at 160) is a real
+      // overlap that a same-cell-only query would miss. Pad the query
+      // range by HIT_QUERY_MARGIN (comfortably larger than any hurtbox's
+      // half-extent) so the candidate set always includes any entity
+      // whose *center* could be near enough to have an overlapping box;
+      // tryApplyHit's exact aabbOverlap check afterward means this can
+      // only add extra candidates to reject, never a false hit.
+      this.grid.queryBox(
+        fx.sub(box.minX, HIT_QUERY_MARGIN),
+        fx.sub(box.minY, HIT_QUERY_MARGIN),
+        fx.add(box.maxX, HIT_QUERY_MARGIN),
+        fx.add(box.maxY, HIT_QUERY_MARGIN),
+        (defender) => {
+          if (defender === attacker) return;
+          this.tryApplyHit(attacker, defender, box, hb, moveInstance);
+        },
+      );
     }
   }
 

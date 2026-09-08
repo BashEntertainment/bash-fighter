@@ -316,7 +316,7 @@ describe('Sim: stocks, blast zones, and match end', () => {
       let input0 = NEUTRAL;
       if (f0.facing !== desiredFacing) {
         input0 = makeInputFrame(0, desiredFacing > 0 ? fx.fromFloat(0.05) : fx.fromFloat(-0.05), 0);
-      } else if (fx.abs(dx) > fx.fromFloat(2.2)) {
+      } else if (fx.abs(dx) > fx.fromFloat(22)) {
         input0 = makeInputFrame(0, desiredFacing > 0 ? fx.ONE : fx.fromInt(-1), 0);
       } else {
         input0 = makeInputFrame(BUTTON_ATTACK, desiredFacing > 0 ? fx.ONE : fx.fromInt(-1), 0);
@@ -350,7 +350,7 @@ describe('Sim: stocks, blast zones, and match end', () => {
       let input0 = NEUTRAL;
       if (f0.facing !== desiredFacing) {
         input0 = makeInputFrame(0, desiredFacing > 0 ? fx.fromFloat(0.05) : fx.fromFloat(-0.05), 0);
-      } else if (fx.abs(dx) > fx.fromFloat(2.2)) {
+      } else if (fx.abs(dx) > fx.fromFloat(22)) {
         input0 = makeInputFrame(0, desiredFacing > 0 ? fx.ONE : fx.fromInt(-1), 0);
       } else {
         input0 = makeInputFrame(BUTTON_ATTACK, desiredFacing > 0 ? fx.ONE : fx.fromInt(-1), 0);

@@ -62,7 +62,15 @@ function botInput(index: number, tick: number) {
 }
 
 function runChaosMatch(seed: number, ticks: number): string[] {
-  const sim = new Sim(seed, 4, CHARACTERS, TEST_ARENA, {}, BASH_FIGHTER_ITEM_SET, BASH_FIGHTER_HAZARD);
+  // Default winCondition ('battleRoyale') forces startingStocks to 1 and
+  // shrinks the arena; with the units-scale fix, attacks that used to
+  // whiff now actually connect, so a 1-stock 4-fighter battleRoyale match
+  // ends almost immediately once someone lands a hit near a blast zone.
+  // This test cares about hash-sequence determinism across a long run
+  // with items/hazards cycling, not about stock depletion or the shrink,
+  // so use 'stocks' mode with a large stock count to keep the match alive
+  // for the full tick budget.
+  const sim = new Sim(seed, 4, CHARACTERS, TEST_ARENA, { winCondition: 'stocks', startingStocks: 999 }, BASH_FIGHTER_ITEM_SET, BASH_FIGHTER_HAZARD);
   const buf = sim.createStateBuffer();
   const hashes: string[] = [];
   for (let t = 0; t < ticks; t++) {

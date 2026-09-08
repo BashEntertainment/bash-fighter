@@ -2,12 +2,15 @@
 
 ## Current state
 
-Bash Fighter has no public deployment yet. `packages/sim`, `packages/content`,
-`packages/render`, `packages/input`, `packages/net`, `packages/app`, and
-`server/` run in development containers and local checkouts today; there
-is no live server or user-facing endpoint on the public internet to
-disclose against yet. This document will be expanded with
-infrastructure-specific scope once a live deployment exists.
+Bash Fighter is live in production at **http://135.181.45.254/** — a
+game client, an authoritative WebSocket match server, and the `/api/*`
+HTTP endpoints backing it, all serving real public traffic. There is no
+TLS yet (plain HTTP/WS; a domain and certificate are pending), so this is
+in scope: report it as a hardening gap, not as a deployment that doesn't
+exist. `packages/sim`, `packages/content`, `packages/render`,
+`packages/input`, `packages/net`, and `packages/app` build into the
+client served there; `server/` is what runs as the production process on
+the Hetzner host behind nginx.
 
 ## Reporting a vulnerability
 
@@ -47,6 +50,9 @@ the opportunity to patch before disclosing publicly.
 - Anything that would let a client affect another client's or the
   server's state outside the documented wire protocol (see
   `docs/ARCHITECTURE.md` and `docs/PROTOCOL.md`) is in scope.
-- Once a live server exists on Bash Entertainment's infrastructure, this
-  document will gain a scope section covering that deployment
-  specifically.
+- The production host is a single Hetzner server behind nginx, running
+  the match server over plain HTTP/WS (no TLS yet). Man-in-the-middle
+  concerns tied specifically to the lack of TLS are known and already
+  tracked internally as a pending domain/certificate purchase, but a
+  concrete exploitable consequence beyond "no TLS" is still a welcome
+  report.

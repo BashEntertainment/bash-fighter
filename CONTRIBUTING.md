@@ -78,6 +78,22 @@ changes sim behavior, regenerate the golden file and say so plainly in the
 PR description — a silently-updated golden file is exactly the kind of
 change a reviewer needs to know about.
 
+## Adding a new character
+
+Characters are data, not code changes to the sim. Each character lives in
+its own directory under `packages/content/src/characters/<name>/`, with a
+`data.ts` describing its stats and four-move kit and an `animation.ts` for
+its pose data. The existing characters (`placeholder`, `ballast`,
+`voltling`, `reed`, `scrapper`, `anchor`, `zephyr`, `wisp`) are the
+reference pattern — copy the closest archetype to what you're building
+and adjust the numbers and hitboxes rather than starting from a blank
+file. Run the content validator and the existing character tests, and add
+a test for your character alongside the others in
+`packages/content/test/`. New characters should read distinctly from the
+existing roster at 20-fighter zoom (silhouette, proportions, not just
+color) — see `docs/ARCHITECTURE.md` for the readability constraints this
+places on new designs.
+
 ## Coding standards
 
 - TypeScript, strict mode (`tsconfig.base.json`: `strict`,

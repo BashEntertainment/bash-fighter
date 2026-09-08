@@ -14,8 +14,11 @@ elsewhere and aren't part of the public repo.
   shield, stocks). Covered by a determinism/rollback test harness with a
   committed golden-hash file.
 - **`packages/content`** — character/stage data format, a validator, and
-  a growing roster: Placeholder, Ballast (heavyweight), Voltling, and
-  Reed (long-reach zoner), each with a full four-move kit. Items (Thrown
+  a growing roster of eight: Placeholder, Ballast (heavyweight), Voltling,
+  Reed (long-reach zoner), Scrapper (rushdown brawler), Anchor (grappler
+  heavyweight), Zephyr (acrobatic lightweight), and Wisp (ranged
+  skirmisher), each with a full four-move kit and a character-select
+  screen to pick between them. Items (Thrown
   Brick, Slam Bat, Bash Bomb, Medkit) and stage hazards are implemented,
   PRNG-driven so server and clients agree without sending item events
   over the wire, and are drawn on screen (`packages/render/src/hazard-sprite.ts`
@@ -61,8 +64,9 @@ elsewhere and aren't part of the public repo.
 
 ## Not started
 
-- **More characters and stages.** Four characters exist today; more
-  archetypes and more than one arena layout are ahead of us.
+- **More characters and stages.** Eight characters exist today, covering
+  the core rushdown/tank/aerial-mobility/ranged-skirmisher archetypes;
+  more variety and more than one arena layout are ahead of us.
 - **TLS / a domain.** The production deployment is plain HTTP/WS; a
   domain and certificate purchase is pending owner sign-off.
 - **Anti-cheat / input validation hardening** beyond basic protocol

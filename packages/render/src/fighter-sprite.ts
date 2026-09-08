@@ -5,6 +5,7 @@
 import { Graphics } from 'pixi.js';
 import { PALETTE } from './palette.ts';
 import { drawBallastSilhouette } from './fighter-shape-ballast.ts';
+import { drawVoltlingSilhouette } from './fighter-shape-voltling.ts';
 
 export interface FighterVisualState {
   facing: 1 | -1;
@@ -64,6 +65,12 @@ export class FighterSprite {
 
     if (state.characterName === 'Ballast') {
       drawBallastSilhouette(g, tint, state.facing);
+      if (state.shieldActive) this.drawShieldBubble(state);
+      return;
+    }
+
+    if (state.characterName === 'Voltling') {
+      drawVoltlingSilhouette(g, tint, state.facing);
       if (state.shieldActive) this.drawShieldBubble(state);
       return;
     }

@@ -6,6 +6,7 @@
 export * from './validate.ts';
 export { PLACEHOLDER_CHARACTER } from './characters/placeholder/data.ts';
 export { BALLAST_CHARACTER } from './characters/ballast/data.ts';
+export { VOLTLING_CHARACTER } from './characters/voltling/data.ts';
 export {
   ALL_CHARACTERS,
   DEFAULT_CHARACTER_ID,

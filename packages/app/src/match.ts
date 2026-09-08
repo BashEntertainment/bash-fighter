@@ -6,6 +6,8 @@ import {
   Sim,
   fixed as fx,
   hashStateBuffer,
+  MAX_ITEMS,
+  MAX_HAZARDS,
   type StateBuffer,
   STAGE_MIN_X,
   STAGE_MAX_X,
@@ -16,12 +18,33 @@ import {
   GROUND_Y,
   type CharacterData,
   type FighterSnapshot,
+  type ItemSnapshot,
+  type HazardSnapshot,
   type InputFrame,
 } from '@bash-fighter/sim';
 import { PLACEHOLDER_CHARACTER } from '@bash-fighter/content';
 import { InputManager } from '@bash-fighter/input';
-import { Renderer, type RenderFighterState, type RenderFrame, type StageBounds } from '@bash-fighter/render';
+import {
+  Renderer,
+  type RenderFighterState,
+  type RenderItemState,
+  type RenderHazardState,
+  type RenderFrame,
+  type StageBounds,
+} from '@bash-fighter/render';
 import { FixedTimestepLoop } from './loop.ts';
+
+// Item HELD state id (mirrors packages/sim/src/sim.ts's private ItemState
+// enum: 0=world, 1=held, 2=thrown, 3=armed). Not exported by the sim
+// package, so duplicated here as a stable numeric constant rather than
+// widening the sim's public surface for a render-only concern.
+const ITEM_STATE_HELD = 1;
+const ITEM_STATE_ARMED = 3;
+
+// Stylized world-unit marker size for the hazard's ground-impact
+// indicator — matches the general scale FighterSprite/ItemSprite use
+// (BODY_WIDTH=14), not a pixel-exact readout of the sim's hazard hitbox.
+const HAZARD_MARKER_HALF_WIDTH = 11;
 
 export const STAGE_BOUNDS: StageBounds = {
   stageMinX: fx.toFloat(STAGE_MIN_X),
@@ -57,6 +80,10 @@ export class Match {
   private readonly loop: FixedTimestepLoop;
   private prevSnapshots: FighterSnapshot[];
   private currSnapshots: FighterSnapshot[];
+  private prevItemSnapshots: ItemSnapshot[];
+  private currItemSnapshots: ItemSnapshot[];
+  private prevHazardSnapshots: HazardSnapshot[];
+  private currHazardSnapshots: HazardSnapshot[];
   private lastStocks: number[];
   private over = false;
   private readonly hashBuf: StateBuffer;
@@ -76,6 +103,10 @@ export class Match {
     this.renderer = new Renderer(STAGE_BOUNDS);
     this.prevSnapshots = this.snapshotAll();
     this.currSnapshots = this.snapshotAll();
+    this.prevItemSnapshots = this.snapshotItems();
+    this.currItemSnapshots = this.snapshotItems();
+    this.prevHazardSnapshots = this.snapshotHazards();
+    this.currHazardSnapshots = this.snapshotHazards();
     this.lastStocks = this.currSnapshots.map((s) => s.stocks);
     this.hashBuf = this.sim.createStateBuffer();
     this.loop = new FixedTimestepLoop(
@@ -113,6 +144,18 @@ export class Match {
     return out;
   }
 
+  private snapshotItems(): ItemSnapshot[] {
+    const out: ItemSnapshot[] = [];
+    for (let i = 0; i < MAX_ITEMS; i++) out.push(this.sim.getItem(i));
+    return out;
+  }
+
+  private snapshotHazards(): HazardSnapshot[] {
+    const out: HazardSnapshot[] = [];
+    for (let i = 0; i < MAX_HAZARDS; i++) out.push(this.sim.getHazard(i));
+    return out;
+  }
+
   private tick(): void {
     if (this.over) return;
     const inputs: InputFrame[] = this.input.poll();
@@ -120,6 +163,10 @@ export class Match {
 
     this.prevSnapshots = this.currSnapshots;
     this.currSnapshots = this.snapshotAll();
+    this.prevItemSnapshots = this.currItemSnapshots;
+    this.currItemSnapshots = this.snapshotItems();
+    this.prevHazardSnapshots = this.currHazardSnapshots;
+    this.currHazardSnapshots = this.snapshotHazards();
 
     for (let i = 0; i < this.numFighters; i++) {
       const stocks = (this.currSnapshots[i] as FighterSnapshot).stocks;
@@ -153,9 +200,63 @@ export class Match {
         hitstun: curr.hitstun,
       });
     }
+    const items: RenderItemState[] = [];
+    for (let i = 0; i < MAX_ITEMS; i++) {
+      const prev = this.prevItemSnapshots[i] as ItemSnapshot;
+      const curr = this.currItemSnapshots[i] as ItemSnapshot;
+      if (!curr.active) {
+        items.push({ active: false, typeId: 0, x: 0, y: 0, held: false, holderFacing: 1, armed: false, fuseTicks: 0 });
+        continue;
+      }
+      const held = curr.state === ITEM_STATE_HELD;
+      // Held items snap to the holder's interpolated position instead of
+      // lerping the item's own prev/curr (which jump when pickup/drop
+      // changes ownership) so they never visually detach from the hand.
+      let x: number;
+      let y: number;
+      let holderFacing: 1 | -1 = 1;
+      if (held && curr.holder >= 0 && curr.holder < this.numFighters) {
+        const hf = fighters[curr.holder] as RenderFighterState;
+        x = hf.x;
+        y = hf.y;
+        holderFacing = hf.facing;
+      } else if (prev.active) {
+        x = lerp(fx.toFloat(prev.posX), fx.toFloat(curr.posX), alpha);
+        y = lerp(fx.toFloat(prev.posY), fx.toFloat(curr.posY), alpha);
+      } else {
+        x = fx.toFloat(curr.posX);
+        y = fx.toFloat(curr.posY);
+      }
+      items.push({
+        active: true,
+        typeId: curr.typeId,
+        x,
+        y,
+        held,
+        holderFacing,
+        armed: curr.state === ITEM_STATE_ARMED,
+        fuseTicks: curr.fuse,
+      });
+    }
+
+    const hazards: RenderHazardState[] = [];
+    for (let i = 0; i < MAX_HAZARDS; i++) {
+      const prev = this.prevHazardSnapshots[i] as HazardSnapshot;
+      const curr = this.currHazardSnapshots[i] as HazardSnapshot;
+      if (!curr.active) {
+        hazards.push({ active: false, x: 0, y: 0, halfWidth: HAZARD_MARKER_HALF_WIDTH });
+        continue;
+      }
+      const x = prev.active ? lerp(fx.toFloat(prev.posX), fx.toFloat(curr.posX), alpha) : fx.toFloat(curr.posX);
+      const y = prev.active ? lerp(fx.toFloat(prev.posY), fx.toFloat(curr.posY), alpha) : fx.toFloat(curr.posY);
+      hazards.push({ active: true, x, y, halfWidth: HAZARD_MARKER_HALF_WIDTH });
+    }
+
     const frame: RenderFrame = {
       fighters,
       characters: this.characters,
+      items,
+      hazards,
       tick: this.sim.getTick(),
       hash: this.currentHash(),
     };

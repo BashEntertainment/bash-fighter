@@ -8,7 +8,11 @@ import { PALETTE } from './palette.ts';
 import { computeCamera, worldToScreen, type ArenaBounds, type CameraConfig, type CameraView } from './camera.ts';
 import { drawStage, type StageBounds } from './stage.ts';
 import { FighterSprite } from './fighter-sprite.ts';
+import { ItemSprite } from './item-sprite.ts';
+import { HazardSprite } from './hazard-sprite.ts';
 import { drawDebugBoxes, makeDebugText, formatDebugText, type DebugFighterInput } from './debug-overlay.ts';
+
+export { RenderItemTypeId } from './item-sprite.ts';
 
 export type { StageBounds } from './stage.ts';
 export type { ArenaBounds, CameraView, CameraConfig } from './camera.ts';
@@ -34,9 +38,36 @@ export interface RenderFighterState {
   eliminated?: boolean;
 }
 
+/** One item's render-ready state: world-space floats, already read from
+ * sim.getItem(slot) by the app layer. `active: false` slots are skipped
+ * by the renderer (pool entry hidden), same convention as fighters. */
+export interface RenderItemState {
+  active: boolean;
+  typeId: number;
+  x: number;
+  y: number;
+  held: boolean;
+  holderFacing: 1 | -1;
+  armed: boolean;
+  fuseTicks: number;
+}
+
+/** One hazard's render-ready state, from sim.getHazard(slot). halfWidth
+ * is a stylized world-unit marker size chosen by the app layer for
+ * legibility, same convention as FighterSprite's BODY_WIDTH (not a
+ * pixel-exact readout of the sim's hazard hitbox). */
+export interface RenderHazardState {
+  active: boolean;
+  x: number;
+  y: number;
+  halfWidth: number;
+}
+
 export interface RenderFrame {
   fighters: readonly RenderFighterState[];
   characters: readonly CharacterData[];
+  items?: readonly RenderItemState[];
+  hazards?: readonly RenderHazardState[];
   tick: number;
   hash: string;
   /** Live arena bounds (e.g. a shrinking battle-royale blast zone) to
@@ -83,6 +114,10 @@ export class Renderer {
   private readonly debugLayer = new Graphics();
   private readonly sprites: FighterSprite[] = [];
   private readonly spriteContainer = new Container();
+  private readonly itemSprites: ItemSprite[] = [];
+  private readonly itemContainer = new Container();
+  private readonly hazardSprites: HazardSprite[] = [];
+  private readonly hazardContainer = new Container();
   private readonly debugText = makeDebugText();
   private readonly stageBounds: StageBounds;
 
@@ -100,7 +135,9 @@ export class Renderer {
     parent.appendChild(this.app.canvas);
 
     this.world.addChild(this.stageLayer);
+    this.world.addChild(this.hazardContainer);
     this.world.addChild(this.spriteContainer);
+    this.world.addChild(this.itemContainer);
     this.world.addChild(this.debugLayer);
     this.app.stage.addChild(this.world);
 
@@ -134,6 +171,28 @@ export class Renderer {
     }
     for (let i = count; i < this.sprites.length; i++) {
       (this.sprites[i] as FighterSprite).root.visible = false;
+    }
+  }
+
+  private ensureItemPool(count: number): void {
+    while (this.itemSprites.length < count) {
+      const sprite = new ItemSprite();
+      this.itemSprites.push(sprite);
+      this.itemContainer.addChild(sprite.root);
+    }
+    for (let i = count; i < this.itemSprites.length; i++) {
+      (this.itemSprites[i] as ItemSprite).root.visible = false;
+    }
+  }
+
+  private ensureHazardPool(count: number): void {
+    while (this.hazardSprites.length < count) {
+      const sprite = new HazardSprite();
+      this.hazardSprites.push(sprite);
+      this.hazardContainer.addChild(sprite.root);
+    }
+    for (let i = count; i < this.hazardSprites.length; i++) {
+      (this.hazardSprites[i] as HazardSprite).root.visible = false;
     }
   }
 
@@ -179,6 +238,49 @@ export class Renderer {
         shieldActive: f.state === FighterStateId.SHIELD,
         shieldHealthFrac: fx.toFloat(f.shieldHealth) / 100,
         isDead: f.state === FighterStateId.DEAD,
+      });
+    }
+
+    const hazards = frame.hazards ?? [];
+    this.ensureHazardPool(hazards.length);
+    for (let i = 0; i < hazards.length; i++) {
+      const h = hazards[i] as RenderHazardState;
+      const sprite = this.hazardSprites[i] as HazardSprite;
+      if (!h.active) {
+        sprite.root.visible = false;
+        continue;
+      }
+      sprite.root.visible = true;
+      const screen = worldToScreen(h.x, h.y, cam, vw, vh);
+      sprite.root.position.set(screen.x, screen.y);
+      sprite.root.scale.set(cam.scale);
+      sprite.draw({
+        posX: h.x,
+        posY: h.y,
+        groundY: stageForDraw.groundY,
+        halfWidth: h.halfWidth,
+      });
+    }
+
+    const items = frame.items ?? [];
+    this.ensureItemPool(items.length);
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i] as RenderItemState;
+      const sprite = this.itemSprites[i] as ItemSprite;
+      if (!it.active) {
+        sprite.root.visible = false;
+        continue;
+      }
+      sprite.root.visible = true;
+      const screen = worldToScreen(it.x, it.y, cam, vw, vh);
+      sprite.root.position.set(screen.x, screen.y);
+      sprite.root.scale.set(cam.scale);
+      sprite.draw({
+        typeId: it.typeId,
+        held: it.held,
+        facing: it.holderFacing,
+        armed: it.armed,
+        fuseTicks: it.fuseTicks,
       });
     }
 

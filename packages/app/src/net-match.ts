@@ -7,6 +7,8 @@ import {
   Sim,
   fixed as fx,
   makeInputFrame,
+  MAX_ITEMS,
+  MAX_HAZARDS,
   STAGE_MIN_X,
   STAGE_MAX_X,
   BLAST_MIN_X,
@@ -19,7 +21,21 @@ import {
 } from '@bash-fighter/sim';
 import { PLACEHOLDER_CHARACTER } from '@bash-fighter/content';
 import { InputManager } from '@bash-fighter/input';
-import { Renderer, type RenderFighterState, type RenderFrame, type StageBounds } from '@bash-fighter/render';
+import {
+  Renderer,
+  type RenderFighterState,
+  type RenderItemState,
+  type RenderHazardState,
+  type RenderFrame,
+  type StageBounds,
+} from '@bash-fighter/render';
+
+// See packages/app/src/match.ts for why these mirror the sim's private
+// ItemState enum and the stylized hazard marker size instead of importing
+// them from @bash-fighter/sim (not part of its public surface).
+const NET_ITEM_STATE_HELD = 1;
+const NET_ITEM_STATE_ARMED = 3;
+const NET_HAZARD_MARKER_HALF_WIDTH = 11;
 import {
   PROTOCOL_VERSION,
   SNAPSHOT_HZ,
@@ -284,9 +300,59 @@ export class NetMatch {
       fighters[this.mySlot] = snapshotToRenderFighter(this.localSim.getFighter(this.mySlot));
     }
 
+    // Items/hazards: read straight from renderSim's decoded snapshot, no
+    // separate prev/curr interpolation like fighters get -- renderSim is
+    // left pointed at the latest snapshot above. This is a simplification
+    // versus the local-match path (see match.ts): between snapshots these
+    // will hold their last-known position rather than smoothly
+    // interpolating, same coarseness the un-interpolated fallback fighter
+    // path already has when no snapshot has arrived yet.
+    const items: RenderItemState[] = [];
+    const hazards: RenderHazardState[] = [];
+    if (this.currSnapState) {
+      for (let i = 0; i < MAX_ITEMS; i++) {
+        const it = this.renderSim.getItem(i);
+        if (!it.active) {
+          items.push({ active: false, typeId: 0, x: 0, y: 0, held: false, holderFacing: 1, armed: false, fuseTicks: 0 });
+          continue;
+        }
+        const held = it.state === NET_ITEM_STATE_HELD;
+        let x = fx.toFloat(it.posX);
+        let y = fx.toFloat(it.posY);
+        let holderFacing: 1 | -1 = 1;
+        if (held && it.holder >= 0 && it.holder < this.numFighters) {
+          const hf = fighters[it.holder] as RenderFighterState;
+          x = hf.x;
+          y = hf.y;
+          holderFacing = hf.facing;
+        }
+        items.push({
+          active: true,
+          typeId: it.typeId,
+          x,
+          y,
+          held,
+          holderFacing,
+          armed: it.state === NET_ITEM_STATE_ARMED,
+          fuseTicks: it.fuse,
+        });
+      }
+      for (let i = 0; i < MAX_HAZARDS; i++) {
+        const hz = this.renderSim.getHazard(i);
+        hazards.push({
+          active: hz.active,
+          x: fx.toFloat(hz.posX),
+          y: fx.toFloat(hz.posY),
+          halfWidth: NET_HAZARD_MARKER_HALF_WIDTH,
+        });
+      }
+    }
+
     const frame: RenderFrame = {
       fighters,
       characters: new Array(this.numFighters).fill(PLACEHOLDER_CHARACTER),
+      items,
+      hazards,
       tick: this.currSnapTick,
       hash: '',
     };

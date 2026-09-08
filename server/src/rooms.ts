@@ -1,8 +1,10 @@
 // Lobby/room manager: assigns connecting clients to a filling match, starts
 // matches, and garbage-collects ended ones. Many independent Match objects;
 // this class never runs a sim itself.
-import { Match, TICK_HZ, type MatchEvents } from './match.ts';
+import { Match, TICK_HZ, seedFromMatchId, type MatchEvents } from './match.ts';
 import { botName } from '@bash-fighter/sim/src/ai/bot.ts';
+import { seedRng, nextBounded } from '@bash-fighter/sim/src/math/prng.ts';
+import { ALL_CHARACTERS } from '@bash-fighter/content/src/characters.ts';
 
 export const DEFAULT_CAPACITY = 20;
 export const DEFAULT_MINIMUM = 2;
@@ -139,9 +141,20 @@ export class RoomManager {
       this.botFillTimer = null;
       if (match.phase !== 'lobby') return;
       const target = Math.min(match.capacity, Math.max(BOT_FILL_TARGET, match.minimum));
+      // Bots get a character deterministically drawn from the roster, seeded
+      // from the match id + slot index (never Math.random), so every client
+      // that reconstructs the sim from the same match id picks the same
+      // characters -- see resolveCharacterId in match.ts for how seat
+      // characterId flows into createMatchSim. Human seats are untouched;
+      // this only fills in a characterId for the isBot=true seats added here.
+      const matchSeed = seedFromMatchId(match.id);
       let botIndex = 0;
       while (match.filledSlots < target) {
-        match.addSeat(botName(botIndex), true);
+        const slot = match.filledSlots;
+        const rng = seedRng((matchSeed ^ (slot * 0x9e3779b9)) >>> 0);
+        const draw = nextBounded(rng, ALL_CHARACTERS.length);
+        const characterId = ALL_CHARACTERS[draw.value].id;
+        match.addSeat(botName(botIndex), true, characterId);
         botIndex++;
       }
       this.clearCountdown();

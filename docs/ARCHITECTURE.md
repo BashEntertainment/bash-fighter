@@ -113,19 +113,27 @@ Bash Fighter instead uses:
   full N-fighter (2–32) combat loop, elimination, placement, the
   collapsing arena, and a determinism/rollback test harness.
 - `server/`: implemented — lobby, room isolation, match start/end,
-  broadcasting snapshots, an integration test connecting multiple real
-  WebSocket clients and diffing their final state hashes.
-- `packages/net` + `packages/app` online mode: implemented for a basic
-  match (prediction, reconciliation, interpolation, connection-state UI).
-  Known gaps: the in-match HUD doesn't render in online mode yet,
-  snapshots are full-state rather than delta-compressed, the spectator
-  path infers elimination from stocks instead of reading the real sim
-  fields, reconnection to an in-progress match isn't implemented, and
-  there's no bot/AI lobby filling.
-- `packages/content`: the data format, a validator, and one placeholder
-  character (four moves) exist. The broader community content pipeline is
+  broadcasting snapshots, bots that fill lobbies below capacity,
+  mid-match reconnection (grace period + token), and an integration test
+  connecting multiple real WebSocket clients and diffing their final
+  state hashes to prove no desync.
+- `packages/net` + `packages/app` online mode: implemented — prediction,
+  reconciliation, interpolation, connection-state UI, and reconnection
+  into an in-progress match after a drop. Known gaps: snapshots are
+  full-state rather than delta-compressed or quantised, and anti-cheat is
+  limited to basic input validation.
+- `packages/content`: the data format and a validator are implemented,
+  and the roster has grown well past one reference character — see
+  `packages/content/src/characters` for the current list, each with a
+  full moveset and its own render shape/animation params. The broader
+  on-ramp for community-contributed characters and stages (worked
+  examples beyond the existing characters, stage-authoring docs) is
   still being built out.
-- `packages/render`, `packages/input`: implemented enough to drive a
-  playable local build (WebGL2 via PixiJS, keyboard/gamepad input).
-- Everything here is placeholder art and one character. The game is not
-  yet deployed publicly.
+- `packages/render`, `packages/input`: implemented — WebGL2 (PixiJS)
+  renderer with per-character shapes and a shared pose/animation system,
+  keyboard/gamepad input, items and stage hazards drawn on screen (not
+  just simulated invisibly).
+- **Live deployment.** The match server and web client run in production
+  at http://135.181.45.254/ (plain HTTP/WS — no TLS yet, pending a domain
+  purchase), serving real 20-player matches over the public internet.
+  This is not a demo; it's the same code in this repository.

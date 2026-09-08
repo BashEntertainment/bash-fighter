@@ -9,13 +9,7 @@ import {
   makeInputFrame,
   MAX_ITEMS,
   MAX_HAZARDS,
-  STAGE_MIN_X,
-  STAGE_MAX_X,
-  BLAST_MIN_X,
-  BLAST_MAX_X,
-  BLAST_MIN_Y,
-  BLAST_MAX_Y,
-  GROUND_Y,
+  DEFAULT_ARENA,
   type FighterSnapshot,
   type InputFrame,
 } from '@bash-fighter/sim';
@@ -23,6 +17,7 @@ import { PLACEHOLDER_CHARACTER, createMatchSim } from '@bash-fighter/content';
 import { InputManager } from '@bash-fighter/input';
 import {
   Renderer,
+  arenaDataToStageBounds,
   type RenderFighterState,
   type RenderItemState,
   type RenderHazardState,
@@ -45,15 +40,10 @@ import {
 } from '@bash-fighter/net';
 import { FixedTimestepLoop } from './loop.ts';
 
-export const STAGE_BOUNDS: StageBounds = {
-  stageMinX: fx.toFloat(STAGE_MIN_X),
-  stageMaxX: fx.toFloat(STAGE_MAX_X),
-  groundY: fx.toFloat(GROUND_Y),
-  blastMinX: fx.toFloat(BLAST_MIN_X),
-  blastMaxX: fx.toFloat(BLAST_MAX_X),
-  blastMinY: fx.toFloat(BLAST_MIN_Y),
-  blastMaxY: fx.toFloat(BLAST_MAX_Y),
-};
+// Placeholder used only until the real match arena is known (see
+// startMatch, which calls renderer.setStageBounds(...) with the actual
+// arena from createMatchSim as soon as the local prediction Sim exists).
+export const STAGE_BOUNDS: StageBounds = arenaDataToStageBounds(DEFAULT_ARENA);
 
 export type ConnectionState =
   | 'connecting'
@@ -201,6 +191,10 @@ export class NetMatch {
     // diverges from authority. See createMatchSim.
     this.localSim = createMatchSim(seed, numFighters);
     this.renderSim = createMatchSim(seed, numFighters);
+    // The server always builds matches via createMatchSim too (see
+    // server/src/*), so this.localSim.getArena() is the arena actually
+    // being played on -- feed the renderer that, not a default guess.
+    this.renderer.setStageBounds(arenaDataToStageBounds(this.localSim.getArena()));
     this.localTick = 0;
     this.inputHistory.clear();
     this.events.onStateChange?.(this.spectating ? 'spectating' : 'in-match');
@@ -262,6 +256,29 @@ export class NetMatch {
       else if (!this.spectating && this.mySlot >= 0) replayInputs[this.mySlot] = makeInputFrame();
       this.localSim.advance(replayInputs);
     }
+  }
+
+  /** FighterSnapshots for the HUD -- same shape as Match.currentSnapshots()
+   * so main.ts can drive Hud.update() identically for local and online
+   * matches. Mirrors render()'s fighter resolution: predicted local sim
+   * for the local slot, decoded latest snapshot for everyone else, falling
+   * back to localSim before any snapshot has arrived. eliminated/placement
+   * come straight from the sim's own FighterSnapshot fields -- no separate
+   * bookkeeping needed. */
+  /** True once startMatch() has run and there is a real sim/arena to show a
+   * HUD for -- guards main.ts from showing fighter cards during lobby wait. */
+  hasStarted(): boolean {
+    return this.localSim !== null;
+  }
+
+  currentSnapshots(): readonly FighterSnapshot[] {
+    if (!this.localSim) return [];
+    const out: FighterSnapshot[] = new Array(this.numFighters);
+    const source = this.currSnapState && this.renderSim ? this.renderSim : this.localSim;
+    if (this.currSnapState && this.renderSim) this.renderSim.loadState(this.currSnapState);
+    for (let i = 0; i < this.numFighters; i++) out[i] = source.getFighter(i);
+    if (!this.spectating && this.mySlot >= 0) out[this.mySlot] = this.localSim.getFighter(this.mySlot);
+    return out;
   }
 
   private render(): void {

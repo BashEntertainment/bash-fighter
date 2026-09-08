@@ -9,23 +9,18 @@ import {
   MAX_ITEMS,
   MAX_HAZARDS,
   type StateBuffer,
-  STAGE_MIN_X,
-  STAGE_MAX_X,
-  BLAST_MIN_X,
-  BLAST_MAX_X,
-  BLAST_MIN_Y,
-  BLAST_MAX_Y,
-  GROUND_Y,
   type CharacterData,
   type FighterSnapshot,
   type ItemSnapshot,
   type HazardSnapshot,
   type InputFrame,
+  DEFAULT_ARENA,
 } from '@bash-fighter/sim';
 import { PLACEHOLDER_CHARACTER } from '@bash-fighter/content';
 import { InputManager } from '@bash-fighter/input';
 import {
   Renderer,
+  arenaDataToStageBounds,
   type RenderFighterState,
   type RenderItemState,
   type RenderHazardState,
@@ -46,15 +41,12 @@ const ITEM_STATE_ARMED = 3;
 // (BODY_WIDTH=14), not a pixel-exact readout of the sim's hazard hitbox.
 const HAZARD_MARKER_HALF_WIDTH = 11;
 
-export const STAGE_BOUNDS: StageBounds = {
-  stageMinX: fx.toFloat(STAGE_MIN_X),
-  stageMaxX: fx.toFloat(STAGE_MAX_X),
-  groundY: fx.toFloat(GROUND_Y),
-  blastMinX: fx.toFloat(BLAST_MIN_X),
-  blastMaxX: fx.toFloat(BLAST_MAX_X),
-  blastMinY: fx.toFloat(BLAST_MIN_Y),
-  blastMaxY: fx.toFloat(BLAST_MAX_Y),
-};
+// Kept for callers (main.ts's spectator fallback arena) that need a
+// StageBounds before any Match/Sim exists. The Match instance itself
+// always derives its Renderer's StageBounds from the actual Sim's arena
+// below (this.sim.getArena()), never from this constant, so a match built
+// with a different arena still renders correctly.
+export const STAGE_BOUNDS: StageBounds = arenaDataToStageBounds(DEFAULT_ARENA);
 
 export interface MatchEvents {
   onStockLost?(fighterIndex: number, stocksRemaining: number): void;
@@ -100,7 +92,7 @@ export class Match {
     this.characters = characters;
     this.sim = sim ?? new Sim(seed, characters.length, characters);
     this.numFighters = this.sim.numFighters;
-    this.renderer = new Renderer(STAGE_BOUNDS);
+    this.renderer = new Renderer(arenaDataToStageBounds(this.sim.getArena()));
     this.prevSnapshots = this.snapshotAll();
     this.currSnapshots = this.snapshotAll();
     this.prevItemSnapshots = this.snapshotItems();

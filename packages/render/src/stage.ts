@@ -1,18 +1,27 @@
-// Draws the stage platform and blast-zone boundary from arena data —
-// dimensions always come from StageBounds, never a hardcoded size, so
-// this reads correctly whether it's today's single platform or a future
-// multi-platform 20-player arena. Blast zones are drawn as an obvious
-// dashed line + darker outer wash so a player always knows how far
-// offstage is safe.
+// Draws every platform of the arena and the blast-zone boundary from
+// arena data — dimensions always come from StageBounds, never a
+// hardcoded size, so this reads correctly whether it's a single flat
+// stage or a multi-platform 20-player arena. Blast zones are drawn as an
+// obvious dashed line + darker outer wash so a player always knows how
+// far offstage is safe.
 import { Graphics } from 'pixi.js';
 import { PALETTE } from './palette.ts';
 import type { CameraView } from './camera.ts';
 import { worldToScreen } from './camera.ts';
 
+/** One flat platform in world units — mirrors @bash-fighter/sim's
+ * Platform (minX/maxX/y as floats instead of Fixed) so the renderer
+ * doesn't need the fixed-point type, only the numbers. */
+export interface StagePlatform {
+  minX: number;
+  maxX: number;
+  y: number;
+}
+
 export interface StageBounds {
-  stageMinX: number;
-  stageMaxX: number;
-  groundY: number;
+  /** Every platform to draw. A single-platform stage is just a
+   * one-element array — there is no separate "flat stage" code path. */
+  platforms: readonly StagePlatform[];
   blastMinX: number;
   blastMaxX: number;
   blastMinY: number;
@@ -45,19 +54,22 @@ export function drawStage(
   g.rect(insideTL.x, insideTL.y, insideBR.x - insideTL.x, insideBR.y - insideTL.y);
   g.fill({ color: PALETTE.blastZone, alpha: 0.35 });
 
-  // Solid platform slab, drawn with a visible top edge and a darker
-  // underside so it reads as a floating platform, not a flat line.
-  const topL = worldToScreen(bounds.stageMinX, bounds.groundY, cam, viewWidth, viewHeight);
-  const topR = worldToScreen(bounds.stageMaxX, bounds.groundY, cam, viewWidth, viewHeight);
-  const depthPx = PLATFORM_DEPTH_WORLD * cam.scale;
-  const width = topR.x - topL.x;
+  // Solid platform slabs, each drawn with a visible top edge and a
+  // darker underside so every one reads as a floating platform, not a
+  // flat line. A single-slab stage is just this loop running once.
+  for (const platform of bounds.platforms) {
+    const topL = worldToScreen(platform.minX, platform.y, cam, viewWidth, viewHeight);
+    const topR = worldToScreen(platform.maxX, platform.y, cam, viewWidth, viewHeight);
+    const depthPx = PLATFORM_DEPTH_WORLD * cam.scale;
+    const width = topR.x - topL.x;
 
-  g.rect(topL.x, topL.y, width, depthPx);
-  g.fill({ color: PALETTE.stageFill });
-  g.rect(topL.x, topL.y + depthPx * 0.55, width, depthPx * 0.45);
-  g.fill({ color: PALETTE.background, alpha: 0.35 });
-  g.rect(topL.x, topL.y, width, Math.max(3, depthPx * 0.08));
-  g.fill({ color: PALETTE.stageEdge });
+    g.rect(topL.x, topL.y, width, depthPx);
+    g.fill({ color: PALETTE.stageFill });
+    g.rect(topL.x, topL.y + depthPx * 0.55, width, depthPx * 0.45);
+    g.fill({ color: PALETTE.background, alpha: 0.35 });
+    g.rect(topL.x, topL.y, width, Math.max(3, depthPx * 0.08));
+    g.fill({ color: PALETTE.stageEdge });
+  }
 
   // Blast zone boundary: dashed rectangle around the whole arena.
   drawDashedRect(g, insideTL.x, insideTL.y, insideBR.x - insideTL.x, insideBR.y - insideTL.y, PALETTE.danger);

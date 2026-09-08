@@ -154,6 +154,36 @@ html, body {
   padding: 8px 10px;
 }
 
+/* Dense mode: up to 20 fighters. A wide flowing row of compact cards
+   would wrap into several rows and cover the stage, so dense mode caps
+   the list to a narrow column pinned at the top-left instead -- small
+   fixed-width chips, percent only (stocks reduces to a dot count),
+   scrollable if it ever runs past the viewport. */
+.hud-list.dense {
+  flex-wrap: wrap;
+  max-width: 190px;
+  max-height: 70vh;
+  overflow-y: auto;
+  gap: 4px;
+  align-content: flex-start;
+}
+
+.hud-list.dense .hud-card {
+  min-width: 0;
+  width: 86px;
+  padding: 4px 7px;
+  border-left-width: 2px;
+}
+
+.hud-list.dense .hud-card .pct {
+  font-size: 15px;
+}
+
+.hud-list.dense .hud-card .stocks {
+  margin-top: 2px;
+  font-size: 9px;
+}
+
 .hud-card {
   background: rgba(20, 23, 27, 0.85);
   border-left: 3px solid var(--ink-dim);

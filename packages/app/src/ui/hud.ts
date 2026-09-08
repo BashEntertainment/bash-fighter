@@ -44,7 +44,13 @@ export class Hud {
   }
 
   private ensureCards(count: number): void {
-    this.list.classList.toggle('compact', count > 4);
+    // Two density steps: 'compact' once two big readouts stop fitting,
+    // 'dense' once even compact cards would wrap into a screen-covering
+    // block at 20-fighter counts -- same markup, just a third, tighter
+    // CSS density instead of a different widget, so a 20p match still
+    // reads as a HUD, not a page of debug text.
+    this.list.classList.toggle('compact', count > 4 && count <= 10);
+    this.list.classList.toggle('dense', count > 10);
     while (this.cards.length < count) {
       const card = document.createElement('div');
       card.className = 'hud-card';
@@ -62,8 +68,13 @@ export class Hud {
     let survivors = 0;
     for (let i = 0; i < snapshots.length; i++) {
       const s = snapshots[i] as FighterSnapshot;
+      // extras (spectator-derived elimination status, local-only) take
+      // priority when given; online matches have no extras so fall back
+      // to the snapshot's own eliminated/placement fields, which the sim
+      // fills in directly (see FighterSnapshot in packages/sim/src/sim.ts).
       const extra = extras?.[i];
-      const eliminated = extra?.eliminated ?? false;
+      const eliminated = extra?.eliminated ?? s.eliminated;
+      const placement = extra?.placement ?? (s.placement > 0 ? s.placement : null);
       if (!eliminated) survivors++;
       const card = this.cards[i] as HTMLDivElement;
       card.style.display = '';
@@ -75,13 +86,12 @@ export class Hud {
       pctEl.textContent = `${pct}%`;
       pctEl.style.color = s.state === FighterStateId.DEAD ? '#666' : pct >= 100 ? PALETTE_DANGER_HEX : '';
       if (eliminated) {
-        stocksEl.textContent = extra?.placement ? `OUT · ${extra.placement}` : 'OUT';
+        stocksEl.textContent = placement ? `OUT · ${placement}` : 'OUT';
       } else {
         stocksEl.textContent = '●'.repeat(Math.max(0, s.stocks)) || '—';
       }
     }
-    this.survivorsLine.textContent =
-      snapshots.length > 2 || extras ? `${survivors} / ${snapshots.length} remaining` : '';
+    this.survivorsLine.textContent = snapshots.length > 2 ? `${survivors} / ${snapshots.length} remaining` : '';
     this.survivorsLine.style.display = this.survivorsLine.textContent ? '' : 'none';
   }
 }

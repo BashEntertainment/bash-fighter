@@ -14,7 +14,8 @@ import { drawDebugBoxes, makeDebugText, formatDebugText, type DebugFighterInput 
 
 export { RenderItemTypeId } from './item-sprite.ts';
 
-export type { StageBounds } from './stage.ts';
+export type { StageBounds, StagePlatform } from './stage.ts';
+export { arenaDataToStageBounds } from './arena-adapter.ts';
 export type { ArenaBounds, CameraView, CameraConfig } from './camera.ts';
 export { computeCamera, worldToScreen } from './camera.ts';
 export { computeFollowCamera, computeOverviewCamera, SmoothedCamera, type FollowConfig } from './spectator-camera.ts';
@@ -102,6 +103,10 @@ function cameraConfig(stage: StageBounds, viewWidth: number, viewHeight: number)
   };
 }
 
+function mainGroundY(stage: StageBounds): number {
+  return stage.platforms[0]?.y ?? 0;
+}
+
 const PLAYER_COLOR_COUNT = PALETTE.fighters.length;
 
 export class Renderer {
@@ -119,9 +124,16 @@ export class Renderer {
   private readonly hazardSprites: HazardSprite[] = [];
   private readonly hazardContainer = new Container();
   private readonly debugText = makeDebugText();
-  private readonly stageBounds: StageBounds;
+  private stageBounds: StageBounds;
 
   constructor(stageBounds: StageBounds) {
+    this.stageBounds = stageBounds;
+  }
+
+  /** Swap the static arena the renderer draws, e.g. once an online match's
+   * real arena (createMatchSim's BATTLE_ROYALE_20_ARENA) is known, after
+   * the Renderer had to be constructed earlier with a placeholder. */
+  setStageBounds(stageBounds: StageBounds): void {
     this.stageBounds = stageBounds;
   }
 
@@ -257,7 +269,7 @@ export class Renderer {
       sprite.draw({
         posX: h.x,
         posY: h.y,
-        groundY: stageForDraw.groundY,
+        groundY: mainGroundY(stageForDraw),
         halfWidth: h.halfWidth,
       });
     }

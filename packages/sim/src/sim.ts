@@ -381,6 +381,14 @@ export class Sim {
     return { minX: this.blastMinX, maxX: this.blastMaxX, minY: this.blastMinY, maxY: this.blastMaxY };
   }
 
+  /** Read-only accessor for the arena this Sim was constructed with
+   * (platforms, starting blast rect, spawn points). Renderers need this
+   * to draw the actual stage instead of assuming a hardcoded shape.
+   * Never mutate the returned object. */
+  getArena(): ArenaData {
+    return this.arena;
+  }
+
   private aliveCount(): number {
     let count = 0;
     for (let i = 0; i < this.numFighters; i++) {

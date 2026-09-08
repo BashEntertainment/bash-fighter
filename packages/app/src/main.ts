@@ -96,6 +96,7 @@ async function beginOnlineMatch(): Promise<void> {
   winScreen.hide();
   spectatorBanner.hide();
   hud.hide();
+  const generation = ++matchGeneration;
 
   if (match) {
     match.stop();
@@ -117,12 +118,30 @@ async function beginOnlineMatch(): Promise<void> {
       setNetStatus('waiting', `${players}/${capacity} players${countdown}`);
     },
     onMatchOver: (winnerIndex) => {
+      hud.hide();
       winScreen.show(winnerIndex);
     },
   });
   netMatch = net;
   await net.init(canvasRoot);
   net.connect(name);
+
+  // Same HUD widget the local match uses (packages/app/src/ui/hud.ts),
+  // fed from NetMatch.currentSnapshots() -- see that method's comment for
+  // why it is a safe drop-in for Match.currentSnapshots(). Shown once a
+  // match has actually started so it never shows fighter cards over the
+  // waiting-for-players screen.
+  const onlineHudTick = (): void => {
+    if (generation !== matchGeneration) return;
+    if (netMatch && netMatch.hasStarted()) {
+      hud.show();
+      hud.update(netMatch.currentSnapshots());
+    } else {
+      hud.hide();
+    }
+    requestAnimationFrame(onlineHudTick);
+  };
+  requestAnimationFrame(onlineHudTick);
 }
 
 const winScreen = new WinScreen(appRoot, () => {

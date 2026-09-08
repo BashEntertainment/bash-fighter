@@ -6,6 +6,7 @@ import type { AnimationParams } from './animation/types.ts';
 import { PLACEHOLDER_ANIMATION } from './characters/placeholder/animation.ts';
 import { BALLAST_ANIMATION } from './characters/ballast/animation.ts';
 import { VOLTLING_ANIMATION } from './characters/voltling/animation.ts';
+import { REED_ANIMATION } from './characters/reed/animation.ts';
 
 // Keyed by CharacterData.name (not the roster `id` from characters.ts):
 // packages/render only ever has a CharacterData in hand (from the sim's
@@ -15,6 +16,7 @@ export const ANIMATION_BY_CHARACTER_NAME: Readonly<Record<string, AnimationParam
   Placeholder: PLACEHOLDER_ANIMATION,
   Ballast: BALLAST_ANIMATION,
   Voltling: VOLTLING_ANIMATION,
+  Reed: REED_ANIMATION,
 };
 
 /** Falls back to placeholder's params for any unknown/missing name. */

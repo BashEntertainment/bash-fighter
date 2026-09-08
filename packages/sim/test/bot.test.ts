@@ -107,3 +107,51 @@ describe('BotController arena-shrink awareness', () => {
     );
   });
 });
+
+describe('EASY difficulty: novice survival against 19 bots', () => {
+  it('a passive novice input source outlasts the pre-fix ~1800-tick baseline', () => {
+    const N = 20;
+    const NOVICE_SLOT = 0;
+    const sim = new Sim(MATCH_SEED, N, undefined, undefined, {
+      winCondition: 'battleRoyale',
+      arenaShrink: true,
+    });
+    const protectedSlots = new Set([NOVICE_SLOT]);
+    const bots = Array.from({ length: N }, (_, i) =>
+      i === NOVICE_SLOT
+        ? null
+        : new BotController(i, BotDifficulty.EASY, deriveBotSeed(MATCH_SEED, i), protectedSlots),
+    );
+
+    let noviceDrift = 0;
+    let seed = 987654321;
+    const rand = (): number => {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+      return seed / 0x7fffffff;
+    };
+    function noviceInput() {
+      const frame = makeInputFrame();
+      if (rand() < 0.08) noviceDrift = rand() < 0.5 ? -1 : rand() < 0.9 ? 1 : 0;
+      if (noviceDrift !== 0) frame.stickX = noviceDrift > 0 ? fx.ONE : -fx.ONE;
+      if (rand() < 0.01) frame.buttons |= 0b0001;
+      if (rand() < 0.05) frame.buttons |= 0b0010;
+      return frame;
+    }
+
+    const CEILING = 21600;
+    let survivedTicks = CEILING;
+    for (let t = 0; t < CEILING; t++) {
+      const inputs = bots.map((b, i) => (i === NOVICE_SLOT ? noviceInput() : b!.nextInput(sim)));
+      sim.advance(inputs);
+      if (sim.getFighter(NOVICE_SLOT).stocks <= 0) {
+        survivedTicks = t + 1;
+        break;
+      }
+    }
+
+    assert.ok(
+      survivedTicks > 5400,
+      `expected novice to survive past 90s (5400 ticks) on EASY, survived only ${survivedTicks} ticks (${(survivedTicks / 60).toFixed(1)}s)`,
+    );
+  });
+});

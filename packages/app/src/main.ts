@@ -82,7 +82,13 @@ let netMatch: NetMatch | null = null;
 
 function serverUrl(): string {
   const params = new URLSearchParams(location.search);
-  return params.get('server') ?? `ws://${location.hostname}:8081/socket`;
+  if (params.get('server')) return params.get('server') as string;
+  // Same-origin by default: the vite dev server (and the exposed preview
+  // tunnel) proxies /socket to the match server, so this works without a
+  // second exposed port. Production build's static host will need the
+  // same proxy rule (or a direct wss:// URL) — see docs/PROTOCOL.md.
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${proto}//${location.host}/socket`;
 }
 
 async function beginOnlineMatch(): Promise<void> {

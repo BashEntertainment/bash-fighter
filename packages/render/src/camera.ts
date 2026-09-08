@@ -51,7 +51,17 @@ export function computeCamera(
   const scaleX = cfg.viewWidth / spanX;
   const scaleY = cfg.viewHeight / spanY;
   let scale = Math.min(scaleX, scaleY);
-  scale = Math.max(cfg.minScale, Math.min(cfg.maxScale, scale));
+  // minScale exists to keep fighters legible, but it must never win over
+  // showing the arena: on the 20-player stage, clamping up to minScale
+  // zoomed in past the arena's own width and cut fighters off the right
+  // edge of the screen entirely. Whatever scale is needed to frame the
+  // full arena is therefore the real floor.
+  const arenaFitScale = Math.min(
+    cfg.viewWidth / Math.max(1, cfg.arena.maxX - cfg.arena.minX),
+    cfg.viewHeight / Math.max(1, cfg.arena.maxY - cfg.arena.minY),
+  );
+  const floor = Math.min(cfg.minScale, arenaFitScale);
+  scale = Math.max(floor, Math.min(cfg.maxScale, scale));
 
   return {
     centerX: (minX + maxX) / 2,

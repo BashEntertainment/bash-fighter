@@ -265,9 +265,11 @@ html, body {
 }
 
 #net-status {
+  /* Bottom-left, not top-left: the HUD owns the top-left corner and the
+     two overlapped, with the badge sitting on top of the survivors line. */
   position: fixed;
-  top: 12px;
-  left: 12px;
+  bottom: 14px;
+  left: 22px;
   padding: 6px 12px;
   font-family: 'JetBrains Mono', 'Menlo', monospace;
   font-size: 13px;

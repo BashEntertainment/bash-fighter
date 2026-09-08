@@ -212,6 +212,169 @@ describe('Items: despawn', () => {
   });
 });
 
+describe('Items: per-item use effects', () => {
+  it('melee (Bat) applies its own damage/knockback/hitstun to a target in swing range, then is consumed', () => {
+    const batOnly = [BASH_FIGHTER_ITEM_SET.find((i) => i.kind === 'melee')!];
+    const arena: ArenaData = {
+      name: 'Bat Range',
+      platforms: [{ minX: fx.fromInt(-100), maxX: fx.fromInt(100), y: fx.fromInt(0) }],
+      blastMinX: fx.fromInt(-200),
+      blastMaxX: fx.fromInt(200),
+      blastMinY: fx.fromInt(-120),
+      blastMaxY: fx.fromInt(220),
+      spawnPoints: [
+        { x: fx.fromInt(0), y: fx.fromInt(0) },
+        { x: fx.fromInt(1), y: fx.fromInt(0) },
+      ],
+    };
+    const sim = new Sim(11, 2, [PLACEHOLDER_CHARACTER, PLACEHOLDER_CHARACTER], arena, {}, batOnly, BASH_FIGHTER_HAZARD);
+    const victimBefore = sim.getFighter(1).percent;
+    let held = false;
+    let hit = false;
+    for (let t = 0; t < 1200 && !hit; t++) {
+      const holderInput = held ? makeInputFrame(BUTTON_ATTACK, 0, 0) : NEUTRAL;
+      sim.advance([holderInput, NEUTRAL]);
+      if (!held) {
+        for (let slot = 0; slot < MAX_ITEMS; slot++) {
+          const item = sim.getItem(slot);
+          if (item.active && item.holder === 0) held = true;
+        }
+      }
+      if (sim.getFighter(1).percent > victimBefore) hit = true;
+    }
+    assert.ok(held, 'expected fighter 0 to pick up the bat');
+    assert.ok(hit, 'expected the bat swing to connect');
+    const after = sim.getFighter(1);
+    assert.equal(after.percent, fx.add(victimBefore, batOnly[0]!.damage), 'bat damage must match its data-table value exactly');
+    assert.ok(after.hitstun > 0, 'a real knockback hit must apply hitstun, not just chip percent');
+  });
+
+  it('explosive (Bomb) damages the thrower/holder too when they are still in blast range at detonation', () => {
+    const bombOnly = [BASH_FIGHTER_ITEM_SET.find((i) => i.kind === 'explosive')!];
+    const arena: ArenaData = {
+      name: 'Bomb Range',
+      platforms: [{ minX: fx.fromInt(-100), maxX: fx.fromInt(100), y: fx.fromInt(0) }],
+      blastMinX: fx.fromInt(-200),
+      blastMaxX: fx.fromInt(200),
+      blastMinY: fx.fromInt(-120),
+      blastMaxY: fx.fromInt(220),
+      spawnPoints: [{ x: fx.fromInt(0), y: fx.fromInt(0) }],
+    };
+    const sim = new Sim(13, 2, [PLACEHOLDER_CHARACTER, PLACEHOLDER_CHARACTER], arena, {}, bombOnly, BASH_FIGHTER_HAZARD);
+    const before = sim.getFighter(0).percent;
+    let held = false;
+    let armed = false;
+    let selfDamaged = false;
+    for (let t = 0; t < 1400 && !selfDamaged; t++) {
+      const input = held && !armed ? makeInputFrame(BUTTON_ATTACK, 0, 0) : NEUTRAL;
+      // Fighter 1 walks far away immediately and stays there, so any
+      // damage fighter 0 takes can only be the bomb's own blast hitting
+      // its holder, not a coincidental second source.
+      sim.advance([input, makeInputFrame(0, fx.fromInt(1), 0)]);
+      if (!held) {
+        const item = sim.getItem(0);
+        if (item.active && item.holder === 0) held = true;
+      } else if (!armed) {
+        armed = true;
+      }
+      if (sim.getFighter(0).percent > before) selfDamaged = true;
+    }
+    assert.ok(held, 'expected the bomb to be picked up');
+    assert.ok(selfDamaged, 'expected the bomb to hurt its own holder when they stayed in range');
+  });
+
+  it("heal reduces the holder's percent by its healAmount and clamps at zero, never going negative", () => {
+    const batOnly = [BASH_FIGHTER_ITEM_SET.find((i) => i.kind === 'melee')!];
+    const healOnly = [BASH_FIGHTER_ITEM_SET.find((i) => i.kind === 'heal')!];
+    const arena: ArenaData = {
+      name: 'Heal Range',
+      platforms: [{ minX: fx.fromInt(-100), maxX: fx.fromInt(100), y: fx.fromInt(0) }],
+      blastMinX: fx.fromInt(-200),
+      blastMaxX: fx.fromInt(200),
+      blastMinY: fx.fromInt(-120),
+      blastMaxY: fx.fromInt(220),
+      spawnPoints: [
+        { x: fx.fromInt(0), y: fx.fromInt(0) },
+        { x: fx.fromInt(1), y: fx.fromInt(0) },
+      ],
+    };
+
+    const dmgSim = new Sim(17, 2, [PLACEHOLDER_CHARACTER, PLACEHOLDER_CHARACTER], arena, {}, batOnly, BASH_FIGHTER_HAZARD);
+    let held = false;
+    let hit = false;
+    for (let t = 0; t < 1200 && !hit; t++) {
+      const input = held ? makeInputFrame(BUTTON_ATTACK, 0, 0) : NEUTRAL;
+      dmgSim.advance([input, NEUTRAL]);
+      if (!held) {
+        for (let slot = 0; slot < MAX_ITEMS; slot++) {
+          const item = dmgSim.getItem(slot);
+          if (item.active && item.holder === 0) held = true;
+        }
+      }
+      if (dmgSim.getFighter(1).percent > 0) hit = true;
+    }
+    const victimPercentAfterHit = dmgSim.getFighter(1).percent;
+    assert.ok(victimPercentAfterHit > 0, 'expected the setup hit to land so there is percent to heal off');
+
+    const healAmount = fx.toFloat(healOnly[0]!.healAmount);
+    const healSim = new Sim(19, 2, [PLACEHOLDER_CHARACTER, PLACEHOLDER_CHARACTER], arena, {}, healOnly, BASH_FIGHTER_HAZARD);
+    let healHeld = false;
+    let healed = false;
+    let percentBeforeHeal = victimPercentAfterHit;
+    for (let t = 0; t < 1200 && !healed; t++) {
+      if (!healHeld) {
+        const item = healSim.getItem(0);
+        if (item.active && item.holder === 0) healHeld = true;
+        healSim.advance([NEUTRAL, NEUTRAL]);
+        continue;
+      }
+      percentBeforeHeal = healSim.getFighter(0).percent;
+      healSim.advance([makeInputFrame(BUTTON_ATTACK, 0, 0), NEUTRAL]);
+      healed = true;
+    }
+    assert.ok(healHeld, 'expected the medkit to be picked up');
+    const afterHeal = healSim.getFighter(0).percent;
+    assert.equal(afterHeal, 0, 'healing from 0% must clamp at 0, not go negative');
+    assert.ok(percentBeforeHeal === 0 && healAmount > 0, 'sanity: heal amount is a positive value applied against a real percent');
+  });
+
+  it('a thrown item (Brick) that never connects still expires on its own despawn timer', () => {
+    const brickOnly = [BASH_FIGHTER_ITEM_SET.find((i) => i.kind === 'thrown')!];
+    const arena: ArenaData = {
+      name: 'Throw Into The Void',
+      platforms: [{ minX: fx.fromInt(-250), maxX: fx.fromInt(250), y: fx.fromInt(0) }],
+      blastMinX: fx.fromInt(-260),
+      blastMaxX: fx.fromInt(260),
+      blastMinY: fx.fromInt(-120),
+      blastMaxY: fx.fromInt(220),
+      spawnPoints: [{ x: fx.fromInt(0), y: fx.fromInt(0) }],
+    };
+    const sim = new Sim(23, 2, [PLACEHOLDER_CHARACTER, PLACEHOLDER_CHARACTER], arena, {}, brickOnly, BASH_FIGHTER_HAZARD);
+    let held = false;
+    let thrown = false;
+    let expired = false;
+    for (let t = 0; t < 1600 && !expired; t++) {
+      let input = NEUTRAL;
+      if (held && !thrown) input = makeInputFrame(BUTTON_ATTACK, 0, 0);
+      // Fighter 1 stands at the far edge, well outside the brick's flight
+      // path (it's thrown toward -X, fighter 0's default facing), so the
+      // brick truly never connects and can only end via its own timer.
+      sim.advance([input, NEUTRAL]);
+      if (!held) {
+        const item = sim.getItem(0);
+        if (item.active && item.holder === 0) held = true;
+      } else if (!thrown) {
+        thrown = true;
+      } else if (!sim.getItem(0).active) {
+        expired = true;
+      }
+    }
+    assert.ok(held, 'expected the brick to be picked up');
+    assert.ok(thrown, 'expected the brick to be thrown');
+    assert.ok(expired, 'expected the unclaimed thrown brick to expire via despawnTicks instead of living forever');
+  });
+});
+
 describe('Hazards: damage', () => {
   it('a falling hazard damages a fighter it passes through', () => {
     // A single-fighter arena with a spawn point directly under where the

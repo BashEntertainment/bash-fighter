@@ -8,6 +8,32 @@ import { buildReplayInputStream, REPLAY_SEED, REPLAY_CHARACTERS, REPLAY_SETTINGS
 const GOLDEN_PATH = new URL('./golden/replay-hashes.json', import.meta.url);
 const golden: string[] = JSON.parse(readFileSync(GOLDEN_PATH, 'utf8'));
 
+/**
+ * Compare two long per-frame hash sequences.
+ *
+ * Deliberately NOT `assert.deepEqual`: these sequences are tens of thousands
+ * of entries long, and on failure node:test tries to build a full structural
+ * diff of both arrays. That took over ten minutes and exhausted memory on a
+ * 2GB machine, turning a one-line logic bug into an apparent hang. Reporting
+ * the first divergent frame is both faster and far more useful — for a
+ * deterministic sim, the first divergence is the only one that matters.
+ */
+function assertHashSequenceEqual(actual: string[], expected: string[], label: string): void {
+  assert.equal(
+    actual.length,
+    expected.length,
+    `${label}: length mismatch (got ${actual.length}, expected ${expected.length})`,
+  );
+  for (let i = 0; i < actual.length; i++) {
+    if (actual[i] !== expected[i]) {
+      assert.fail(
+        `${label}: diverged at frame ${i} of ${actual.length} ` +
+          `(got ${actual[i]}, expected ${expected[i]})`,
+      );
+    }
+  }
+}
+
 function runReplay(): string[] {
   const sim = new Sim(REPLAY_SEED, 2, REPLAY_CHARACTERS, undefined, REPLAY_SETTINGS);
   const buf = sim.createStateBuffer();
@@ -22,13 +48,11 @@ function runReplay(): string[] {
 
 describe('Determinism harness', () => {
   it('replaying the recorded input stream reproduces the golden per-frame hashes exactly', () => {
-    const hashes = runReplay();
-    assert.equal(hashes.length, golden.length);
-    assert.deepEqual(hashes, golden);
+    assertHashSequenceEqual(runReplay(), golden, 'replay vs golden');
   });
 
   it('running the same replay twice from scratch yields identical hash sequences', () => {
-    assert.deepEqual(runReplay(), runReplay());
+    assertHashSequenceEqual(runReplay(), runReplay(), 'run 1 vs run 2');
   });
 
   it('rollback guarantee: resuming from a saved mid-match state reproduces identical hashes to an uninterrupted run', () => {
@@ -48,7 +72,7 @@ describe('Determinism harness', () => {
     }
     simA.saveState(bufA);
 
-    const simB = new Sim(999999, 2, REPLAY_CHARACTERS); // deliberately wrong seed/state first
+    const simB = new Sim(999999, 2, REPLAY_CHARACTERS, undefined, REPLAY_SETTINGS); // deliberately wrong seed/state first
     simB.loadState(bufA); // rollback: discard simB's own history, load A's snapshot
     const bufCheck = simB.createStateBuffer();
     const resumedHashes: string[] = [];
@@ -59,7 +83,7 @@ describe('Determinism harness', () => {
     }
 
     const referenceTail = reference.slice(splitPoint);
-    assert.deepEqual(resumedHashes, referenceTail);
+    assertHashSequenceEqual(resumedHashes, referenceTail, 'resumed vs reference tail');
   });
 
   it('saveState/loadState round trip preserves hash at the exact save point', () => {

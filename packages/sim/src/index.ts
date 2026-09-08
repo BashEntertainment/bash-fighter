@@ -7,3 +7,8 @@ export * from './hash.ts';
 export * from './moves/types.ts';
 export * from './hitbox.ts';
 export * from './state-machine/transitions.ts';
+export * from './arena/types.ts';
+export * from './arena/default-arena.ts';
+export * from './match-settings.ts';
+export * from './arena-shrink.ts';
+export * from './broadphase.ts';

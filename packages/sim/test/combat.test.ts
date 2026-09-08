@@ -2,7 +2,7 @@
 // hit-ID dedup system, knockback, hitstun, shielding, stocks, and match end.
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { Sim, NUM_FIGHTERS } from '../src/sim.ts';
+import { Sim } from '../src/sim.ts';
 import { makeInputFrame, BUTTON_ATTACK, BUTTON_SHIELD } from '../src/types.ts';
 import * as fx from '../src/math/fixed.ts';
 import { aabbOverlap, makeBoxCentered } from '../src/hitbox.ts';
@@ -112,7 +112,7 @@ describe('Knockback formula', () => {
 
 describe('Sim: attacks connecting and hit-ID dedup', () => {
   it('a jab that connects deals damage, sets hitstun, and knocks the target into HITSTUN state', () => {
-    const sim = new Sim(1, CHARACTERS);
+    const sim = new Sim(1, 2, CHARACTERS, undefined, { winCondition: 'stocks', startingStocks: 3 });
     closeDistance(sim, fx.fromFloat(1.2));
     const before = sim.getFighter(1);
     assert.equal(before.percent, 0);
@@ -131,7 +131,7 @@ describe('Sim: attacks connecting and hit-ID dedup', () => {
   });
 
   it('one move activation cannot hit the same target twice (hit-ID dedup)', () => {
-    const sim = new Sim(2, CHARACTERS);
+    const sim = new Sim(2, 2, CHARACTERS, undefined, { winCondition: 'stocks', startingStocks: 3 });
     closeDistance(sim, fx.fromFloat(1.2));
     // Advance one full jab (startup 3 + active 2 + endlag 8 = 13 ticks) and
     // record the percent right after the hit lands, then keep advancing
@@ -153,7 +153,7 @@ describe('Sim: attacks connecting and hit-ID dedup', () => {
 
 describe('Sim: shielding', () => {
   it('a shielded hit costs shield health and applies shield stun instead of knockback', () => {
-    const sim = new Sim(3, CHARACTERS);
+    const sim = new Sim(3, 2, CHARACTERS, undefined, { winCondition: 'stocks', startingStocks: 3 });
     closeDistance(sim, fx.fromFloat(1.2));
     sim.advance([NEUTRAL, makeInputFrame(BUTTON_SHIELD, 0, 0)]);
     const shielding = sim.getFighter(1);
@@ -180,7 +180,7 @@ describe('Sim: shielding', () => {
 
 describe('Sim: meteor knockback off-stage', () => {
   it('a down-air on an off-stage airborne opponent can carry them into the bottom blast zone', () => {
-    const sim = new Sim(5, CHARACTERS);
+    const sim = new Sim(5, 2, CHARACTERS, undefined, { winCondition: 'stocks', startingStocks: 3 });
     // Manufacture the scenario directly via the raw buffer rather than
     // walking there: put fighter 0 (attacker) right beside fighter 1
     // (defender), both airborne, with the defender positioned just past the
@@ -193,7 +193,7 @@ describe('Sim: meteor knockback off-stage', () => {
     // separate question of whether an attack can connect at range.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const view = (sim as any).data as Int32Array;
-    const FIELD_COUNT = 17;
+    const FIELD_COUNT = 23;
     const STATE = 4;
     const GROUNDED = 6;
     const POS_X = 0;
@@ -226,7 +226,7 @@ describe('Sim: meteor knockback off-stage', () => {
 describe('Sim: continuous directional influence and ground friction', () => {
   it('DI held during hitstun measurably changes trajectory but cannot cancel knockback outright', () => {
     function runHit(diStickX: number) {
-      const sim = new Sim(6, CHARACTERS);
+      const sim = new Sim(6, 2, CHARACTERS, undefined, { winCondition: 'stocks', startingStocks: 3 });
       closeDistance(sim, fx.fromFloat(1.0));
       const f0 = sim.getFighter(0);
       const f1 = sim.getFighter(1);
@@ -257,7 +257,7 @@ describe('Sim: continuous directional influence and ground friction', () => {
   });
 
   it('ground friction decays horizontal knockback speed instead of holding it constant', () => {
-    const sim = new Sim(7, CHARACTERS);
+    const sim = new Sim(7, 2, CHARACTERS, undefined, { winCondition: 'stocks', startingStocks: 3 });
     closeDistance(sim, fx.fromFloat(1.0));
     const f0 = sim.getFighter(0);
     const f1 = sim.getFighter(1);
@@ -284,7 +284,7 @@ describe('Sim: continuous directional influence and ground friction', () => {
 
 describe('Sim: stocks, blast zones, and match end', () => {
   it('losing all stocks moves a fighter to DEAD and reports the other as the winner', () => {
-    const sim = new Sim(4, CHARACTERS);
+    const sim = new Sim(4, 2, CHARACTERS, undefined, { winCondition: 'stocks', startingStocks: 3 });
     // Directly exercise the blast-zone/stock-loss path without needing to
     // land real hits three times over: repeatedly knock fighter 1 with the
     // heaviest connecting move available (forward tilt) is slow, so instead
@@ -321,7 +321,7 @@ describe('Sim: stocks, blast zones, and match end', () => {
     // publicly observable contract on the full match run above holds at
     // every intermediate stock loss by checking stocks only ever decreases
     // by 1 at a time and percent resets whenever stocks drops but is not 0.
-    const sim = new Sim(5, CHARACTERS);
+    const sim = new Sim(5, 2, CHARACTERS, undefined, { winCondition: 'stocks', startingStocks: 3 });
     let prevStocks = sim.getFighter(1).stocks;
     let sawRespawn = false;
     let ticks = 0;
@@ -356,7 +356,7 @@ describe('Sim: stocks, blast zones, and match end', () => {
 });
 
 describe('Sim: fighter count sanity', () => {
-  it('NUM_FIGHTERS is 2 (the shape every test above assumes)', () => {
-    assert.equal(NUM_FIGHTERS, 2);
+  it('CHARACTERS has length 2 (the shape every test above assumes)', () => {
+    assert.equal(CHARACTERS.length, 2);
   });
 });

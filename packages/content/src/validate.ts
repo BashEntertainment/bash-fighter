@@ -2,6 +2,7 @@
 // Architecture part 2 section 7): CI runs the schema validator plus
 // frame-data sanity checks on every content PR before it is mergeable.
 import type { CharacterData, FrameWindow, MoveDef } from '../../sim/src/moves/types.ts';
+import type { ArenaData } from '../../sim/src/arena/types.ts';
 
 export interface ValidationError {
   path: string;
@@ -89,5 +90,54 @@ export function assertValidCharacter(character: CharacterData): void {
   if (errors.length > 0) {
     const detail = errors.map((e) => '  - ' + e.path + ': ' + e.message).join('\n');
     throw new Error('invalid character data for ' + character.name + ':\n' + detail);
+  }
+}
+
+// --- Arena validation (this task's item 4) --------------------------------
+
+export function validateArena(arena: ArenaData): ValidationError[] {
+  const errors: ValidationError[] = [];
+  if (!arena.name || arena.name.trim().length === 0) {
+    errors.push({ path: 'name', message: 'arena name must be non-empty' });
+  }
+  if (arena.platforms.length === 0) {
+    errors.push({ path: 'platforms', message: 'arena must define at least one platform' });
+  }
+  arena.platforms.forEach((p, i) => {
+    const path = `platforms[${i}]`;
+    if (p.minX >= p.maxX) {
+      errors.push({ path, message: 'platform minX must be < maxX' });
+    }
+  });
+  if (arena.blastMinX >= arena.blastMaxX) {
+    errors.push({ path: 'blastMinX/blastMaxX', message: 'blastMinX must be < blastMaxX' });
+  }
+  if (arena.blastMinY >= arena.blastMaxY) {
+    errors.push({ path: 'blastMinY/blastMaxY', message: 'blastMinY must be < blastMaxY' });
+  }
+  for (const p of arena.platforms) {
+    const withinX = p.minX >= arena.blastMinX && p.maxX <= arena.blastMaxX;
+    const withinY = p.y >= arena.blastMinY && p.y <= arena.blastMaxY;
+    if (!withinX || !withinY) {
+      errors.push({ path: 'platforms', message: 'a platform lies outside the blast zone rectangle' });
+    }
+  }
+  if (arena.spawnPoints.length === 0) {
+    errors.push({ path: 'spawnPoints', message: 'arena must define at least one spawn point' });
+  }
+  arena.spawnPoints.forEach((sp, i) => {
+    const path = `spawnPoints[${i}]`;
+    if (sp.x < arena.blastMinX || sp.x > arena.blastMaxX || sp.y < arena.blastMinY || sp.y > arena.blastMaxY) {
+      errors.push({ path, message: 'spawn point lies outside the blast zone rectangle' });
+    }
+  });
+  return errors;
+}
+
+export function assertValidArena(arena: ArenaData): void {
+  const errors = validateArena(arena);
+  if (errors.length > 0) {
+    const detail = errors.map((e) => '  - ' + e.path + ': ' + e.message).join('\n');
+    throw new Error('invalid arena data for ' + arena.name + ':\n' + detail);
   }
 }

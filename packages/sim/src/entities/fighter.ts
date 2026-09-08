@@ -10,6 +10,10 @@ export const FighterStateId = {
   SHIELD: 6,
   LEDGE: 7,
   DEAD: 8,
+  // Non-interactive window between a KO and reappearing, used by
+  // 'timedKO' respawns and non-final stock loss in 'stocks'/'battleRoyale'.
+  // Distinct from DEAD, which is terminal elimination.
+  RESPAWN: 9,
 } as const;
 
 export type FighterStateValue = (typeof FighterStateId)[keyof typeof FighterStateId];

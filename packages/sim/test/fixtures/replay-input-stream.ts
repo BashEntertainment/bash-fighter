@@ -68,8 +68,13 @@ function decideBotInput(
 /** Build the fixture by actually running a scripted bot match to
  * completion. Deterministic: same seed, same characters, same bot logic
  * always produces the same recorded InputFrame[][]. */
+export const REPLAY_SETTINGS = { winCondition: 'stocks' as const, startingStocks: 3 };
+
 export function buildReplayInputStream(): InputFrame[][] {
-  const sim = new Sim(REPLAY_SEED, REPLAY_CHARACTERS);
+  const sim = new Sim(REPLAY_SEED, 2, REPLAY_CHARACTERS, undefined, {
+    winCondition: 'stocks',
+    startingStocks: 3,
+  });
   const frames: InputFrame[][] = [];
   for (let t = 0; t < MAX_TICKS; t++) {
     const f0 = sim.getFighter(0);

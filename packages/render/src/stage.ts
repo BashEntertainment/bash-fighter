@@ -44,15 +44,18 @@ export function drawStage(
 
   // Darker wash outside the blast zone so "offstage" reads as a distinct
   // zone even before the dashed line registers.
-  const outerTL = worldToScreen(bounds.blastMinX - 400, bounds.blastMaxY + 400, cam, viewWidth, viewHeight);
-  const outerBR = worldToScreen(bounds.blastMaxX + 400, bounds.blastMinY - 400, cam, viewWidth, viewHeight);
+  // The wash goes OUTSIDE the blast zone, not inside it. Filling the inside
+  // tinted the entire playable area red, which read as a permanent damage
+  // vignette and made the whole game look like it was in an error state.
+  const outerTL = worldToScreen(bounds.blastMinX - 2000, bounds.blastMaxY + 2000, cam, viewWidth, viewHeight);
+  const outerBR = worldToScreen(bounds.blastMaxX + 2000, bounds.blastMinY - 2000, cam, viewWidth, viewHeight);
   g.rect(outerTL.x, outerTL.y, outerBR.x - outerTL.x, outerBR.y - outerTL.y);
-  g.fill({ color: PALETTE.background });
+  g.fill({ color: PALETTE.blastZone, alpha: 0.28 });
 
   const insideTL = worldToScreen(bounds.blastMinX, bounds.blastMaxY, cam, viewWidth, viewHeight);
   const insideBR = worldToScreen(bounds.blastMaxX, bounds.blastMinY, cam, viewWidth, viewHeight);
   g.rect(insideTL.x, insideTL.y, insideBR.x - insideTL.x, insideBR.y - insideTL.y);
-  g.fill({ color: PALETTE.blastZone, alpha: 0.35 });
+  g.fill({ color: PALETTE.background });
 
   // Solid platform slabs, each drawn with a visible top edge and a
   // darker underside so every one reads as a floating platform, not a

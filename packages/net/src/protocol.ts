@@ -296,7 +296,6 @@ export function parseClientControl(text: string): ClientControlMessage | null {
  *  in the system sees them. */
 export function sanitiseName(name: string): string {
   const cleaned = name
-    // eslint-disable-next-line no-control-regex
     .replace(/[\u0000-\u001f\u007f-\u009f]/g, '')
     .trim()
     .slice(0, 16);

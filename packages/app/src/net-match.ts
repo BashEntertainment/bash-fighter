@@ -153,6 +153,19 @@ export class NetMatch {
   private currSnapState: Int32Array | null = null;
   private currSnapAt = 0;
   private currSnapTick = 0;
+  // Measured wall-clock gap between the last two received snapshots, used
+  // as the interpolation denominator instead of the fixed SNAPSHOT_HZ
+  // constant. A spectator connection is throttled server-side to a lower
+  // snapshot rate than a live player's (see server/src/index.ts), so a
+  // client that always divided by the live-player interval would clamp
+  // its interpolation alpha to 1 partway through each gap and sit frozen
+  // for the remainder of it -- exactly the choppiness the brief warns
+  // about. Measuring the real gap makes interpolation correct at whatever
+  // rate this connection is actually being sent, live or spectating, with
+  // no protocol change needed. Seeded to SNAPSHOT_INTERVAL_MS and clamped
+  // (see handleBinary) so one dropped/delayed packet can't produce a wild
+  // denominator.
+  private snapIntervalMs = SNAPSHOT_INTERVAL_MS;
 
   readonly audio: AudioManager;
   private readonly effectsBridge: EffectsAudioBridge;
@@ -370,10 +383,20 @@ export class NetMatch {
     if (!snap || !this.localSim) return;
 
     const previousSnapState = this.currSnapState;
+    const previousSnapAt = this.currSnapAt;
     this.prevSnapState = this.currSnapState;
     this.currSnapState = snap.state;
     this.currSnapAt = performance.now();
     this.currSnapTick = snap.tick;
+    if (previousSnapState) {
+      // Clamp to [0.5x, 4x] of the live-player interval: covers the 20Hz
+      // live rate, the ~10Hz spectator rate (2x), and ordinary jitter,
+      // while refusing to let a single stalled/coalesced message (a
+      // background tab, a GC pause) blow the denominator out to seconds
+      // and produce a visible snap on the next real snapshot.
+      const measured = this.currSnapAt - previousSnapAt;
+      this.snapIntervalMs = Math.min(Math.max(measured, SNAPSHOT_INTERVAL_MS * 0.5), SNAPSHOT_INTERVAL_MS * 4);
+    }
 
     // Confirmed-state-only event detection (see field comment above): both
     // sides of this diff come from decoded server snapshots via
@@ -456,7 +479,7 @@ export class NetMatch {
 
     // Remote fighters: interpolate between the last two received snapshots.
     if (this.currSnapState) {
-      const alpha = Math.min(1, Math.max(0, (performance.now() - this.currSnapAt) / SNAPSHOT_INTERVAL_MS));
+      const alpha = Math.min(1, Math.max(0, (performance.now() - this.currSnapAt) / this.snapIntervalMs));
       this.renderSim.loadState(this.currSnapState);
       const currF: FighterSnapshot[] = [];
       for (let i = 0; i < this.numFighters; i++) currF.push(this.renderSim.getFighter(i));

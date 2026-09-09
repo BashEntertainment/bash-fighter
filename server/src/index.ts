@@ -57,8 +57,28 @@ function closeWithError(
   code: 'protocol_mismatch' | 'bad_message' | 'match_full' | 'server_error' | 'resume_invalid' | 'resume_expired' | 'resume_seat_taken',
   message: string,
 ): void {
+  logConn(conn, 'error_close', { code, message });
   send(conn, { t: 'error', code, message });
   conn.ws.close();
+}
+
+// Structured, single-line connection-lifecycle logging -- deliberately not
+// a logging framework, just enough (timestamp, conn id, slot/match if
+// known, event, extra fields) that a production drop or a resume-that-
+// didn't-work is diagnosable from `journalctl`/systemd logs rather than
+// invisible. See wiki "First-Match Experience Problem" for why this was
+// missing before: the only way to know a disconnect happened was the
+// player noticing themselves.
+function logConn(conn: ClientConn, event: string, extra?: Record<string, unknown>): void {
+  const line = {
+    ts: new Date().toISOString(),
+    connId: conn.id,
+    matchId: conn.match?.id ?? null,
+    slot: conn.slot,
+    event,
+    ...extra,
+  };
+  console.log(`[conn] ${JSON.stringify(line)}`);
 }
 
 function watcherSet(matchId: string): Set<string> {
@@ -225,6 +245,7 @@ wss.on('connection', (ws) => {
     helloed: false,
   };
   clients.set(conn.id, conn);
+  logConn(conn, 'connected');
 
   ws.on('message', (data, isBinary) => {
     try {
@@ -242,14 +263,19 @@ wss.on('connection', (ws) => {
   ws.on('close', () => {
     // A spectator or not-yet-assigned socket has no seat to hold open; only
     // a real fighter slot gets the disconnect/grace-period treatment.
-    if (conn.match && !conn.spectating && conn.slot >= 0) {
+    const hadLiveSeat = conn.match && !conn.spectating && conn.slot >= 0;
+    if (hadLiveSeat && conn.match) {
       conn.match.markDisconnected(conn.slot);
+      logConn(conn, 'seat_disconnected', { gracePeriod: true });
+    } else {
+      logConn(conn, 'closed', { hadSeat: false });
     }
     if (conn.match) watcherSet(conn.match.id).delete(conn.id);
     clients.delete(conn.id);
   });
 
-  ws.on('error', () => {
+  ws.on('error', (err) => {
+    logConn(conn, 'socket_error', { message: err instanceof Error ? err.message : String(err) });
     ws.close();
   });
 });
@@ -267,8 +293,10 @@ function handleResume(conn: ClientConn, token: string): void {
     if (manager.isTokenForConnectedSeat(token)) {
       // Valid token, but that seat already has a live socket -- reject the
       // newcomer, never kick the incumbent.
+      logConn(conn, 'resume_rejected', { reason: 'resume_seat_taken' });
       closeWithError(conn, 'resume_seat_taken', 'this seat already has an active connection');
     } else {
+      logConn(conn, 'resume_rejected', { reason: 'resume_invalid' });
       closeWithError(conn, 'resume_invalid', 'resume token not recognised or expired');
     }
     return;
@@ -277,6 +305,7 @@ function handleResume(conn: ClientConn, token: string): void {
   const seat = match.seats[slot];
 
   if (match.phase === 'ended') {
+    logConn(conn, 'resume_after_match_ended', { matchId: match.id, slot });
     // Told the outcome instead of erroring (edge case: reconnect after the
     // match already ended). The seat is not re-marked connected -- there is
     // no sim ticking any more to reconnect *to* -- this is purely informing
@@ -307,6 +336,7 @@ function handleResume(conn: ClientConn, token: string): void {
     // Lost a race (e.g. grace timer fired between findReclaim and here, or
     // someone else's connection beat us to it) -- fail cleanly rather than
     // handing over a seat that is no longer actually reclaimable.
+    logConn(conn, 'resume_rejected', { reason: 'resume_expired', matchId: match.id, slot });
     closeWithError(conn, 'resume_expired', 'seat is no longer reclaimable');
     return;
   }
@@ -314,6 +344,7 @@ function handleResume(conn: ClientConn, token: string): void {
   conn.match = match;
   conn.slot = slot;
   watcherSet(match.id).add(conn.id);
+  logConn(conn, 'resume_succeeded');
   send(conn, {
     t: 'welcome',
     protocolVersion: PROTOCOL_VERSION,
@@ -369,6 +400,7 @@ function handleText(conn: ClientConn, text: string): void {
       conn.match = match;
       conn.slot = slot;
       watcherSet(match.id).add(conn.id);
+      logConn(conn, 'joined_lobby', { name });
       send(conn, {
         t: 'welcome',
         protocolVersion: PROTOCOL_VERSION,

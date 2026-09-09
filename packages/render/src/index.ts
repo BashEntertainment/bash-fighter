@@ -2,9 +2,9 @@
 // interpolated by the caller) and draws it; never mutates sim state.
 // Built for N fighters — the sim milestone is fixed at 2, but nothing
 // here hardcodes that so the renderer isn't what blocks 20-player FFA.
-import { Application, Container, Graphics } from 'pixi.js';
+import { Application, Container, Graphics, Text } from 'pixi.js';
 import { fixed as fx, FighterStateId, findMove, windowAtFrame, type CharacterData, type FighterStateValue } from '@bash-fighter/sim';
-import { PALETTE } from './palette.ts';
+import { PALETTE, FONT_FAMILY } from './palette.ts';
 import { computeCamera, worldToScreen, type ArenaBounds, type CameraConfig, type CameraView } from './camera.ts';
 import { drawStage, type StageBounds } from './stage.ts';
 import { FighterSprite } from './fighter-sprite.ts';
@@ -124,11 +124,61 @@ export interface RenderFrame {
    * the app layer only tells it a strong hit happened via hitEffects. */
 }
 
+// How far above the tallest platform / below the ground a fighter can
+// still meaningfully go (double-jump apex, a hard landing) and therefore
+// still needs to stay on screen. Derived from packages/sim's jump
+// constants (JUMP_VELOCITY/DOUBLE_JUMP_VELOCITY vs GRAVITY give an apex
+// a little under 200 world units above a jump's start), not guessed —
+// rounded up for headroom. This is presentation framing only; it never
+// changes where a fighter can actually stand or die.
+const JUMP_HEADROOM_WORLD = 200;
+const FALL_HEADROOM_WORLD = 90;
+
+/** The camera's "always show at least this much" floor used to be the
+ * *entire* blast zone — a battle-royale arena's blast zone is sized with
+ * a huge margin above/below the platforms specifically so a shrinking
+ * arena has room to close (see battle-royale-20/data.ts), which meant
+ * the baseline camera permanently framed a stage-sized band of empty sky
+ * and empty pit that no fighter ever legibly occupies. The actual
+ * fought-over space is the platforms plus enough headroom to see a jump
+ * or a hard fall coming — that is what the camera should never zoom
+ * tighter than. Intersected with the *live* (possibly shrunk) blast rect
+ * so the floor honestly shrinks as the collapsing arena does, instead of
+ * permanently reserving room for a blast zone that no longer exists. */
+function framingFloor(stage: StageBounds): ArenaBounds {
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (const p of stage.platforms) {
+    minX = Math.min(minX, p.minX);
+    maxX = Math.max(maxX, p.maxX);
+    minY = Math.min(minY, p.y);
+    maxY = Math.max(maxY, p.y);
+  }
+  if (!Number.isFinite(minX)) {
+    // No platform data (e.g. a bare test fixture) — fall back to the
+    // full blast rect rather than an empty/inverted floor.
+    return { minX: stage.blastMinX, maxX: stage.blastMaxX, minY: stage.blastMinY, maxY: stage.blastMaxY };
+  }
+  minY -= FALL_HEADROOM_WORLD;
+  maxY += JUMP_HEADROOM_WORLD;
+  // Never claim more than the live blast rect actually covers — this is
+  // what makes the floor shrink correctly as the collapsing arena closes
+  // in, rather than permanently framing the arena's original footprint.
+  return {
+    minX: Math.max(minX, stage.blastMinX),
+    maxX: Math.min(maxX, stage.blastMaxX),
+    minY: Math.max(minY, stage.blastMinY),
+    maxY: Math.min(maxY, stage.blastMaxY),
+  };
+}
+
 // Fighters spread by roughly a screen-width during normal play; a
 // paddingWorld a bit smaller than the arena keeps the baseline "whole
-// arena" framing from [[camera.ts]] as the default rather than the
-// exception. minScale keeps fighters legible even on a wide arena;
-// maxScale stops the camera slamming in when fighters stand still.
+// fought-over space" framing as the default rather than the exception.
+// minScale keeps fighters legible even on a wide arena; maxScale stops
+// the camera slamming in when fighters stand still.
 function cameraConfig(stage: StageBounds, viewWidth: number, viewHeight: number): CameraConfig {
   return {
     viewWidth,
@@ -136,17 +186,59 @@ function cameraConfig(stage: StageBounds, viewWidth: number, viewHeight: number)
     minScale: 1.6,
     maxScale: 5.5,
     paddingWorld: 20,
-    arena: {
-      minX: stage.blastMinX,
-      maxX: stage.blastMaxX,
-      minY: stage.blastMinY,
-      maxY: stage.blastMaxY,
-    },
+    arena: framingFloor(stage),
   };
 }
 
 function mainGroundY(stage: StageBounds): number {
   return stage.platforms[0]?.y ?? 0;
+}
+
+/** A badge's screen-space vertical offset above its fighter's head
+ * scales with camera zoom (so it still reads as "attached" whether the
+ * camera is pulled back for a 20-fighter spread or zoomed in for a
+ * final-two showdown), but is clamped so it can never balloon into the
+ * "floating 50-60px above everyone, disconnected from any body" defect
+ * this replaces. */
+const BADGE_OFFSET_MIN_PX = 12;
+const BADGE_OFFSET_MAX_PX = 22;
+function clampHeadOffsetPx(px: number): number {
+  return Math.min(BADGE_OFFSET_MAX_PX, Math.max(BADGE_OFFSET_MIN_PX, px));
+}
+
+interface BadgeCandidate {
+  slot: number;
+  isLocalPlayer: boolean;
+  headX: number;
+  headY: number;
+}
+
+interface BadgeBox {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
+
+function boxesOverlap(a: BadgeBox, b: BadgeBox): boolean {
+  return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+}
+
+const BADGE_FONT_SIZE = 13;
+// Rough monospace glyph width at BADGE_FONT_SIZE, used only to build an
+// approximate collision box -- no need for exact text metrics here.
+const BADGE_CHAR_WIDTH_PX = 8;
+const BADGE_BOX_HEIGHT_PX = 16;
+const BADGE_BOX_MARGIN_PX = 3;
+
+function badgeBox(x: number, y: number, digits: number): BadgeBox {
+  const halfWidth = (digits * BADGE_CHAR_WIDTH_PX) / 2 + BADGE_BOX_MARGIN_PX;
+  return {
+    left: x - halfWidth,
+    right: x + halfWidth,
+    top: y - BADGE_BOX_HEIGHT_PX - BADGE_BOX_MARGIN_PX,
+    bottom: y + BADGE_BOX_MARGIN_PX,
+  };
 }
 
 const PLAYER_COLOR_COUNT = PALETTE.playerColors.length;
@@ -190,6 +282,13 @@ export class Renderer {
   private readonly itemContainer = new Container();
   private readonly hazardSprites: HazardSprite[] = [];
   private readonly hazardContainer = new Container();
+  // Slot-number badges live in screen space, as direct children of
+  // app.stage rather than `world` -- world-space text scales with camera
+  // zoom (unreadably tiny zoomed out, absurdly offset zoomed in) and
+  // cannot be selectively hidden to avoid overlap without knowing final
+  // screen positions first. See layoutBadges() below.
+  private readonly badgeContainer = new Container();
+  private readonly badgeTexts: Text[] = [];
   private readonly debugText = makeDebugText();
   private stageBounds: StageBounds;
   private readonly effects = new EffectsLayer();
@@ -231,6 +330,7 @@ export class Renderer {
     this.debugText.position.set(10, 130);
     this.debugText.visible = false;
     this.app.stage.addChild(this.debugText);
+    this.app.stage.addChild(this.badgeContainer);
 
     this.ready = true;
   }
@@ -280,6 +380,73 @@ export class Renderer {
     }
     for (let i = count; i < this.hazardSprites.length; i++) {
       (this.hazardSprites[i] as HazardSprite).root.visible = false;
+    }
+  }
+
+  private ensureBadgePool(count: number): void {
+    while (this.badgeTexts.length < count) {
+      const text = new Text({
+        text: '',
+        style: { fontFamily: FONT_FAMILY, fontSize: BADGE_FONT_SIZE, fill: PALETTE.hud, fontWeight: '700' },
+      });
+      text.anchor.set(0.5, 1);
+      text.resolution = 2;
+      this.badgeTexts.push(text);
+      this.badgeContainer.addChild(text);
+    }
+    for (let i = count; i < this.badgeTexts.length; i++) {
+      (this.badgeTexts[i] as Text).visible = false;
+    }
+  }
+
+  /** Places the slot-number badges in screen space, attached directly
+   * above each fighter's own head, and greedily drops any badge that
+   * would overlap one already placed.
+   *
+   * This is the fix for the "1714 6" defect: in the old world-space
+   * version every badge was always drawn, so a bunched-up crowd produced
+   * overlapping runs of digits that read as garbage. Text is unreadable
+   * once it overlaps -- there is no useful partial state between "clear"
+   * and "illegible" -- so once two badges would collide, showing only
+   * one of them is strictly more informative than showing a smear of
+   * both. The local player's own badge is exempt from being dropped (it
+   * is the one identity cue this player actually needs every frame) and
+   * is placed first, reserving its space so nearby badges yield to it
+   * rather than the other way around. Remaining badges are placed in
+   * order of distance to the local player, so in a crowded scrum the
+   * badges that survive are the ones for whoever is actually nearby --
+   * exactly the fighters this player is about to fight or be hit by. */
+  private layoutBadges(candidates: BadgeCandidate[]): void {
+    this.ensureBadgePool(candidates.length);
+
+    const local = candidates.find((c) => c.isLocalPlayer);
+    const ordered = [...candidates].sort((a, b) => {
+      if (a.isLocalPlayer !== b.isLocalPlayer) return a.isLocalPlayer ? -1 : 1;
+      const da = local ? Math.hypot(a.headX - local.headX, a.headY - local.headY) : 0;
+      const db = local ? Math.hypot(b.headX - local.headX, b.headY - local.headY) : 0;
+      return da - db;
+    });
+
+    const placedBoxes: BadgeBox[] = [];
+    let textIndex = 0;
+    for (const c of ordered) {
+      const label = String(c.slot + 1);
+      const box = badgeBox(c.headX, c.headY, label.length);
+      const overlaps = !c.isLocalPlayer && placedBoxes.some((p) => boxesOverlap(p, box));
+      if (overlaps) continue;
+      placedBoxes.push(box);
+      const text = this.badgeTexts[textIndex] as Text;
+      textIndex += 1;
+      text.text = label;
+      text.position.set(c.headX, c.headY);
+      text.visible = true;
+      // The local player's own badge gets the same bright fill as the
+      // rest for consistency, but a slightly larger size so it is the
+      // one badge a player can find at a glance without reading digits.
+      text.style.fontSize = c.isLocalPlayer ? BADGE_FONT_SIZE + 3 : BADGE_FONT_SIZE;
+    }
+    for (let i = textIndex; i < this.badgeTexts.length; i++) {
+      (this.badgeTexts[i] as Text).visible = false;
     }
   }
 
@@ -357,6 +524,7 @@ export class Renderer {
 
     drawStage(this.stageLayer, stageForDraw, cam, vw, vh, frame.previewArenaBounds);
 
+    const badgeCandidates: BadgeCandidate[] = [];
     for (let i = 0; i < frame.fighters.length; i++) {
       const f = frame.fighters[i] as RenderFighterState;
       const sprite = this.sprites[i] as FighterSprite;
@@ -369,6 +537,7 @@ export class Renderer {
       sprite.root.position.set(screen.x, screen.y);
       sprite.root.scale.set(cam.scale); // silhouette is drawn in world units
       const char = frame.characters[i] as CharacterData | undefined;
+      const isLocalPlayer = frame.localPlayerIndex === i;
       sprite.draw({
         facing: f.facing,
         hitstun: f.hitstun,
@@ -382,12 +551,17 @@ export class Renderer {
         moveFrame: f.moveFrame,
         character: char,
         anim: char ? resolveAnimation(char.name) : undefined,
-        isLocalPlayer: frame.localPlayerIndex === i,
-        slotNumber: i,
-        edgeDangerFrac:
-          frame.localPlayerIndex === i ? computeEdgeDangerFrac(f.x, f.y, stageForDraw) : undefined,
+        isLocalPlayer,
+        edgeDangerFrac: isLocalPlayer ? computeEdgeDangerFrac(f.x, f.y, stageForDraw) : undefined,
+      });
+      badgeCandidates.push({
+        slot: i,
+        isLocalPlayer,
+        headX: screen.x,
+        headY: screen.y - clampHeadOffsetPx(FighterSprite.HEAD_TOP_OFFSET_WORLD * cam.scale),
       });
     }
+    this.layoutBadges(badgeCandidates);
 
     const hazards = frame.hazards ?? [];
     this.ensureHazardPool(hazards.length);

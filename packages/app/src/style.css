@@ -8,6 +8,11 @@
   --danger: #d7593f;
   --font-ui: 'Inter', 'Segoe UI', system-ui, sans-serif;
   --font-mono: 'Iosevka', 'JetBrains Mono', ui-monospace, monospace;
+  /* Width of the reserved 20-fighter HUD sidebar. Read by both #hud and
+     #canvas-root below so the world never renders behind it -- see the
+     #hud:has(.hud-list.dense) rule for why this needs to be a shared
+     variable rather than two hand-matched numbers. */
+  --hud-sidebar-width: 200px;
 }
 
 * {
@@ -32,6 +37,14 @@ html, body {
 #canvas-root {
   position: absolute;
   inset: 0;
+}
+
+/* Reserve the dense HUD's sidebar width so the game world is never
+   rendered underneath it -- pixi's `resizeTo: canvas-root` picks up the
+   resulting smaller box automatically, so the camera frames only the
+   space actually visible to the player. */
+#app:has(.hud-list.dense) #canvas-root {
+  left: var(--hud-sidebar-width);
 }
 
 .screen {
@@ -511,6 +524,25 @@ html, body {
   font-family: var(--font-ui);
 }
 
+/* Dense mode (>2 fighters, i.e. every real match) gets a genuinely
+   reserved sidebar rather than an overlay: solid background, pinned to
+   the full height of the screen, and #canvas-root is pushed over to
+   match (see the :has() rule below) so the world is never drawn behind
+   it. A translucent panel over the play area still hides whatever
+   fighter is under it -- reserving real space is the only fix that
+   survives a fighter actually walking there. */
+#hud:has(.hud-list.dense) {
+  top: 0;
+  bottom: 0;
+  left: 0;
+  right: auto;
+  width: var(--hud-sidebar-width);
+  background: var(--panel);
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 16px 14px;
+  pointer-events: auto;
+}
+
 #hud.hidden {
   display: none;
 }
@@ -529,22 +561,26 @@ html, body {
 }
 
 /* Dense mode: up to 20 fighters. A wide flowing row of compact cards
-   would wrap into several rows and cover the stage, so dense mode caps
-   the list to a narrow column pinned at the top-left instead -- small
-   fixed-width chips, percent only (stocks reduces to a dot count),
-   scrollable if it ever runs past the viewport. */
+   would wrap into several rows and cover the stage, so dense mode is a
+   grid filling the reserved sidebar's width, using every bit of the
+   sidebar's vertical space (flex: 1 in a full-height sidebar) before
+   ever falling back to internal scrolling -- see the #hud:has() rule
+   above for why the sidebar has real height to give it in the first
+   place. */
 .hud-list.dense {
-  flex-wrap: wrap;
-  max-width: 190px;
-  max-height: 70vh;
+  flex: 1;
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+  grid-auto-rows: min-content;
   overflow-y: auto;
   gap: 4px;
-  align-content: flex-start;
+  align-content: start;
 }
 
 .hud-list.dense .hud-card {
   min-width: 0;
-  width: 86px;
+  width: 100%;
   padding: 4px 7px;
   border-left-width: 2px;
 }
@@ -852,6 +888,13 @@ html, body {
     font-size: 11px;
   }
 
+  /* Narrower reserved sidebar on phone/tablet widths -- still real
+     space, not an overlay, so it composes with the #hud:has()/
+     #canvas-root rules above unchanged. */
+  :root {
+    --hud-sidebar-width: 128px;
+  }
+
   .hud-list.compact .hud-card {
     min-width: 62px;
     padding: 4px 6px;
@@ -861,12 +904,7 @@ html, body {
     font-size: 18px;
   }
 
-  .hud-list.dense {
-    max-width: 132px;
-  }
-
   .hud-list.dense .hud-card {
-    width: 60px;
     padding: 3px 5px;
   }
 

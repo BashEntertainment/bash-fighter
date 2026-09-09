@@ -235,29 +235,30 @@ async function beginOnlineMatch(): Promise<void> {
       const countdown = countdownTicks >= 0 ? ` — starting in ${Math.ceil(countdownTicks / 60)}s` : '';
       setNetStatus('waiting', `${players}/${capacity} players${countdown}`);
     },
-    onMatchOver: (winnerIndex) => {
+    onMatchOver: (winnerIndex, resolved) => {
       hud.hide();
       inMatchMovesButton.classList.add('hidden');
       touchControls.hide();
       setNetStatus('match-complete');
-      // Server-side, a match with no human seats left playing is torn
-      // down immediately to stop paying for a bot-only sim (see
-      // isAbandonedByHumans in server/src/match.ts) rather than waiting
-      // out the minutes the bots would otherwise take to finish. That
-      // matchEnd is a real event, but it is a teardown snapshot of a
-      // fight that was still going, not a fair collective verdict -- if
-      // *we* were still playing when it fired we show it normally below,
-      // but a player who was already eliminated already saw their honest
-      // placement from onEliminated. Re-showing the win screen on top of
-      // that (previously: unconditionally) replaced "You finished 14th of
-      // 20, keep spectating" with a global "Nobody survived"/winner
-      // overlay that had nothing to do with their match, seconds after
-      // they were told their real result. Just clean up quietly instead.
-      if (eliminatedThisOnlineMatch) {
-        matchOverlay.hide();
+      matchOverlay.hide();
+      // `resolved` (2026-09-09 fix, see wiki "End-of-Match Screen Missing
+      // Entirely") tells us whether the sim itself decided this match --
+      // real winner, or a genuine simultaneous-KO draw -- versus the
+      // server tearing an unfinished bot-only fight down early because
+      // every human left (isAbandonedByHumans in server/src/match.ts). A
+      // player who was already eliminated already saw their honest
+      // placement from onEliminated; on top of that, an *abandoned*
+      // teardown of a fight that kept going without them is noise with
+      // nothing to do with their match, so we skip it (previous fix).
+      // But a *resolved* end is the natural continuation of the match
+      // they were actually part of -- they earned the right to be told
+      // who won and to get a "Play again" button, so it must always be
+      // shown regardless of eliminatedThisOnlineMatch. Skipping it too
+      // (the regression this fixes) left a finisher who watched the
+      // match out staring at a frozen frame with no way forward.
+      if (eliminatedThisOnlineMatch && !resolved) {
         return;
       }
-      matchOverlay.hide();
       audio.play('match_end');
       winScreen.show(winnerIndex, netMatch?.localSlot());
     },

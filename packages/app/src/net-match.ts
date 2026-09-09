@@ -85,7 +85,7 @@ function saveResumeToken(token: string | null): void {
 export interface NetMatchEvents {
   onStateChange?(state: ConnectionState, detail?: string): void;
   onLobby?(players: number, capacity: number, countdownTicks: number): void;
-  onMatchOver?(winnerIndex: number | null): void;
+  onMatchOver?(winnerIndex: number | null, resolved: boolean): void;
   /** Fired once, the moment the local player is eliminated online.
    * placement is 1-based finish position (e.g. 17 of 20). Lets the UI show
    * a specific "you placed Nth" + play-again offer instead of leaving the
@@ -329,7 +329,7 @@ export class NetMatch {
         // resume_invalid back from the server, and dead-ended on the
         // disconnected screen instead of just starting the new match.
         this.setResumeToken(null);
-        this.events.onMatchOver?.(msg.winner);
+        this.events.onMatchOver?.(msg.winner, msg.resolved);
         break;
       case 'error':
         if (msg.code === 'resume_invalid' || msg.code === 'resume_expired') {

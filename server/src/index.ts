@@ -226,8 +226,8 @@ function makeEventsFor(matchId: string) {
         if (c) send(c, msg);
       }
     },
-    onMatchEnd(winner: number | null, leaderboard: number[], tick: number) {
-      const msg: ServerControlMessage = { t: 'matchEnd', winner, leaderboard, tick };
+    onMatchEnd(winner: number | null, leaderboard: number[], tick: number, resolved: boolean) {
+      const msg: ServerControlMessage = { t: 'matchEnd', winner, leaderboard, tick, resolved };
       for (const cid of watcherSet(matchId)) {
         const c = clients.get(cid);
         if (c) send(c, msg);
@@ -456,6 +456,12 @@ function handleResume(conn: ClientConn, token: string): void {
       winner: sim ? sim.getWinner() : null,
       leaderboard: sim ? sim.getLeaderboard() : [],
       tick: match.tick,
+      // Rejoining a match that's already over: we don't know here whether
+      // it finished naturally or was torn down early, but by the time a
+      // client is asking to rejoin, either way there's a real leaderboard
+      // to show -- treat as resolved so the client gives a result screen
+      // instead of silently hanging.
+      resolved: true,
     });
     return;
   }

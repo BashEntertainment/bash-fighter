@@ -104,7 +104,15 @@ export interface MatchEvents {
   onSeatGraceExpired?: (slot: number) => void;
   onSnapshot: (tick: number, ackedInputTick: Map<number, number>) => void;
   onEliminated: (slot: number, placement: number, tick: number) => void;
-  onMatchEnd: (winner: number | null, leaderboard: number[], tick: number) => void;
+  onMatchEnd: (winner: number | null, leaderboard: number[], tick: number, resolved: boolean) => void;
+  //          ^ resolved=true means sim.isMatchOver() decided this naturally
+  //          (a real winner, or a genuine simultaneous-KO draw); false
+  //          means the match was torn down early because every human seat
+  //          left (isAbandonedByHumans) -- the sim result exists but it's
+  //          an artefact of stopping the clock, not a fair verdict. The
+  //          client uses this to decide whether an already-eliminated
+  //          player should still be shown a final result screen (added
+  //          2026-09-09, see wiki 'End-of-Match Screen Missing Entirely').
 }
 
 /** Deterministic seed derived from the match id so every client can be
@@ -383,7 +391,7 @@ export class Match {
     if (!this.ended && sim.isMatchOver()) {
       this.ended = true;
       this.phase = 'ended';
-      this.events.onMatchEnd(sim.getWinner(), sim.getLeaderboard(), this.tick);
+      this.events.onMatchEnd(sim.getWinner(), sim.getLeaderboard(), this.tick, true);
       this.endedAt = Date.now();
       this.stop();
       return;
@@ -400,7 +408,7 @@ export class Match {
     if (!this.ended && this.isAbandonedByHumans()) {
       this.ended = true;
       this.phase = 'ended';
-      this.events.onMatchEnd(sim.getWinner(), sim.getLeaderboard(), this.tick);
+      this.events.onMatchEnd(sim.getWinner(), sim.getLeaderboard(), this.tick, false);
       this.endedAt = Date.now();
       this.stop();
     }

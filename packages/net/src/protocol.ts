@@ -149,6 +149,15 @@ export interface MatchEndMessage {
   /** Slots in finishing order, best first. */
   leaderboard: number[];
   tick: number;
+  /** true if the sim itself decided the match (a real winner, or a
+   *  genuine simultaneous-KO draw); false if every human seat left and
+   *  the server tore an unfinished bot-only fight down early to stop
+   *  paying for it (see isAbandonedByHumans in server/src/match.ts). An
+   *  already-eliminated player should still get a real result screen
+   *  when resolved is true -- only the early-teardown case is noise that
+   *  has nothing to do with the match they actually played. Added
+   *  2026-09-09, see wiki 'End-of-Match Screen Missing Entirely'. */
+  resolved: boolean;
 }
 
 export interface ErrorMessage {

@@ -10,20 +10,129 @@
 //     snapshot acking that input tick arriving back at the same client
 //   - server RSS/CPU sampled throughout (same /proc technique as before)
 // Usage: node --experimental-strip-types scripts/load-test-metrics.mjs
-import { spawn } from 'node:child_process';
+//        node --experimental-strip-types scripts/load-test-metrics.mjs --target=http://135.181.45.254 [--ssh-host=root@135.181.45.254]
+//
+// --target points the load generator at an already-running server instead of
+// spawning a local one. Both the websocket clients and the /api/health and
+// /api/metrics reads go against <target>. This is how a remote production
+// server gets measured by a load generator that isn't sharing its CPU. The
+// default (no --target) behaviour of spawning a local ephemeral server is
+// unchanged, so existing workflows keep working.
+//
+// When --target is remote, this process cannot read /proc for the server's
+// RSS/CPU directly (that's on a different machine). If SSH access is
+// available, RSS/CPU is sampled by shelling out to
+// `ssh <ssh-host> cat /proc/<pid>/stat ...` against the systemd unit
+// `bash-fighter`'s MainPID every 2s (ssh-host defaults to root@<target
+// hostname>, override with --ssh-host=user@host). Pass --no-ssh-metrics to
+// skip this and get bandwidth/tick/RTT numbers only.
+import { spawn, execFile } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { WebSocket } from 'ws';
 import { hashStateBuffer } from '@bash-fighter/sim/src/hash.ts';
 import { PROTOCOL_VERSION, BinaryTag, decodeSnapshot, encodeInput } from '@bash-fighter/net/src/protocol.ts';
 
+const args = process.argv.slice(2);
+function argValue(name) {
+  const prefix = `--${name}=`;
+  const hit = args.find((a) => a.startsWith(prefix));
+  return hit ? hit.slice(prefix.length) : undefined;
+}
+const hasFlag = (name) => args.includes(`--${name}`);
+
+const TARGET = argValue('target'); // e.g. http://135.181.45.254
+const REMOTE = Boolean(TARGET);
+const NO_SSH_METRICS = hasFlag('no-ssh-metrics');
+const SSH_HOST = argValue('ssh-host') || (REMOTE ? `root@${new URL(TARGET).hostname}` : undefined);
+
 const PORT = 8198;
 const NUM_CLIENTS = 20;
+const HTTP_BASE = REMOTE ? TARGET.replace(/\/$/, '') : `http://localhost:${PORT}`;
+const WS_URL = REMOTE ? `${TARGET.replace(/^http/, 'ws').replace(/\/$/, '')}/socket` : `ws://localhost:${PORT}/socket`;
 
-function waitForHealth(port, timeoutMs) {
+function sshExec(cmd, timeoutMs = 4000) {
+  return new Promise((resolve) => {
+    execFile(
+      'ssh',
+      ['-o', 'ConnectTimeout=4', '-o', 'BatchMode=yes', SSH_HOST, cmd],
+      { timeout: timeoutMs },
+      (err, stdout) => resolve(err ? null : stdout),
+    );
+  });
+}
+
+// The 'ws' npm package opens a raw TCP socket directly to the target host,
+// bypassing the container's HTTP_PROXY entirely -- fine for localhost, but
+// against a remote target behind this container's egress proxy the raw
+// socket attempt just hangs (silently dropped, no error, no data). Node's
+// built-in global WebSocket (undici-based) *does* honor HTTP_PROXY/
+// NODE_USE_ENV_PROXY, confirmed working through the proxy against
+// production. This thin adapter gives it the same on()/send()/close()/
+// readyState surface the rest of this script already uses from 'ws', so
+// only client construction needs to differ between local and remote mode.
+class ProxyAwareWebSocket {
+  static OPEN = 1;
+  constructor(url) {
+    this._listeners = { open: [], message: [], error: [], close: [] };
+    this._ws = new global.WebSocket(url);
+    this._ws.binaryType = 'arraybuffer';
+    this._ws.onopen = () => this._emit('open');
+    this._ws.onerror = (e) => this._emit('error', new Error(e.message || 'websocket error'));
+    this._ws.onclose = (e) => this._emit('close', e.code, Buffer.from(e.reason || ''));
+    this._ws.onmessage = (e) => {
+      if (typeof e.data === 'string') this._emit('message', Buffer.from(e.data), false);
+      else this._emit('message', Buffer.from(e.data), true);
+    };
+  }
+  _emit(event, ...a) {
+    for (const cb of this._listeners[event]) cb(...a);
+  }
+  on(event, cb) {
+    this._listeners[event].push(cb);
+    return this;
+  }
+  send(data) {
+    this._ws.send(data);
+  }
+  close() {
+    this._ws.close();
+  }
+  get readyState() {
+    return this._ws.readyState;
+  }
+}
+
+let remoteServerPid;
+async function getRemotePid() {
+  if (remoteServerPid) return remoteServerPid;
+  const out = await sshExec('systemctl show -p MainPID --value bash-fighter');
+  const pid = out && Number(out.trim());
+  if (pid) remoteServerPid = pid;
+  return remoteServerPid;
+}
+
+async function readRemoteProcStat() {
+  const pid = await getRemotePid();
+  if (!pid) return null;
+  const out = await sshExec(`cat /proc/${pid}/statm /proc/${pid}/stat`);
+  if (!out) return null;
+  const lines = out.trim().split('\n');
+  if (lines.length < 2) return null;
+  const statm = lines[0].split(' ');
+  const rssPages = Number(statm[1]);
+  const pageSizeKb = 4;
+  const stat = lines.slice(1).join('\n');
+  const afterComm = stat.slice(stat.lastIndexOf(')') + 2).split(' ');
+  const utime = Number(afterComm[11]);
+  const stime = Number(afterComm[12]);
+  return { rssKb: rssPages * pageSizeKb, utimeTicks: utime, stimeTicks: stime };
+}
+
+function waitForHealth(base, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
   return new Promise((resolve, reject) => {
     const tryOnce = () => {
-      fetch(`http://localhost:${port}/api/health`)
+      fetch(`${base}/api/health`)
         .then(() => resolve())
         .catch(() => {
           if (Date.now() > deadline) reject(new Error('server did not come up in time'));
@@ -50,36 +159,44 @@ function readProcStat(pid) {
 }
 
 async function main() {
-  const serverProc = spawn(
-    process.execPath,
-    ['--experimental-strip-types', new URL('../server/src/index.ts', import.meta.url).pathname],
-    {
-      env: {
-        ...process.env,
-        PORT: String(PORT),
-        MATCH_CAPACITY: String(NUM_CLIENTS),
-        MATCH_MINIMUM: String(NUM_CLIENTS),
-        MATCH_COUNTDOWN_SECONDS: '1',
-        MATCH_BOT_FILL_SECONDS: '999999',
-        ...(process.env.MATCH_SHRINK_FULLY_CLOSED_TICK
-          ? { MATCH_SHRINK_FULLY_CLOSED_TICK: process.env.MATCH_SHRINK_FULLY_CLOSED_TICK }
-          : {}),
-      },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    },
-  );
+  if (REMOTE) {
+    console.log(`REMOTE MODE: targeting ${TARGET} (ws: ${WS_URL})`);
+    if (!NO_SSH_METRICS) console.log(`RSS/CPU via ssh ${SSH_HOST} (systemd unit "bash-fighter")`);
+  }
+  const serverProc = REMOTE
+    ? null
+    : spawn(
+        process.execPath,
+        ['--experimental-strip-types', new URL('../server/src/index.ts', import.meta.url).pathname],
+        {
+          env: {
+            ...process.env,
+            PORT: String(PORT),
+            MATCH_CAPACITY: String(NUM_CLIENTS),
+            MATCH_MINIMUM: String(NUM_CLIENTS),
+            MATCH_COUNTDOWN_SECONDS: '1',
+            MATCH_BOT_FILL_SECONDS: '999999',
+            ...(process.env.MATCH_SHRINK_FULLY_CLOSED_TICK
+              ? { MATCH_SHRINK_FULLY_CLOSED_TICK: process.env.MATCH_SHRINK_FULLY_CLOSED_TICK }
+              : {}),
+          },
+          stdio: ['ignore', 'pipe', 'pipe'],
+        },
+      );
   let serverLog = '';
-  serverProc.stdout.on('data', (d) => (serverLog += d.toString()));
-  serverProc.stderr.on('data', (d) => (serverLog += d.toString()));
+  if (serverProc) {
+    serverProc.stdout.on('data', (d) => (serverLog += d.toString()));
+    serverProc.stderr.on('data', (d) => (serverLog += d.toString()));
+  }
 
   const rssCpuSamples = [];
   const tickMetricSamples = [];
   const hz = 100;
   const sampleInterval = setInterval(async () => {
-    const s = readProcStat(serverProc.pid);
+    const s = REMOTE ? (NO_SSH_METRICS ? null : await readRemoteProcStat()) : readProcStat(serverProc.pid);
     if (s) rssCpuSamples.push({ t: Date.now(), ...s });
     try {
-      const m = await fetch(`http://localhost:${PORT}/api/metrics`).then((r) => r.json());
+      const m = await fetch(`${HTTP_BASE}/api/metrics`).then((r) => r.json());
       tickMetricSamples.push({ t: Date.now(), ...m });
     } catch {}
   }, 2000);
@@ -102,12 +219,12 @@ async function main() {
   }
 
   try {
-    await waitForHealth(PORT, 20000);
+    await waitForHealth(HTTP_BASE, 20000);
     console.log('server up, connecting', NUM_CLIENTS, 'clients...');
 
     const connectPromises = [];
     for (let i = 0; i < NUM_CLIENTS; i++) {
-      const ws = new WebSocket(`ws://localhost:${PORT}/socket`);
+      const ws = REMOTE ? new ProxyAwareWebSocket(WS_URL) : new WebSocket(WS_URL);
       const cstate = { ws, slot: -1, matchEnded: false, lastState: null, tick: 0, snapshotCount: 0, pendingSends: new Map() };
       clients.push(cstate);
       const p = new Promise((resolve, reject) => {
@@ -223,11 +340,11 @@ async function main() {
     await new Promise((r) => setTimeout(r, 300));
 
     clearInterval(sampleInterval);
-    const finalSample = readProcStat(serverProc.pid);
+    const finalSample = REMOTE ? (NO_SSH_METRICS ? null : await readRemoteProcStat()) : readProcStat(serverProc.pid);
     if (finalSample) rssCpuSamples.push({ t: Date.now(), ...finalSample });
     let finalMetrics;
     try {
-      finalMetrics = await fetch(`http://localhost:${PORT}/api/metrics`).then((r) => r.json());
+      finalMetrics = await fetch(`${HTTP_BASE}/api/metrics`).then((r) => r.json());
     } catch {}
 
     console.log('\n--- server tick timing (real match, via /api/metrics) ---');
@@ -274,7 +391,7 @@ async function main() {
     process.exitCode = 1;
   } finally {
     clearInterval(sampleInterval);
-    serverProc.kill();
+    if (serverProc) serverProc.kill();
   }
 }
 

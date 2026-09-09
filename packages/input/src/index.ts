@@ -7,10 +7,12 @@ import { fixed as fx, makeInputFrame, type InputFrame } from '@bash-fighter/sim'
 import { BUTTON_BY_FIELD, BUTTON_FIELDS, DEFAULT_P1_BINDING, DEFAULT_P2_BINDING, type KeyBinding } from './bindings.ts';
 import { KeyboardSource } from './keyboard.ts';
 import { pollGamepad, listConnectedGamepads } from './gamepad.ts';
+import { TouchSource } from './touch.ts';
 
 export type { KeyBinding } from './bindings.ts';
 export { DEFAULT_P1_BINDING, DEFAULT_P2_BINDING, cloneBinding } from './bindings.ts';
 export { listConnectedGamepads } from './gamepad.ts';
+export { isTouchCapable, TouchSource, type TouchButton } from './touch.ts';
 
 export interface PlayerSlotConfig {
   binding: KeyBinding;
@@ -36,6 +38,10 @@ function keyboardFrame(kb: KeyboardSource, binding: KeyBinding): InputFrame {
  * and produces one InputFrame per slot per app frame. */
 export class InputManager {
   private readonly keyboard = new KeyboardSource();
+  // Touch is keyed by slot rather than being a single global instance:
+  // in principle any local slot could get a touch source, though in
+  // practice only slot 0 (the local human on a touch device) ever will.
+  private readonly touch = new Map<number, TouchSource>();
   // Local slots are an array, not a fixed pair: this milestone plays 2
   // local humans, but nothing here assumes exactly 2 — a future local
   // multi-controller session (or a networked FFA where only your own
@@ -76,8 +82,27 @@ export class InputManager {
     return this.slots.map((_, i) => this.pollSlot(i));
   }
 
+  /** Register (or clear, passing null) the touch source that should be
+   * checked for this slot. The app layer owns the actual on-screen
+   * elements and creates one TouchSource per slot that wants them (see
+   * packages/app/src/ui/touch-controls.ts); this just plugs it into the
+   * per-frame priority chain below. */
+  setTouchSource(slot: number, source: TouchSource | null): void {
+    if (source) this.touch.set(slot, source);
+    else this.touch.delete(slot);
+  }
+
   private pollSlot(slot: number): InputFrame {
     const cfg = this.slots[slot] as PlayerSlotConfig;
+    // Priority: an actively-touched on-screen control wins over both
+    // gamepad and keyboard for that slot this frame -- "whichever they
+    // touch takes over" (see touch.ts). The instant no finger is on a
+    // control, isActive() goes false and the very next frame falls
+    // straight back to gamepad/keyboard with no mode switch to manage.
+    const touchSource = this.touch.get(slot);
+    if (touchSource && touchSource.isActive()) {
+      return touchSource.poll();
+    }
     if (cfg.gamepadIndex !== null) {
       const pad = pollGamepad(cfg.gamepadIndex);
       if (pad) return pad;

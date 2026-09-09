@@ -9,6 +9,8 @@ import { SpectatorController } from './spectator/controller.ts';
 import { NetMatch, type ConnectionState } from './net-match.ts';
 import { MatchOverlay } from './ui/match-overlay.ts';
 import { ControlsHint } from './ui/controls-hint.ts';
+import { TouchControls } from './ui/touch-controls.ts';
+import { isTouchCapable } from '@bash-fighter/input';
 import { PLACEHOLDER_CHARACTER, resolveCharacterId } from '@bash-fighter/content';
 import type { ArenaBounds } from '@bash-fighter/render';
 import { AudioManager } from '@bash-fighter/audio';
@@ -82,6 +84,9 @@ const spectatorBanner = new SpectatorBanner(appRoot);
 const matchOverlay = new MatchOverlay(appRoot);
 const controlsHint = new ControlsHint(appRoot);
 
+const touchControls = new TouchControls(appRoot);
+const touchCapable = isTouchCapable();
+
 const startScreen = new StartScreen(appRoot, () => {
   void beginMatch();
 });
@@ -143,6 +148,7 @@ async function beginOnlineMatch(): Promise<void> {
   spectatorBanner.hide();
   matchOverlay.hide();
   hud.hide();
+  touchControls.hide();
   const generation = ++matchGeneration;
 
   if (match) {
@@ -186,11 +192,13 @@ async function beginOnlineMatch(): Promise<void> {
     },
     onMatchOver: (winnerIndex) => {
       hud.hide();
+      touchControls.hide();
       matchOverlay.hide();
       audio.play('match_end');
       winScreen.show(winnerIndex, netMatch?.localSlot());
     },
     onEliminated: (placement, totalFighters) => {
+      touchControls.hide();
       matchOverlay.show({
         title: `You finished ${placement} of ${totalFighters}`,
         message: 'You can jump straight into a new match, or keep watching this one play out.',
@@ -204,6 +212,7 @@ async function beginOnlineMatch(): Promise<void> {
   netMatch = net;
   await net.init(canvasRoot);
   net.connect(name, characterId);
+  if (touchCapable) net.input.setTouchSource(LOCAL_SLOT, touchControls.source);
 
   // Same HUD widget the local match uses (packages/app/src/ui/hud.ts),
   // fed from NetMatch.currentSnapshots() -- see that method's comment for
@@ -220,9 +229,11 @@ async function beginOnlineMatch(): Promise<void> {
         controlsHint.maybeShow();
       }
       hud.show();
+      if (touchCapable) touchControls.show();
       hud.update(netMatch.currentSnapshots(), undefined, netMatch.localSlot());
     } else {
       hud.hide();
+      touchControls.hide();
     }
     requestAnimationFrame(onlineHudTick);
   };
@@ -248,6 +259,7 @@ async function beginMatch(): Promise<void> {
   spectatorBanner.hide();
   matchOverlay.hide();
   hud.show();
+  if (touchCapable) touchControls.show();
   controlsHint.maybeShow();
   const generation = ++matchGeneration;
   lastFrameTimeMs = null;
@@ -266,6 +278,7 @@ async function beginMatch(): Promise<void> {
   const localMatch: Match = new Match(canvasRoot, localCharacters, Date.now() & 0xffffffff, {
     onMatchOver: (winnerIndex) => {
       hud.hide();
+      touchControls.hide();
       audio.play('match_end');
       winScreen.show(winnerIndex, 0);
       match?.stop();
@@ -315,6 +328,11 @@ async function beginMatch(): Promise<void> {
 
   await localMatch.init(canvasRoot);
   localMatch.start();
+  // Local two-player harness: touch, if available, always drives slot 0
+  // (the local human) same as online mode -- P2 stays keyboard/gamepad
+  // only, matching the existing "second local player has no on-screen
+  // affordance" state of this dev harness.
+  if (touchCapable) localMatch.input.setTouchSource(LOCAL_SLOT, touchControls.source);
 
   const hudTick = (): void => {
     if (generation !== matchGeneration) return;

@@ -16,7 +16,7 @@ import {
   type InputFrame,
   DEFAULT_ARENA,
 } from '@bash-fighter/sim';
-import { PLACEHOLDER_CHARACTER } from '@bash-fighter/content';
+import { PLACEHOLDER_CHARACTER, createMatchSim, pickArenaId } from '@bash-fighter/content';
 import { InputManager } from '@bash-fighter/input';
 import {
   Renderer,
@@ -109,7 +109,15 @@ export class Match {
     // Local play: the human is always fighter slot 0 by convention (the
     // rest are bots) -- see InputManager wiring below.
     this.effectsBridge.setContext(characters, 0);
-    this.sim = sim ?? new Sim(seed, characters.length, characters);
+    // Local play must build its Sim through the same sanctioned path the
+    // server and online clients use (createMatchSim) so it exercises the
+    // real item set, hazard config, and arena resolution instead of the
+    // bare Sim defaults -- see packages/content/src/match-sim.ts. Local
+    // matches have no server dictating an arenaId, so we pick one
+    // deterministically from the seed via the same pickArenaId helper the
+    // server uses for its own random-arena selection, keeping local play
+    // varied but reproducible for a given seed.
+    this.sim = sim ?? createMatchSim(seed, characters.length, undefined, characters, pickArenaId(seed));
     this.numFighters = this.sim.numFighters;
     this.renderer = new Renderer(arenaDataToStageBounds(this.sim.getArena()));
     this.prevSnapshots = this.snapshotAll();

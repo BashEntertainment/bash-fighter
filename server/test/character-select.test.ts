@@ -8,7 +8,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { WebSocket } from 'ws';
 import { PROTOCOL_VERSION } from '@bash-fighter/net/src/protocol.ts';
 
-const PORT = 8098;
+const PORT = 8110;
 const NUM_CLIENTS = 2;
 
 function waitForHealth(port: number, timeoutMs: number): Promise<void> {

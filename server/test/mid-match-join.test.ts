@@ -105,7 +105,7 @@ function connectClient(
 }
 
 test('a client joining after a match has started lands in a new lobby, not as a live fighter in the running match', async () => {
-  const port = 8103;
+  const port = 8112;
   const server = startServer(port, {});
   let log = '';
   server.stdout?.on('data', (d) => (log += d.toString()));

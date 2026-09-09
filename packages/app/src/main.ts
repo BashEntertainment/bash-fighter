@@ -42,6 +42,11 @@ let adapter: SimMatchAdapter | null = null;
 let spectator: SpectatorController | null = null;
 let matchGeneration = 0;
 let lastFrameTimeMs: number | null = null;
+// Tracks which mode the most recently finished match was so the shared
+// win screen's "Rematch" button starts another match of the *same* kind
+// instead of always dropping back into the local two-player harness --
+// see the comment on winScreen below for the bug this fixes.
+let lastMatchWasOnline = false;
 
 // One AudioManager for the whole app -- both local Match and NetMatch
 // play through it, so the mute control and voice cap are global rather
@@ -132,6 +137,7 @@ function serverUrl(): string {
 }
 
 async function beginOnlineMatch(): Promise<void> {
+  lastMatchWasOnline = true;
   startScreen.hide();
   winScreen.hide();
   spectatorBanner.hide();
@@ -223,11 +229,20 @@ async function beginOnlineMatch(): Promise<void> {
   requestAnimationFrame(onlineHudTick);
 }
 
+// Shared between local and online modes -- rematch must restart *the mode
+// that was actually being played*, not unconditionally the local
+// two-player harness (that was a real bug: winning/finishing an online
+// match and clicking Rematch silently dropped you into local play).
 const winScreen = new WinScreen(appRoot, () => {
-  void beginMatch();
+  if (lastMatchWasOnline) {
+    void beginOnlineMatch();
+  } else {
+    void beginMatch();
+  }
 });
 
 async function beginMatch(): Promise<void> {
+  lastMatchWasOnline = false;
   winScreen.hide();
   startScreen.hide();
   spectatorBanner.hide();

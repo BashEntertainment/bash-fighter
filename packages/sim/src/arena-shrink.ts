@@ -19,18 +19,57 @@ export interface BlastRect {
 }
 
 /** How far the *final* (fully shrunk) blast rectangle sits inside the
- * arena's initial one, as a fraction of each half-extent. 0.55 leaves a
- * comfortably small but not point-sized final ring. */
-const FINAL_SHRINK_FRACTION: Fixed = fx.fromFloat(0.55);
+ * arena's initial one, as a fraction of each half-extent.
+ *
+ * Raised from 0.55 to 0.65 on 2026-09-09 (see [[Arena Collapse Cascade: Why
+ * Matches End With Nobody Left 2026-09-09]]): at 0.55 the fully-closed
+ * rectangle cut into standing ground on all three arenas (worst case
+ * the-undercroft, ~208 units of each floor half turned lethal; even
+ * the-spire's narrow +/-220 main platform lost its outer 11 units). At
+ * 0.65 the-spire's platform is fully contained (0.65 * 380 = 247 > 220,
+ * so the ring never reaches its ground at all), and the other two
+ * arenas still leave several hundred units of solid floor for a
+ * late-game handful of survivors even though the ring no longer spans
+ * the full original platform. See
+ * packages/sim/test/arena-shrink.test.ts for the per-arena
+ * ground-overlap checks this constant must keep satisfying. */
+const FINAL_SHRINK_FRACTION: Fixed = fx.fromFloat(0.65);
+
+/** Weight given to the elimination-driven term. Kept deliberately small:
+ * before 2026-09-09 the elimination term could reach full weight (1.0)
+ * and directly race the clock via max(tickT, aliveT), which made the
+ * shrink a positive feedback loop -- a death tightens the ring, the
+ * tighter ring kills more fighters, which tightens the ring further. A
+ * burst of near-simultaneous eliminations (up to and including
+ * "everyone left dies on the same frame") can now only ever add up to
+ * ALIVE_WEIGHT of extra progress in a single tick, on top of whatever
+ * the clock already contributed -- never a full jump to "ring closed".
+ * The clock (tickT) is left to dominate the pacing; eliminations only
+ * pull the close-in forward a little, which still rewards aggressive
+ * play without being able to feed on its own output. */
+const ALIVE_WEIGHT: Fixed = fx.fromFloat(0.15);
 
 function lerp(a: Fixed, b: Fixed, t: Fixed): Fixed {
   // a + (b - a) * t, all fixed-point, t in [0, ONE].
   return fx.add(a, fx.mul(fx.sub(b, a), t));
 }
 
-/** progress in [0, ONE]: the maximum of a tick-driven "hazard storm" clock
- * and an alive-count-driven closing ring. Monotonic in both tick and
- * eliminations — the arena never re-expands. */
+/** progress in [0, ONE]: a tick-driven "hazard storm" clock, plus a small
+ * elimination-driven bonus on top. Monotonic in both tick and
+ * eliminations — the arena never re-expands.
+ *
+ * Before 2026-09-09 this returned max(tickT, aliveT), letting the
+ * elimination term alone drive the ring all the way to fully-closed (see
+ * [[Arena Collapse Cascade: Why Matches End With Nobody Left 2026-09-09]]).
+ * That is a positive feedback loop: eliminations tighten the ring, the
+ * tighter ring crosses more standing ground and kills more fighters,
+ * which tightens the ring again — twenty-player matches were ending in
+ * under a minute, occasionally with a simultaneous double (or worse)
+ * elimination wiping the whole field on one tick. Now the clock alone
+ * can reach full progress, and the elimination term can only ever add
+ * up to ALIVE_WEIGHT on top of that — bounded regardless of how many
+ * fighters go out on the same tick, so a mass-elimination burst nudges
+ * the ring instead of slamming it shut. */
 export function computeShrinkProgress(
   tick: number,
   aliveCount: number,
@@ -43,7 +82,8 @@ export function computeShrinkProgress(
   const aliveDenom = fighterCount > 1 ? fighterCount - 1 : 1;
   const eliminated = fighterCount - aliveCount;
   const aliveT = fx.clamp(fx.div(fx.fromInt(Math.min(eliminated, aliveDenom)), fx.fromInt(aliveDenom)), 0, fx.ONE);
-  return tickT > aliveT ? tickT : aliveT;
+  const bonus = fx.mul(ALIVE_WEIGHT, aliveT);
+  return fx.clamp(fx.add(tickT, bonus), 0, fx.ONE);
 }
 
 export function computeCurrentBlastRect(

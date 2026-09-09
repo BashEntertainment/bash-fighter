@@ -65,8 +65,11 @@ test('SimMatchAdapter: liveArenaBounds tracks the sim blast rect, including shri
 });
 
 test('SimMatchAdapter: reflects elimination, placement, and koCount when the collapsing arena catches fighters outside the safe zone', () => {
-  // Custom arena: spawn points at x=+-150, inside the *initial* blast zone
-  // (+-260) but outside the *fully-shrunk* one (55% of 260 = 143). With
+  // Custom arena: spawn points at x=+-200, inside the *initial* blast zone
+  // (+-260) but outside the *fully-shrunk* one (65% of 260 = 169 as of the
+  // 2026-09-09 arena-shrink cascade fix — see
+  // [[Arena Collapse Cascade: Why Matches End With Nobody Left 2026-09-09]],
+  // FINAL_SHRINK_FRACTION raised from 0.55 to 0.65). With
   // shrinkFullyClosedTick=1 the arena is fully closed by tick 1, so a
   // fighter standing still at its spawn point is caught outside the safe
   // zone almost immediately — exercising the real elimination path
@@ -80,8 +83,8 @@ test('SimMatchAdapter: reflects elimination, placement, and koCount when the col
     blastMinY: fx.fromInt(-260),
     blastMaxY: fx.fromInt(260),
     spawnPoints: [
-      { x: fx.fromInt(150), y: fx.fromInt(0) },
-      { x: fx.fromInt(-150), y: fx.fromInt(0) },
+      { x: fx.fromInt(200), y: fx.fromInt(0) },
+      { x: fx.fromInt(-200), y: fx.fromInt(0) },
     ],
   };
   const sim = new Sim(4, N, undefined, arena, { shrinkFullyClosedTick: 1 });

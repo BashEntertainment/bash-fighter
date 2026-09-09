@@ -53,8 +53,17 @@ export class HazardSprite {
     // the eye; the pulse speeds up as danger gets closer.
     const pulseSpeed = inWarningPhase ? 0.05 : 0.12;
     const pulse = 0.55 + 0.45 * Math.sin(this.pulseT * pulseSpeed);
-    const markerY = state.groundY; // drawn in the hazard's own local space, see index.ts placement
-    const dy = markerY - state.posY; // offset from rock to ground, local units
+    // World space is y-up (see camera.ts worldToScreen, which flips y), but
+    // this sprite's root is a plain Pixi container scaled by cam.scale with
+    // no extra flip, so a local y-offset here follows normal screen/Pixi
+    // convention (+y is down). The marker sits at ground level, which is
+    // below the falling rock on screen, so the local offset must be
+    // POSITIVE by (posY - groundY) -- the previous `groundY - posY` drew
+    // the marker on the wrong side of the rock (effectively invisible /
+    // off-target), which is why the telegraph never appeared during
+    // manual testing. This was the audit's key finding: the ground marker
+    // was defined and wired up but never actually visible on screen.
+    const dy = state.posY - state.groundY; // offset from rock to ground, local units
 
     g.ellipse(0, dy, state.halfWidth, state.halfWidth * 0.35);
     g.stroke({ color: PALETTE.hazardWarning, width: 2, alpha: inWarningPhase ? pulse : 0.9 });

@@ -465,9 +465,7 @@ html, body {
   top: 12px;
   right: 16px;
   z-index: 30;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.06em;
+  font-size: 12px;
   color: var(--ink-dim);
   background: var(--panel);
   border: 1px solid var(--ink-dim);
@@ -481,8 +479,9 @@ html, body {
 }
 
 .mute-btn[data-muted='true'] {
-  color: var(--danger);
-  border-color: var(--danger);
+  color: var(--ink-dim);
+  border-color: var(--ink-dim);
+  opacity: 0.7;
 }
 
 .survivors-line {

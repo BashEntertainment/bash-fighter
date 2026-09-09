@@ -68,7 +68,7 @@ const muteButton = document.createElement('button');
 muteButton.id = 'mute-btn';
 muteButton.className = 'mute-btn';
 function refreshMuteLabel(): void {
-  muteButton.textContent = audio.isMuted ? 'SOUND OFF' : 'SOUND ON';
+  muteButton.textContent = audio.isMuted ? 'Sound off' : 'Sound on';
   muteButton.dataset.muted = String(audio.isMuted);
 }
 refreshMuteLabel();

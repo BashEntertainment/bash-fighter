@@ -36,6 +36,15 @@ interface ClientConn {
   slot: number; // -1 = pure spectator / not yet assigned
   spectating: boolean;
   helloed: boolean;
+  /** Set when this connection's seat has been handed to a newer connection
+   *  via the stale-incumbent self-heal in handleResume (see retireConn).
+   *  Once set, this connection's own eventual `close` event must NOT call
+   *  markDisconnected again -- that seat may already be live under a
+   *  different ClientConn by then, and re-marking it disconnected would
+   *  invalidate a resume token that a currently-connected player still
+   *  needs. A belated close from a socket the server has already retired
+   *  is expected, not an error. */
+  superseded: boolean;
 }
 
 const clients = new Map<string, ClientConn>();
@@ -255,7 +264,7 @@ const server = http.createServer((req, res) => {
 
 const wss = new WebSocketServer({ server, path: '/socket' });
 
-wss.on('connection', (ws) => {
+  wss.on('connection', (ws) => {
   const conn: ClientConn = {
     id: randomUUID(),
     ws,
@@ -263,9 +272,14 @@ wss.on('connection', (ws) => {
     slot: -1,
     spectating: false,
     helloed: false,
+    superseded: false,
   };
   clients.set(conn.id, conn);
   logConn(conn, 'connected');
+  (ws as WebSocket & { isAlive?: boolean }).isAlive = true;
+  ws.on('pong', () => {
+    (ws as WebSocket & { isAlive?: boolean }).isAlive = true;
+  });
 
   ws.on('message', (data, isBinary) => {
     try {
@@ -288,11 +302,17 @@ wss.on('connection', (ws) => {
     // protocol string, never a token or IP.
     const closeInfo = { code, reason: reason.toString('utf8').slice(0, 120) || null };
     // A spectator or not-yet-assigned socket has no seat to hold open; only
-    // a real fighter slot gets the disconnect/grace-period treatment.
-    const hadLiveSeat = conn.match && !conn.spectating && conn.slot >= 0;
+    // a real fighter slot gets the disconnect/grace-period treatment. A
+    // superseded connection's seat was already handed to a newer connection
+    // by retireConn (see handleResume) -- this close is just its own dead
+    // socket catching up, not a real disconnect of whoever holds the seat
+    // now, so it must never call markDisconnected again.
+    const hadLiveSeat = conn.match && !conn.spectating && conn.slot >= 0 && !conn.superseded;
     if (hadLiveSeat && conn.match) {
       conn.match.markDisconnected(conn.slot);
       logConn(conn, 'seat_disconnected', { gracePeriod: true, ...closeInfo });
+    } else if (conn.superseded) {
+      logConn(conn, 'closed', { hadSeat: false, superseded: true, ...closeInfo });
     } else {
       logConn(conn, 'closed', { hadSeat: false, ...closeInfo });
     }
@@ -306,6 +326,35 @@ wss.on('connection', (ws) => {
   });
 });
 
+// A dropped mobile connection often never sends a TCP FIN or RST -- the OS
+// can sit on a dead socket for a very long time before the ws library ever
+// sees a `close` event. Without this, a seat's `connected` flag stays true
+// long after the player is gone, so their own attempt to resume gets
+// rejected with resume_seat_taken by a seat nobody is actually holding.
+// A periodic WebSocket-protocol ping/pong catches that: any socket that
+// doesn't answer one full interval's ping gets terminated, which runs the
+// normal close-handler cleanup (markDisconnected + grace timer) so a
+// resume can succeed well within the grace window.
+const HEARTBEAT_INTERVAL_MS = Number(process.env.HEARTBEAT_INTERVAL_MS ?? 12_000);
+const heartbeatTimer = setInterval(() => {
+  for (const conn of clients.values()) {
+    const ws = conn.ws as WebSocket & { isAlive?: boolean };
+    if (ws.isAlive === false) {
+      logConn(conn, 'heartbeat_timeout', {});
+      ws.terminate();
+      continue;
+    }
+    ws.isAlive = false;
+    try {
+      ws.ping();
+    } catch {
+      // socket already going away; the next sweep (or its close event)
+      // will clean it up
+    }
+  }
+}, HEARTBEAT_INTERVAL_MS);
+heartbeatTimer.unref?.();
+
 /** Handles a `hello` that carries a `resume` token instead of joining a
  *  fresh lobby. Presenting a token is the ONLY path that can hand a
  *  connection someone else's seat -- there is no lookup by matchId+slot
@@ -313,8 +362,61 @@ wss.on('connection', (ws) => {
  *  an explicit `error` frame rather than silently falling back to a new
  *  join, so a client bug can't accidentally end up spectating or dropped
  *  into a random lobby without knowing why. */
+/** Finds the ClientConn that currently occupies a given match+slot, if
+ *  any -- used only to check whether that connection's own socket is
+ *  actually still open before we trust the seat's `connected` flag. */
+function findIncumbentConn(matchId: string, slot: number): ClientConn | undefined {
+  for (const c of clients.values()) {
+    if (!c.spectating && c.match?.id === matchId && c.slot === slot) return c;
+  }
+  return undefined;
+}
+
+/** Retires a connection whose socket is provably dead (readyState is no
+ *  longer OPEN) but whose `close` event the server has not yet received --
+ *  the real-world case is a dropped mobile connection where the OS can
+ *  take far longer than a player's patience to notice the TCP session is
+ *  gone. Marks it `superseded` so its eventual belated `close` is a no-op,
+ *  releases its grip on the seat via the normal markDisconnected path, and
+ *  removes it from bookkeeping so it can't be found again. */
+function retireConn(conn: ClientConn): void {
+  conn.superseded = true;
+  if (conn.match && !conn.spectating && conn.slot >= 0) {
+    conn.match.markDisconnected(conn.slot);
+  }
+  clients.delete(conn.id);
+  try {
+    conn.ws.removeAllListeners();
+    conn.ws.terminate();
+  } catch {
+    // best-effort cleanup of an already-dead socket
+  }
+}
+
 function handleResume(conn: ClientConn, token: string): void {
-  const found = manager.findReclaim(token);
+  let found = manager.findReclaim(token);
+  if (!found) {
+    const held = manager.findByAnyToken(token);
+    if (held) {
+      // Valid token, and the seat's bookkeeping says it's still connected.
+      // That bookkeeping is only updated by the incumbent's own `close`
+      // event though, which can lag well behind reality on a flaky mobile
+      // connection. Check the incumbent's actual socket state before
+      // trusting it -- if it is provably no longer OPEN, self-heal instead
+      // of making this legitimately reconnecting player wait out someone
+      // else's dead TCP session (which can take minutes).
+      const incumbent = findIncumbentConn(held.match.id, held.slot);
+      if (incumbent && incumbent.ws.readyState !== WebSocket.OPEN) {
+        logConn(conn, 'stale_incumbent_retired', {
+          matchId: held.match.id,
+          slot: held.slot,
+          staleReadyState: incumbent.ws.readyState,
+        });
+        retireConn(incumbent);
+        found = manager.findReclaim(token);
+      }
+    }
+  }
   if (!found) {
     if (manager.isTokenForConnectedSeat(token)) {
       // Valid token, but that seat already has a live socket -- reject the
@@ -461,7 +563,12 @@ function handleBinary(conn: ClientConn, data: Buffer): void {
   conn.match.setInput(conn.slot, { buttons: input.buttons, stickX: input.stickX, stickY: input.stickY }, input.tick);
 }
 
-setInterval(() => manager.reap(), 30_000).unref();
+// Test-only override: production leaves these at their defaults
+// (30s sweep, 60s max age); tests set both low so an abandoned match's
+// teardown can be asserted without waiting out real-world timings.
+const REAP_INTERVAL_MS = Number(process.env.MATCH_REAP_INTERVAL_MS ?? 30_000);
+const REAP_MAX_AGE_MS = Number(process.env.MATCH_REAP_MAX_AGE_MS ?? 60_000);
+setInterval(() => manager.reap(REAP_MAX_AGE_MS), REAP_INTERVAL_MS).unref();
 
 // Periodic one-line health summary, only when there's something to say --
 // an idle server (no connections, no matches) stays silent rather than

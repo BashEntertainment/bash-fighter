@@ -386,6 +386,35 @@ export class Match {
       this.events.onMatchEnd(sim.getWinner(), sim.getLeaderboard(), this.tick);
       this.endedAt = Date.now();
       this.stop();
+      return;
     }
+
+    // A match every human left behind (all disconnected past their grace
+    // window, or eliminated) has nobody who could ever come back to it --
+    // only bots are left steering it, if anyone. Left running, it keeps
+    // ticking a full sim (CPU, memory, one entry in matchCount) for as
+    // long as the bots take to fight it out, which is the multi-minute
+    // real match length -- not a leak exactly, but a real waste and a
+    // false read on server capacity while it lasts. End it now instead of
+    // waiting that out.
+    if (!this.ended && this.isAbandonedByHumans()) {
+      this.ended = true;
+      this.phase = 'ended';
+      this.events.onMatchEnd(sim.getWinner(), sim.getLeaderboard(), this.tick);
+      this.endedAt = Date.now();
+      this.stop();
+    }
+  }
+
+  /** True once every human seat is unreachable: eliminated, or
+   *  disconnected with its resume token already gone (grace expired or
+   *  never reclaimable). A match with zero human seats to begin with is
+   *  deliberately NOT treated as abandoned here; that would end a match
+   *  before it had a chance to matter, and shouldn't happen anyway since
+   *  bots only ever fill an already-human-started lobby. */
+  private isAbandonedByHumans(): boolean {
+    const humanSeats = this.seats.filter((s) => !s.isBot);
+    if (humanSeats.length === 0) return false;
+    return humanSeats.every((s) => s.eliminated || (!s.connected && s.resumeToken === null));
   }
 }

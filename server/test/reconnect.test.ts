@@ -345,3 +345,113 @@ test('reconnecting after the match already ended reports the outcome instead of 
     server.kill();
   }
 });
+
+test('several rapid reconnects in a row with the same token all land back on a playable seat', async () => {
+  // Regression for the load-test finding that a resume token can start
+  // rejecting a legitimately reconnecting player after enough rapid
+  // reconnects. Five cycles of close-then-resume in quick succession, each
+  // one asserting the player is actually back in the match (receiving
+  // snapshots, seat still theirs) -- not just that no exception was
+  // thrown.
+  const port = 8106;
+  const server = startServer(port, {});
+  try {
+    await waitForHealth(port, 90000);
+    let a = await connectClient(port, 'Alice');
+    const b = await connectClient(port, 'Bob');
+    const c = await connectClient(port, 'Cara');
+    const welcomeA = (await a.waitFor((m) => m.t === 'welcome')) as ControlMsg & { resumeToken: string; slot: number };
+    await a.waitFor((m) => m.t === 'matchStart');
+    await b.waitFor((m) => m.t === 'matchStart');
+    await c.waitFor((m) => m.t === 'matchStart');
+    const token = welcomeA.resumeToken;
+    const slot = welcomeA.slot;
+
+    for (let i = 0; i < 5; i++) {
+      a.ws.close();
+      // Small, deliberately tight gap: a flaky connection reconnects fast,
+      // it doesn't politely wait a full second.
+      await new Promise((r) => setTimeout(r, 120));
+      const next = await connectClient(port, `Alice-retry-${i}`, token);
+      const msg = (await next.waitFor((m) => m.t === 'welcome' || m.t === 'error')) as ControlMsg & {
+        slot?: number;
+      };
+      assert.equal(msg.t, 'welcome', `reconnect #${i} must succeed, got: ${JSON.stringify(msg)}`);
+      assert.equal(msg.slot, slot, `reconnect #${i} must land back on the same seat`);
+
+      // Prove the seat is genuinely playable, not just accepted: send an
+      // input and see a fresh snapshot come back.
+      next.ws.send(encodeInput({ tick: 0, buttons: 0, stickX: 65536, stickY: 0 }));
+      const gotSnapshot = await new Promise<boolean>((resolve) => {
+        const check = setInterval(() => {
+          if (next.lastSnapshot()) {
+            clearInterval(check);
+            resolve(true);
+          }
+        }, 50);
+        setTimeout(() => {
+          clearInterval(check);
+          resolve(false);
+        }, 3000);
+      });
+      assert.ok(gotSnapshot, `reconnect #${i} must keep receiving snapshots, not just an accepted hello`);
+      a = next;
+    }
+
+    a.ws.close();
+    b.ws.close();
+    c.ws.close();
+  } finally {
+    server.kill();
+  }
+});
+
+test('a match abandoned by every human seat is torn down promptly, not left as a phantom in /api/health', async () => {
+  // Regression for the observed matchCount:1, playerCount:0 reading that
+  // lingered for minutes after every human left. A match with zero humans
+  // left who could ever reconnect must end and get reaped quickly -- on
+  // the order of the grace window plus one reap sweep, not on the order
+  // of a full bot-only battle royale playing itself out.
+  const port = 8107;
+  const server = startServer(port, {
+    MATCH_RECONNECT_GRACE_MS: '400',
+    MATCH_REAP_INTERVAL_MS: '300',
+    MATCH_REAP_MAX_AGE_MS: '200',
+  });
+  try {
+    await waitForHealth(port, 90000);
+    const a = await connectClient(port, 'Alice');
+    const b = await connectClient(port, 'Bob');
+    const c = await connectClient(port, 'Cara');
+    await a.waitFor((m) => m.t === 'matchStart');
+    await b.waitFor((m) => m.t === 'matchStart');
+    await c.waitFor((m) => m.t === 'matchStart');
+
+    const before = await fetch(`http://localhost:${port}/api/health`).then((r) => r.json());
+    assert.equal(before.matchCount, 1, 'sanity check: exactly one match should exist while it is being played');
+
+    // Every human walks away for good -- no reconnect follows.
+    a.ws.close();
+    b.ws.close();
+    c.ws.close();
+
+    // Grace (400ms) + one reap sweep (server runs it every 30s in
+    // production; that's too slow for a test, so poll instead of waiting
+    // out a fixed sleep) -- give it a generous but bounded window that is
+    // nowhere near "minutes".
+    const deadline = Date.now() + 20000;
+    let last = before;
+    while (Date.now() < deadline) {
+      last = await fetch(`http://localhost:${port}/api/health`).then((r) => r.json());
+      if (last.matchCount === 0) break;
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    assert.equal(
+      last.matchCount,
+      0,
+      `an abandoned match must be torn down within a few seconds, not linger; last health: ${JSON.stringify(last)}`,
+    );
+  } finally {
+    server.kill();
+  }
+});

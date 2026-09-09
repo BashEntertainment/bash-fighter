@@ -89,6 +89,18 @@ export class RoomManager {
     return false;
   }
 
+  /** Same lookup as isTokenForConnectedSeat but returns the match/slot
+   *  instead of a boolean, so a caller can inspect (and, if it's actually
+   *  dead, retire) the connection currently holding that seat before
+   *  deciding whether to reject a resume as a genuine duplicate. */
+  findByAnyToken(token: string): { match: Match; slot: number } | undefined {
+    for (const match of this.matches.values()) {
+      const seat = match.findSeatByAnyToken(token);
+      if (seat) return { match, slot: seat.slot };
+    }
+    return undefined;
+  }
+
   /** Finds or creates the match currently filling, adds a seat to it, and
    *  returns both. Starting the match (full, or countdown reaching zero) is
    *  handled here too so callers don't need to poll. */

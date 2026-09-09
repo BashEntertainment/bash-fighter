@@ -71,6 +71,17 @@ export const BLAST_MAX_Y: Fixed = fx.fromInt(220);
 
 export const HITSTUN_DI_ACCEL_PER_TICK: Fixed = fx.fromFloat(0.06);
 export const GROUND_FRICTION: Fixed = fx.fromFloat(0.9);
+/** Ticks a fighter ignores 'pass-through' platforms after a deliberate
+ * drop-through (down+jump while grounded on one). Long enough to clear
+ * the platform's thickness at normal fall speed, short enough that
+ * landing on the platform below (or the same one, on the next stage tier
+ * loop) still feels responsive. Chosen by feel, not measured. */
+export const DROP_THROUGH_TICKS = 12;
+/** Half-width used for wall collision when a character has none defined
+ * on its own data (walls block movement, not combat, so this only needs
+ * to be "close enough" to a body -- character.hurtboxWidth/2 is used
+ * instead whenever a CharacterData is available). */
+export const DEFAULT_WALL_HALF_WIDTH: Fixed = fx.fromFloat(6.0);
 
 export const STARTING_STOCKS = 3;
 export const SHIELD_MAX_HEALTH: Fixed = fx.fromInt(100);
@@ -153,7 +164,8 @@ const FighterField = {
   PLACEMENT: 22, // 1 = winner, N = first eliminated; 0 = not yet decided
   JUMPS_USED: 23, // jumps taken since last grounded; reset to 0 on landing
   PREV_JUMP_HELD: 24, // 0/1: BUTTON_JUMP state last tick, for edge-triggering
-  FIELD_COUNT: 25,
+  DROP_THROUGH_TIMER: 25, // ticks remaining to ignore 'pass-through' platforms, 0 = none
+  FIELD_COUNT: 26,
 } as const;
 
 /** Max jumps allowed per airborne phase: one grounded jump + one aerial
@@ -363,6 +375,7 @@ export class Sim {
     d[base + FighterField.PLACEMENT] = 0;
     d[base + FighterField.JUMPS_USED] = 0;
     d[base + FighterField.PREV_JUMP_HELD] = 0;
+    d[base + FighterField.DROP_THROUGH_TIMER] = 0;
   }
 
   /** Mid-match life reset after a non-final KO: position/percent/shield
@@ -387,6 +400,7 @@ export class Sim {
     d[base + FighterField.INVULN_TIMER] = this.settings.respawnInvulnTicks;
     d[base + FighterField.JUMPS_USED] = 0;
     d[base + FighterField.PREV_JUMP_HELD] = 0;
+    d[base + FighterField.DROP_THROUGH_TIMER] = 0;
     this.setState(base, FighterStateId.IDLE);
   }
 
@@ -623,15 +637,53 @@ export class Sim {
    * i.e. there is ground to catch a fall here at all. Used only to decide
    * whether normal (non-hitstun) movement clamps to a platform; the actual
    * landing test in stepFighter also needs the specific platform's y. */
-  private findLandingPlatform(posX: Fixed, prevY: Fixed, nextY: Fixed): Platform | null {
+  private findLandingPlatform(
+    posX: Fixed,
+    prevY: Fixed,
+    nextY: Fixed,
+    ignorePassThrough = false,
+  ): Platform | null {
     let best: Platform | null = null;
     for (const p of this.arena.platforms) {
+      if (ignorePassThrough && p.kind === 'pass-through') continue;
       if (posX < p.minX || posX > p.maxX) continue;
       if (prevY >= p.y && nextY <= p.y) {
         if (best === null || p.y > best.y) best = p;
       }
     }
     return best;
+  }
+
+  /** The specific platform (if any) a grounded fighter is currently
+   * standing on -- used only to decide whether a drop-through input is
+   * legal (must be standing on a 'pass-through' platform, not solid
+   * ground). */
+  private findStandingPlatform(posX: Fixed, posY: Fixed): Platform | null {
+    for (const p of this.arena.platforms) {
+      if (posX >= p.minX && posX <= p.maxX && p.y === posY) return p;
+    }
+    return null;
+  }
+
+  /** Clamp a horizontal move from prevX to candidateX against any wall
+   * whose y-range covers this fighter's current feet position (posY).
+   * Walls block crossing from either side; a fighter already embedded
+   * past a wall face (shouldn't happen under normal play, but knockback
+   * could in principle place one there) is left alone rather than
+   * snapped, to avoid any risk of an unbounded correction. */
+  private clampToWalls(prevX: Fixed, candidateX: Fixed, posY: Fixed, halfWidth: Fixed): Fixed {
+    let x = candidateX;
+    for (const w of this.arena.walls ?? []) {
+      if (posY < w.minY || posY > w.maxY) continue;
+      const faceLeft = fx.sub(w.x, halfWidth);
+      const faceRight = fx.add(w.x, halfWidth);
+      if (prevX <= faceLeft && x > faceLeft) {
+        x = fx.min(x, faceLeft);
+      } else if (prevX >= faceRight && x < faceRight) {
+        x = fx.max(x, faceRight);
+      }
+    }
+    return x;
   }
 
   private onAnyPlatform(posX: Fixed): boolean {
@@ -722,6 +774,9 @@ export class Sim {
     if ((d[base + FighterField.INVULN_TIMER] as number) > 0) {
       d[base + FighterField.INVULN_TIMER] = (d[base + FighterField.INVULN_TIMER] as number) - 1;
     }
+    if ((d[base + FighterField.DROP_THROUGH_TIMER] as number) > 0) {
+      d[base + FighterField.DROP_THROUGH_TIMER] = (d[base + FighterField.DROP_THROUGH_TIMER] as number) - 1;
+    }
 
     // Edge-trigger bookkeeping for the jump button: updated unconditionally
     // every tick (even through hitstun/attack/respawn states) so a held
@@ -770,13 +825,18 @@ export class Sim {
         velY = fx.max(velY, TERMINAL_VELOCITY);
       }
       const prevY = posY;
+      const prevX = posX;
       posX = fx.add(posX, velX);
+      const wallHalfWidth = fx.div(character.hurtboxWidth, fx.fromInt(2));
+      posX = this.clampToWalls(prevX, posX, posY, wallHalfWidth);
       posY = fx.add(posY, velY);
-      const landing = this.findLandingPlatform(posX, prevY, posY);
+      const dropThroughTimer = d[base + FighterField.DROP_THROUGH_TIMER] as number;
+      const landing = this.findLandingPlatform(posX, prevY, posY, dropThroughTimer > 0);
       if (landing) {
         posY = landing.y;
         velY = 0;
         grounded = true;
+        d[base + FighterField.DROP_THROUGH_TIMER] = 0;
       } else {
         grounded = false;
       }
@@ -817,14 +877,19 @@ export class Sim {
         velX = 0;
       }
       const prevY = posY;
+      const prevX = posX;
       posX = fx.add(posX, velX);
+      const wallHalfWidth = fx.div(character.hurtboxWidth, fx.fromInt(2));
+      posX = this.clampToWalls(prevX, posX, posY, wallHalfWidth);
       posX = this.clampToPlatform(posX);
       posY = fx.add(posY, velY);
-      const landing = this.findLandingPlatform(posX, prevY, posY);
+      const dropThroughTimer = d[base + FighterField.DROP_THROUGH_TIMER] as number;
+      const landing = this.findLandingPlatform(posX, prevY, posY, dropThroughTimer > 0);
       if (landing) {
         posY = landing.y;
         velY = 0;
         grounded = true;
+        d[base + FighterField.DROP_THROUGH_TIMER] = 0;
       } else {
         grounded = false;
       }
@@ -873,14 +938,38 @@ export class Sim {
     if (velX > 0) facing = 1;
     else if (velX < 0) facing = -1;
 
+    // Deliberate drop-through: holding stick-down and pressing jump while
+    // grounded on a 'pass-through' platform drops the fighter through it
+    // instead of jumping -- the standard genre convention. Solid ground
+    // (a stage's main floor) is never droppable this way, so this only
+    // applies when the platform actually standing on is 'pass-through'.
+    let droppingThrough = false;
+    if (grounded && jumpEdge && input.stickY < fx.neg(STICK_MOVE_THRESHOLD)) {
+      const standingOn = this.findStandingPlatform(posX, posY);
+      if (standingOn && standingOn.kind === 'pass-through') {
+        droppingThrough = true;
+      }
+    }
+
     let jumpsUsed = d[base + FighterField.JUMPS_USED] as number;
     if (grounded) jumpsUsed = 0; // landed (or never left): both jumps refreshed
-    if (jumpEdge && jumpsUsed < MAX_JUMPS) {
+    if (jumpEdge && jumpsUsed < MAX_JUMPS && !droppingThrough) {
       velY = grounded ? JUMP_VELOCITY : DOUBLE_JUMP_VELOCITY;
       grounded = false;
       jumpsUsed = (jumpsUsed + 1) | 0;
     }
     d[base + FighterField.JUMPS_USED] = jumpsUsed;
+
+    let dropThroughTimer = d[base + FighterField.DROP_THROUGH_TIMER] as number;
+    if (droppingThrough) {
+      // Small downward nudge clears the platform's landing threshold this
+      // same tick; the timer keeps findLandingPlatform blind to
+      // 'pass-through' platforms for a few more ticks so the fighter
+      // doesn't immediately re-land on the one it just left.
+      velY = fx.neg(fx.fromFloat(1.0));
+      grounded = false;
+      dropThroughTimer = DROP_THROUGH_TICKS;
+    }
 
     if (!grounded) {
       velY = fx.add(velY, GRAVITY);
@@ -888,16 +977,22 @@ export class Sim {
     }
 
     const prevY = posY;
+    const prevX = posX;
     posX = fx.add(posX, velX);
+    const wallHalfWidth = fx.div(character.hurtboxWidth, fx.fromInt(2));
+    posX = this.clampToWalls(prevX, posX, posY, wallHalfWidth);
     posX = this.clampToPlatform(posX);
     posY = fx.add(posY, velY);
 
-    const landing = this.findLandingPlatform(posX, prevY, posY);
+    const ignorePassThrough = droppingThrough || dropThroughTimer > 0;
+    const landing = this.findLandingPlatform(posX, prevY, posY, ignorePassThrough);
     if (landing) {
       posY = landing.y;
       velY = 0;
       grounded = true;
+      dropThroughTimer = 0;
     }
+    d[base + FighterField.DROP_THROUGH_TIMER] = dropThroughTimer;
 
     const nextState: FighterStateValue = grounded
       ? velX !== 0

@@ -12,16 +12,24 @@ export const BATTLE_ROYALE_20_ARENA: ArenaData = {
   // personality, everything else is judged against it.
   accentColor: 0x9aa0a8,
   platforms: [
-    // Wide main ground.
+    // Wide main ground -- solid: this is the stage's floor, you cannot
+    // fall through it, matching every other stage's ground.
     { minX: fx.fromInt(-480), maxX: fx.fromInt(480), y: fx.fromInt(0) },
     // A ring of mid-height platforms for vertical play and to break up
-    // line-of-sight/spacing at 20 fighters.
-    { minX: fx.fromInt(-360), maxX: fx.fromInt(-220), y: fx.fromInt(70) },
-    { minX: fx.fromInt(220), maxX: fx.fromInt(360), y: fx.fromInt(70) },
-    { minX: fx.fromInt(-70), maxX: fx.fromInt(70), y: fx.fromInt(110) },
-    // Two small high perches near center for king-of-the-hill skirmishes.
-    { minX: fx.fromInt(-180), maxX: fx.fromInt(-100), y: fx.fromInt(160) },
-    { minX: fx.fromInt(100), maxX: fx.fromInt(180), y: fx.fromInt(160) },
+    // line-of-sight/spacing at 20 fighters. All 'pass-through': jump up
+    // into them from below and land on top as before, but now a fighter
+    // standing on one can hold down+jump to drop through deliberately
+    // instead of only being able to leave by walking off the edge or
+    // being knocked off -- the primitive this stage was missing.
+    { minX: fx.fromInt(-360), maxX: fx.fromInt(-220), y: fx.fromInt(70), kind: 'pass-through' },
+    { minX: fx.fromInt(220), maxX: fx.fromInt(360), y: fx.fromInt(70), kind: 'pass-through' },
+    { minX: fx.fromInt(-70), maxX: fx.fromInt(70), y: fx.fromInt(110), kind: 'pass-through' },
+    // Two small high perches near center for king-of-the-hill skirmishes
+    // -- also pass-through, so a camper can be forced off by an opponent
+    // who takes the perch, or can bail downward on their own terms
+    // instead of only sideways into open air.
+    { minX: fx.fromInt(-180), maxX: fx.fromInt(-100), y: fx.fromInt(160), kind: 'pass-through' },
+    { minX: fx.fromInt(100), maxX: fx.fromInt(180), y: fx.fromInt(160), kind: 'pass-through' },
   ],
   blastMinX: fx.fromInt(-620),
   blastMaxX: fx.fromInt(620),

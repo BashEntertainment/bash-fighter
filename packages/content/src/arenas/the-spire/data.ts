@@ -17,18 +17,33 @@ export const THE_SPIRE_ARENA: ArenaData = {
   platforms: [
     // Ground floor -- wide enough on its own to hold all 20 spawns, so
     // the fully-shrunk endgame rectangle always keeps solid footing
-    // regardless of which tier is contested.
+    // regardless of which tier is contested. Solid: the stage's floor.
     { minX: fx.fromInt(-220), maxX: fx.fromInt(220), y: fx.fromInt(0) },
     // Tier 1: two platforms flanking the centre, low enough to be a quick
-    // first hop up.
-    { minX: fx.fromInt(-160), maxX: fx.fromInt(-60), y: fx.fromInt(80) },
-    { minX: fx.fromInt(60), maxX: fx.fromInt(160), y: fx.fromInt(80) },
+    // first hop up. Pass-through, like every tier above the ground --
+    // this is the stage the drop-through primitive matters most for:
+    // juggling and edgeguarding off a tier only works if the defender can
+    // also choose to bail downward through it.
+    { minX: fx.fromInt(-160), maxX: fx.fromInt(-60), y: fx.fromInt(80), kind: 'pass-through' },
+    { minX: fx.fromInt(60), maxX: fx.fromInt(160), y: fx.fromInt(80), kind: 'pass-through' },
     // Tier 2: narrower again, offset toward the centre.
-    { minX: fx.fromInt(-110), maxX: fx.fromInt(-20), y: fx.fromInt(160) },
-    { minX: fx.fromInt(20), maxX: fx.fromInt(110), y: fx.fromInt(160) },
+    { minX: fx.fromInt(-110), maxX: fx.fromInt(-20), y: fx.fromInt(160), kind: 'pass-through' },
+    { minX: fx.fromInt(20), maxX: fx.fromInt(110), y: fx.fromInt(160), kind: 'pass-through' },
     // Tier 3: a single small perch at the very top -- the stage's one
     // king-of-the-hill spot, deliberately too small to be a safe camp.
-    { minX: fx.fromInt(-40), maxX: fx.fromInt(40), y: fx.fromInt(240) },
+    { minX: fx.fromInt(-40), maxX: fx.fromInt(40), y: fx.fromInt(240), kind: 'pass-through' },
+  ],
+  // Two vertical walls just outside the tier platforms' widest extent,
+  // starting just above the ground floor and running to the top perch.
+  // Below y=60 the tower is fully open (the ground floor spans -220..220
+  // uninterrupted); above it, the walls narrow the playable column to
+  // -170..170 so climbing the tower means committing to its shaft rather
+  // than drifting past the tiers in open air on either side. This is the
+  // stage's one deliberate use of hard walls: it turns "tower you can
+  // fly around" into "shaft you climb through or get walled into."
+  walls: [
+    { x: fx.fromInt(-170), minY: fx.fromInt(60), maxY: fx.fromInt(260) },
+    { x: fx.fromInt(170), minY: fx.fromInt(60), maxY: fx.fromInt(260) },
   ],
   // Narrower than Colosseum's 1240-unit span (760 here) and taller than
   // its 780-unit vertical span (900 here): the width/height ratio, not

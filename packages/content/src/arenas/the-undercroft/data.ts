@@ -28,8 +28,11 @@ export const THE_UNDERCROFT_ARENA: ArenaData = {
     // route across without dropping to the blast zone, and also the stage's
     // one contested king-of-the-hill perch. Wide enough (120 units) that
     // the fully-shrunk endgame blast rectangle (see below) always keeps
-    // solid footing under its own centre.
-    { minX: fx.fromInt(-60), maxX: fx.fromInt(60), y: fx.fromInt(90) },
+    // solid footing under its own centre. Pass-through: a fighter holding
+    // the bridge can be forced to give it up by dropping through instead
+    // of only by being knocked off, and a defender crossing under threat
+    // can bail through it into the chasm on their own terms.
+    { minX: fx.fromInt(-60), maxX: fx.fromInt(60), y: fx.fromInt(90), kind: 'pass-through' },
   ],
   blastMinX: fx.fromInt(-640),
   blastMaxX: fx.fromInt(640),

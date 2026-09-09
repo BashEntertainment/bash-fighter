@@ -16,12 +16,25 @@ export interface StagePlatform {
   minX: number;
   maxX: number;
   y: number;
+  /** Mirrors sim Platform.kind. Drawn distinctly (see drawStage) so a
+   * player can tell at a glance which platforms they can drop through. */
+  kind?: 'solid' | 'pass-through';
+}
+
+/** One vertical wall segment in world units — mirrors sim Wall. */
+export interface StageWall {
+  x: number;
+  minY: number;
+  maxY: number;
 }
 
 export interface StageBounds {
   /** Every platform to draw. A single-platform stage is just a
    * one-element array — there is no separate "flat stage" code path. */
   platforms: readonly StagePlatform[];
+  /** Vertical wall segments to draw and (in-sim) collide against.
+   * Defaults to none for stages/tests that predate walls. */
+  walls?: readonly StageWall[];
   blastMinX: number;
   blastMaxX: number;
   blastMinY: number;
@@ -111,13 +124,36 @@ export function drawStage(
     const topR = worldToScreen(platform.maxX, platform.y, cam, viewWidth, viewHeight);
     const depthPx = PLATFORM_DEPTH_WORLD * cam.scale;
     const width = topR.x - topL.x;
+    const passThrough = platform.kind === 'pass-through';
 
-    g.rect(topL.x, topL.y, width, depthPx);
-    g.fill({ color: PALETTE.stageFill });
-    g.rect(topL.x, topL.y + depthPx * 0.55, width, depthPx * 0.45);
-    g.fill({ color: PALETTE.background, alpha: 0.35 });
+    // Pass-through platforms read thinner and lower-alpha than solid
+    // ground -- the same silhouette shorthand as the rest of the genre:
+    // a platform you can see through (a little) is one you can fall
+    // through. Solid ground stays fully opaque.
+    const slabDepth = passThrough ? depthPx * 0.55 : depthPx;
+    g.rect(topL.x, topL.y, width, slabDepth);
+    g.fill({ color: PALETTE.stageFill, alpha: passThrough ? 0.7 : 1 });
+    if (!passThrough) {
+      g.rect(topL.x, topL.y + depthPx * 0.55, width, depthPx * 0.45);
+      g.fill({ color: PALETTE.background, alpha: 0.35 });
+    }
     g.rect(topL.x, topL.y, width, Math.max(3, depthPx * 0.08));
     g.fill({ color: bounds.accentColor ?? PALETTE.stageEdge });
+  }
+
+  // Walls: solid vertical bars, drawn full-height across their y-range so
+  // "you cannot walk through this" reads unambiguously -- deliberately
+  // more solid-looking than any platform, since a wall blocks from both
+  // sides with no "land on top" reading to preserve.
+  const WALL_WIDTH_WORLD = 10;
+  for (const wall of bounds.walls ?? []) {
+    const top = worldToScreen(wall.x, wall.maxY, cam, viewWidth, viewHeight);
+    const bottom = worldToScreen(wall.x, wall.minY, cam, viewWidth, viewHeight);
+    const widthPx = WALL_WIDTH_WORLD * cam.scale;
+    g.rect(top.x - widthPx / 2, top.y, widthPx, bottom.y - top.y);
+    g.fill({ color: bounds.accentColor ?? PALETTE.stageEdge });
+    g.rect(top.x - widthPx / 2 + widthPx * 0.2, top.y, widthPx * 0.6, bottom.y - top.y);
+    g.fill({ color: PALETTE.stageFill });
   }
 
   // Future boundary: a fainter amber dashed line at where the current

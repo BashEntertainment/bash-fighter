@@ -17,6 +17,12 @@ export function arenaDataToStageBounds(arena: ArenaData): StageBounds {
       minX: fx.toFloat(p.minX),
       maxX: fx.toFloat(p.maxX),
       y: fx.toFloat(p.y),
+      kind: p.kind,
+    })),
+    walls: (arena.walls ?? []).map((w) => ({
+      x: fx.toFloat(w.x),
+      minY: fx.toFloat(w.minY),
+      maxY: fx.toFloat(w.maxY),
     })),
     blastMinX: fx.toFloat(arena.blastMinX),
     blastMaxX: fx.toFloat(arena.blastMaxX),

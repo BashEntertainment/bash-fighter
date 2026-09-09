@@ -90,7 +90,19 @@ export class TouchControls {
     btn.dataset.button = name;
     const onDown = (e: PointerEvent): void => {
       e.preventDefault();
-      btn.setPointerCapture(e.pointerId);
+      // setPointerCapture can throw (invalid/stale pointer id, pointer
+      // already released between event dispatch and this call, etc). If
+      // it throws before the state below is set, the finger's press is
+      // silently lost and can leave the button state inconsistent with
+      // what's on screen -- worse than not capturing at all. Capture is
+      // a nice-to-have (keeps move/up events routed to this element even
+      // if the finger drifts outside it); state tracking below is what
+      // actually matters, so it must not depend on capture succeeding.
+      try {
+        btn.setPointerCapture(e.pointerId);
+      } catch {
+        // Ignored -- see comment above.
+      }
       this.buttonPointers.set(e.pointerId, name);
       this.source.setButton(name, true);
       btn.classList.add('pressed');
@@ -118,7 +130,14 @@ export class TouchControls {
     const onDown = (e: PointerEvent): void => {
       if (this.stickPointer) return; // one finger drives the stick at a time
       e.preventDefault();
-      this.stickBase.setPointerCapture(e.pointerId);
+      // See the button handler's onDown for why this is guarded the
+      // same way: a thrown setPointerCapture must not stop the stick
+      // from registering the finger that just pressed it down.
+      try {
+        this.stickBase.setPointerCapture(e.pointerId);
+      } catch {
+        // Ignored -- capture is a nice-to-have, not a requirement.
+      }
       this.stickPointer = { pointerId: e.pointerId, originX: e.clientX, originY: e.clientY };
       this.updateActiveCount();
     };

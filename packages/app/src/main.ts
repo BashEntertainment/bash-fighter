@@ -93,7 +93,7 @@ const touchCapable = isTouchCapable();
 // actually moved/acted, rather than merely that a handler fired. Only
 // wired up when the touch-capability override is in effect (see
 // packages/input/src/touch.ts), so it never exists for real users.
-if (touchCapable) {
+if (new URLSearchParams(window.location.search).get('bashTest') === '1') {
   (window as unknown as { __bashTestMatch?: () => Match | null }).__bashTestMatch = () => match;
   (window as unknown as { __bashTestTouch?: () => TouchControls }).__bashTestTouch = () => touchControls;
 }

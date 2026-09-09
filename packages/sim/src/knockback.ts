@@ -29,7 +29,15 @@ export const MAX_HITSTUN_TICKS = 240;
 // someone, so combat can end matches before the ring does. 1.3 chosen as
 // a moderate first step: see wiki page "Bot Combat Engagement Fix
 // 2026-09-09" follow-up for before/after measurement.
-export const KB_GROWTH_SCALE: Fixed = fx.fromFloat(1.3);
+// 2026-09-09: tried 1.3 to raise combat share; reverted to 1.0 by owner
+// decision -- it bought ~3pp of combat share (inside measurement noise)
+// at the cost of stalemate timeouts on two of three stages and a
+// suspected rise in final-two double-KOs. See wiki "Ring Pressure Not
+// Executioner: 2026-09-09 Rebalance" for the measurements. Left in place
+// as a named lever (rather than removed outright) so future lethality
+// tuning has one clear place to change, but do not raise it again without
+// the final-two double-KO metric in place first.
+export const KB_GROWTH_SCALE: Fixed = fx.fromFloat(1.0);
 
 /** magnitude = baseKb + KB_GROWTH_SCALE * kbGrowth * (damage + percentAfterHit / 2) * (150 / (weight + 50)) */
 export function computeKnockbackMagnitude(

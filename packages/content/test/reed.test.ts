@@ -112,9 +112,10 @@ describe('Sim: Reed moveset', () => {
       PLACEHOLDER_CHARACTER.weight,
     );
     assert.ok(fx.toFloat(magOnReed) > fx.toFloat(magOnPlaceholder));
-    // KB_GROWTH_SCALE (1.3) uniformly scales the percent-based growth term for every
-    // character -- see 2026-09-09 rebalance in [[Bot Combat Engagement Fix 2026-09-09]] follow-up.
-    const growthTerm = fx.toFloat(kbGrowth) * (fx.toFloat(damage) + fx.toFloat(percentAfterHit) / 2) * 1.3;
+    // KB_GROWTH_SCALE (see knockback.ts) uniformly scales the percent-based growth
+    // term for every character; currently 1.0 (reverted 2026-09-09, see
+    // [[Ring Pressure Not Executioner: 2026-09-09 Rebalance]]).
+    const growthTerm = fx.toFloat(kbGrowth) * (fx.toFloat(damage) + fx.toFloat(percentAfterHit) / 2) * 1.0;
     const expectedReed = fx.toFloat(baseKb) + growthTerm * (150 / (90 + 50));
     const expectedPlaceholder = fx.toFloat(baseKb) + growthTerm * (150 / (100 + 50));
     assert.ok(Math.abs(fx.toFloat(magOnReed) - expectedReed) < 0.02);

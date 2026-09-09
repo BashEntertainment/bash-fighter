@@ -72,6 +72,28 @@ function runMatch(arenaEntry, seed, { passiveIndex = -1 } = {}) {
   let survivors = 0;
   for (let i = 0; i < N; i++) if (!sim.getFighter(i).eliminated) survivors++;
 
+  // Distinguish, among nobody-survived endings, a final-two double-KO
+  // (the last two fighters standing eliminate each other on the same or
+  // an adjacent frame) from a whole-lobby wipe (three or more fighters
+  // eliminated together, i.e. the boundary cascade). See wiki "Ring
+  // Pressure Not Executioner: 2026-09-09 Rebalance" -- this was flying
+  // blind before 2026-09-09.
+  let endingKind = 'resolved'; // resolved | timeout | final-two-double-ko | whole-lobby-wipe
+  if (survivors === 0) {
+    const elimTicks = [];
+    for (let i = 0; i < N; i++) {
+      const et = sim.getFighter(i).eliminatedTick;
+      if (et !== null && et !== undefined) elimTicks.push(et);
+    }
+    elimTicks.sort((a, b) => a - b);
+    const lastTick = elimTicks[elimTicks.length - 1];
+    const ADJACENT = 2; // ticks; "same or adjacent frame"
+    const countInFinalBurst = elimTicks.filter((t) => lastTick - t <= ADJACENT).length;
+    endingKind = countInFinalBurst <= 2 ? 'final-two-double-ko' : 'whole-lobby-wipe';
+  } else if (survivors >= 2 && !matchEnded) {
+    endingKind = 'timeout';
+  }
+
   const passiveResult =
     passiveIndex >= 0
       ? {
@@ -88,6 +110,7 @@ function runMatch(arenaEntry, seed, { passiveIndex = -1 } = {}) {
     survivors,
     boundaryElims,
     combatElims,
+    endingKind,
     passiveResult,
   };
 }
@@ -111,6 +134,9 @@ for (const arenaEntry of arenaEntries) {
   console.log(`\n=== ${arenaEntry.id} (${SEEDS} seeds) ===`);
   console.log(`duration (s): min=${durations[0]} median=${durations[Math.floor(durations.length / 2)]} max=${durations[durations.length - 1]}`);
   console.log(`endings: 1-survivor=${oneSurvivor}/${SEEDS}  nobody-survived=${noSurvivor}/${SEEDS}  multi-survivor(timeout)=${multiSurvivor}/${SEEDS}`);
+  const finalTwoDoubleKo = results.filter((r) => r.endingKind === 'final-two-double-ko').length;
+  const wholeLobbyWipe = results.filter((r) => r.endingKind === 'whole-lobby-wipe').length;
+  console.log(`nobody-survived breakdown: final-two-double-ko=${finalTwoDoubleKo}/${SEEDS}  whole-lobby-wipe=${wholeLobbyWipe}/${SEEDS}`);
   console.log(`eliminations: boundary=${totalBoundary}  combat=${totalCombat}  boundary%=${((100 * totalBoundary) / Math.max(1, totalBoundary + totalCombat)).toFixed(1)}%`);
   console.log(`passive player (fighter 0, never presses a button): survived=${passive.passiveResult.passiveSurvived} eliminatedTick=${passive.passiveResult.passiveEliminatedTick} placement=${passive.passiveResult.passivePlacement} matchDurationSec=${passive.durationSec}`);
   console.log(JSON.stringify(results, null, 1));

@@ -13,9 +13,12 @@ See [`README.md`](./README.md) for the package layout and
 
 ## Dev environment setup
 
-Requirements: Node 22.8+ or 24+ (the test suite relies on Node's built-in
-TypeScript type-stripping and on `--test-isolation=none`, both of which
-need Node 22.8 or later).
+Requirements: Node 22+ or 24+ (the test suite relies on Node's built-in
+TypeScript type-stripping). `npm test` and `npm run test:server` go
+through `scripts/run-tests.mjs`, which probes whether the running Node
+actually accepts `--test-isolation=none` and falls back to a slower but
+still memory-safe mode if it doesn't -- see "Running the tests" below for
+why this is a probe and not a version check.
 
 ```sh
 git clone https://github.com/BashEntertainment/bash-fighter.git
@@ -39,10 +42,11 @@ as of this writing, including the heavy N-fighter/battle-royale suites
 (`determinism-20`, `stress-match-end`, `items-hazards`, `bot`). Nothing
 is skipped by default; there is no separate "heavy" script to remember.
 
-It runs as `node --test --test-isolation=none packages/*/test/**/*.test.ts`.
-The `--test-isolation=none` flag is the important part and is **not**
-optional — without it, Node's test runner spawns one child process per
-test *file*, and each of those processes costs roughly 150MB of baseline
+It runs as `node scripts/run-tests.mjs packages/*/test/**/*.test.ts
+scripts/test/*.test.ts`. The `--test-isolation=none` flag it passes to
+`node --test` is the important part and is what fixes the memory problem
+-- without it, Node's test runner spawns one child process per test
+*file*, and each of those processes costs roughly 150MB of baseline
 overhead before it runs a single assertion. With the default test
 concurrency (tied to your CPU core count), that overhead multiplies: on
 an 8-way-concurrent run we measured peak RSS of **~838MB** for a suite
@@ -53,6 +57,19 @@ anywhere else in the library code. `--test-isolation=none` runs the whole
 suite in a single process instead, which we measured at a peak RSS of
 **~148-183MB** and a wall time of **6-12 seconds**, regardless of core
 count. See the "Test suite memory" table below for the full numbers.
+
+`scripts/run-tests.mjs` doesn't assume the flag exists just because the
+Node major version looks new enough: it spawns the real Node binary with
+the flag once, first, and checks whether it errors with "bad option"
+(see `scripts/lib/isolation-flag.mjs`). Two earlier versions of this
+wrapper guessed from a version number or from
+`process.allowedNodeEnvironmentFlags` and both shipped broken -- Node
+22.23.2's CLI genuinely doesn't accept `--test-isolation`, even though
+the *programmatic* `node:test` `isolation` option landed in 22.8.0; the
+CLI flag stabilised separately, later. If the probe finds the flag
+missing, the wrapper falls back to `--test-concurrency=1` with default
+(per-file) isolation -- slower, but still memory-safe -- and says so on
+stderr instead of failing outright.
 
 `server/test/*.test.ts` (websocket reconnection, mid-match join, spectator
 rate — real sockets and timers) is a separate script, `npm run test:server`,

@@ -2,24 +2,24 @@
 // Cross-Node-version test runner wrapper.
 //
 // node:test gained a same-process test mode (no per-file child process,
-// which is what was OOM-killing the suite under default concurrency)
-// from Node 22.8.0 onward, via --test-isolation=none. Which Node
-// versions have it is decided by scripts/lib/isolation-flag.mjs (see
-// that file's comment and scripts/test/isolation-flag.test.ts for why
-// this is its own tested module and not inline logic — two earlier
-// inline attempts here both misjudged Node 22.23.2 as too old).
+// which is what was OOM-killing the suite under default concurrency) --
+// but which Node CLI builds actually accept the --test-isolation=none
+// flag is not reliably knowable from a version number (see
+// scripts/lib/isolation-flag.mjs's comment for the two wrong guesses
+// that shipped before this one). So this wrapper asks the Node binary
+// directly, once, before running the real suite.
 //
 // If the running Node genuinely doesn't support the flag, this falls
 // back to running with default (per-file) isolation and
 // --test-concurrency=1, which is slower but memory-safe, and says so
-// loudly rather than just failing — a CI red light here should mean "a
+// loudly rather than just failing -- a CI red light here should mean "a
 // test failed", not "the runner script gave up". See CONTRIBUTING.md
 // "Running the tests".
 import { spawnSync } from 'node:child_process';
 import process from 'node:process';
-import { pickIsolationFlag } from './lib/isolation-flag.mjs';
+import { probeIsolationFlag } from './lib/isolation-flag.mjs';
 
-const choice = pickIsolationFlag(process.versions.node);
+const choice = probeIsolationFlag();
 
 let testFlags;
 if (choice.supported) {
@@ -28,15 +28,14 @@ if (choice.supported) {
 } else {
   testFlags = ['--test-concurrency=1'];
   console.error(
-    `run-tests.mjs: WARNING — ${choice.reason} Falling back to one-process-per-file ` +
-      `with --test-concurrency=1 (slower, but still memory-safe). If you see this in CI, ` +
-      `the Node version in the workflow matrix is older than we intend to support.`,
+    `run-tests.mjs: WARNING -- ${choice.reason} Falling back to one-process-per-file ` +
+      `with --test-concurrency=1 (slower, but still memory-safe).`,
   );
 }
 
 const args = process.argv.slice(2);
 // Capture output (not just inherit) so that on failure we can surface the
-// actual failing test names as ::error:: annotations — useful in CI where
+// actual failing test names as ::error:: annotations -- useful in CI where
 // nobody signed in can otherwise see the raw job log.
 const result = spawnSync(
   process.execPath,

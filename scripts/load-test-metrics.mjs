@@ -50,13 +50,30 @@ const NUM_CLIENTS = 20;
 const HTTP_BASE = REMOTE ? TARGET.replace(/\/$/, '') : `http://localhost:${PORT}`;
 const WS_URL = REMOTE ? `${TARGET.replace(/^http/, 'ws').replace(/\/$/, '')}/socket` : `ws://localhost:${PORT}/socket`;
 
-function sshExec(cmd, timeoutMs = 4000) {
+let sshFailureCount = 0;
+let sshFailureLoggedAt = 0;
+function sshExec(cmd, timeoutMs = 15000) {
   return new Promise((resolve) => {
     execFile(
       'ssh',
-      ['-o', 'ConnectTimeout=4', '-o', 'BatchMode=yes', SSH_HOST, cmd],
+      ['-o', 'ConnectTimeout=8', '-o', 'BatchMode=yes', SSH_HOST, cmd],
       { timeout: timeoutMs },
-      (err, stdout) => resolve(err ? null : stdout),
+      (err, stdout, stderr) => {
+        if (err) {
+          sshFailureCount++;
+          // Loud, but rate-limited to once/10s -- a silent empty RSS/CPU
+          // section is worse than noisy stderr (a real remote run over a
+          // slow round trip needs more than a tight few-second timeout, and
+          // that failure mode must not just print nothing).
+          if (Date.now() - sshFailureLoggedAt > 10000) {
+            sshFailureLoggedAt = Date.now();
+            console.error(`ssh RSS/CPU sample failed (#${sshFailureCount} so far): ${err.message}${stderr ? ' | stderr: ' + stderr.trim() : ''}`);
+          }
+          resolve(null);
+          return;
+        }
+        resolve(stdout);
+      },
     );
   });
 }
@@ -192,13 +209,26 @@ async function main() {
   const rssCpuSamples = [];
   const tickMetricSamples = [];
   const hz = 100;
+  // Guard against overlap: an ssh round trip to a real remote host can take
+  // longer than the 2s sample period under load, and setInterval does not
+  // wait for an async callback to finish before firing the next one. Without
+  // this guard, slow ssh calls stack up concurrently, each one making the
+  // next one slower still (auth/connection contention), which was observed
+  // to snowball into the whole script stalling well past its own timeout.
+  let samplingInFlight = false;
   const sampleInterval = setInterval(async () => {
-    const s = REMOTE ? (NO_SSH_METRICS ? null : await readRemoteProcStat()) : readProcStat(serverProc.pid);
-    if (s) rssCpuSamples.push({ t: Date.now(), ...s });
+    if (samplingInFlight) return;
+    samplingInFlight = true;
     try {
-      const m = await fetch(`${HTTP_BASE}/api/metrics`).then((r) => r.json());
-      tickMetricSamples.push({ t: Date.now(), ...m });
-    } catch {}
+      const s = REMOTE ? (NO_SSH_METRICS ? null : await readRemoteProcStat()) : readProcStat(serverProc.pid);
+      if (s) rssCpuSamples.push({ t: Date.now(), ...s });
+      try {
+        const m = await fetch(`${HTTP_BASE}/api/metrics`).then((r) => r.json());
+        tickMetricSamples.push({ t: Date.now(), ...m });
+      } catch {}
+    } finally {
+      samplingInFlight = false;
+    }
   }, 2000);
 
   const clients = [];
@@ -222,66 +252,112 @@ async function main() {
     await waitForHealth(HTTP_BASE, 20000);
     console.log('server up, connecting', NUM_CLIENTS, 'clients...');
 
-    const connectPromises = [];
-    for (let i = 0; i < NUM_CLIENTS; i++) {
-      const ws = REMOTE ? new ProxyAwareWebSocket(WS_URL) : new WebSocket(WS_URL);
-      const cstate = { ws, slot: -1, matchEnded: false, lastState: null, tick: 0, snapshotCount: 0, pendingSends: new Map() };
-      clients.push(cstate);
-      const p = new Promise((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error(`client ${i} never got welcome`)), 15000);
-        ws.on('open', () => {
-          const helloMsg = JSON.stringify({ t: 'hello', protocolVersion: PROTOCOL_VERSION, name: `LoadBot${i}` });
-          const n = Buffer.byteLength(helloMsg);
-          bytesUp += n;
-          if (startMarker.t0) bucketFor(Date.now()).up += n;
-          ws.send(helloMsg);
-        });
-        ws.on('message', (data, isBinary) => {
-          const now = Date.now();
-          if (!isBinary) {
-            bytesDown += Buffer.byteLength(data);
-            if (startMarker.t0) bucketFor(now).down += Buffer.byteLength(data);
-            const msg = JSON.parse(data.toString());
-            if (msg.t === 'welcome') {
-              cstate.slot = msg.slot;
-              clearTimeout(timer);
-              resolve();
+    // REMOTE-only: this container's egress proxy has been observed to kill
+    // proxied plain-HTTP websocket connections to an arbitrary destination
+    // after a fixed ~10s, independent of activity (measured with isolated
+    // idle and active-sender probes: consistently code 1006 at ~9.6-10.0s
+    // after open, even mid-send with no errors). The server's own
+    // reconnect-with-resume-token support (packages/net PROTOCOL_VERSION 2,
+    // 45s seat grace) exists for exactly this kind of drop, so on an
+    // unexpected close mid-test we resume instead of giving up -- otherwise
+    // a real ~75s match can never be observed end-to-end from this
+    // container over this egress path. Reconnects are counted and reported;
+    // treat a high reconnect count as a sign RTT/bandwidth numbers include
+    // reconnect overhead, not a clean steady-state connection.
+    let stopReconnecting = false;
+    let totalReconnects = 0;
+
+    function wireClient(cstate, i, resolveWelcome, rejectWelcome) {
+      const ws = cstate.ws;
+      const timer = resolveWelcome
+        ? setTimeout(() => rejectWelcome(new Error(`client ${i} never got welcome`)), 15000)
+        : null;
+      ws.on('open', () => {
+        const helloMsg = cstate.resumeToken
+          ? JSON.stringify({ t: 'hello', protocolVersion: PROTOCOL_VERSION, name: `LoadBot${i}`, resume: cstate.resumeToken })
+          : JSON.stringify({ t: 'hello', protocolVersion: PROTOCOL_VERSION, name: `LoadBot${i}` });
+        const n = Buffer.byteLength(helloMsg);
+        bytesUp += n;
+        if (startMarker.t0) bucketFor(Date.now()).up += n;
+        ws.send(helloMsg);
+      });
+      ws.on('message', (data, isBinary) => {
+        const now = Date.now();
+        if (!isBinary) {
+          bytesDown += Buffer.byteLength(data);
+          if (startMarker.t0) bucketFor(now).down += Buffer.byteLength(data);
+          const msg = JSON.parse(data.toString());
+          if (msg.t === 'welcome') {
+            cstate.slot = msg.slot;
+            if (msg.matchId) cstate.matchId = msg.matchId;
+            if (msg.resumeToken) cstate.resumeToken = msg.resumeToken;
+            if (timer) clearTimeout(timer);
+            if (resolveWelcome) resolveWelcome();
+          }
+          if (msg.t === 'matchEnd') cstate.matchEnded = true;
+          if (msg.t === 'eliminated') {
+            if (!eliminatedSlots.has(msg.slot)) {
+              eliminatedSlots.add(msg.slot);
+              aliveCount = Math.max(0, NUM_CLIENTS - eliminatedSlots.size);
             }
-            if (msg.t === 'matchEnd') cstate.matchEnded = true;
-            if (msg.t === 'eliminated') {
-              if (!eliminatedSlots.has(msg.slot)) {
-                eliminatedSlots.add(msg.slot);
-                aliveCount = Math.max(0, NUM_CLIENTS - eliminatedSlots.size);
-              }
-            }
-            if (msg.t === 'error') console.error(`client ${i} error:`, msg);
-          } else {
-            const buf = data;
-            bytesDown += buf.length;
-            if (startMarker.t0) bucketFor(now).down += buf.length;
-            msgsDown++;
-            if (buf[0] === BinaryTag.SNAPSHOT) {
-              const snap = decodeSnapshot(new Uint8Array(buf));
-              if (snap) {
-                cstate.lastState = snap.state;
-                cstate.tick = snap.tick;
-                cstate.snapshotCount++;
-                // RTT: find the send timestamp for the input tick this
-                // snapshot just acknowledged, if we still have it recorded.
-                const sendT = cstate.pendingSends.get(snap.ackedInputTick);
-                if (sendT !== undefined) {
-                  rttSamplesMs.push(now - sendT);
-                  // Clean up everything at or before this tick -- acked.
-                  for (const k of cstate.pendingSends.keys()) {
-                    if (k <= snap.ackedInputTick) cstate.pendingSends.delete(k);
-                  }
+          }
+          if (msg.t === 'error') console.error(`client ${i} error:`, msg);
+        } else {
+          const buf = data;
+          bytesDown += buf.length;
+          if (startMarker.t0) bucketFor(now).down += buf.length;
+          msgsDown++;
+          if (buf[0] === BinaryTag.SNAPSHOT) {
+            const snap = decodeSnapshot(new Uint8Array(buf));
+            if (snap) {
+              cstate.lastState = snap.state;
+              cstate.tick = snap.tick;
+              cstate.snapshotCount++;
+              // RTT: find the send timestamp for the input tick this
+              // snapshot just acknowledged, if we still have it recorded.
+              const sendT = cstate.pendingSends.get(snap.ackedInputTick);
+              if (sendT !== undefined) {
+                rttSamplesMs.push(now - sendT);
+                // Clean up everything at or before this tick -- acked.
+                for (const k of cstate.pendingSends.keys()) {
+                  if (k <= snap.ackedInputTick) cstate.pendingSends.delete(k);
                 }
               }
             }
           }
-        });
-        ws.on('error', reject);
+        }
       });
+      ws.on('error', (e) => {
+        if (rejectWelcome) rejectWelcome(e);
+      });
+      ws.on('close', () => {
+        if (!REMOTE || stopReconnecting || cstate.matchEnded) return;
+        if (!cstate.resumeToken) {
+          console.error(`client ${i} dropped (code likely 1006) with no resume token yet -- cannot rejoin, giving up on this client`);
+          return;
+        }
+        totalReconnects++;
+        cstate.ws = new ProxyAwareWebSocket(WS_URL);
+        wireClient(cstate, i, null, null);
+      });
+    }
+
+    const connectPromises = [];
+    for (let i = 0; i < NUM_CLIENTS; i++) {
+      const ws = REMOTE ? new ProxyAwareWebSocket(WS_URL) : new WebSocket(WS_URL);
+      const cstate = {
+        ws,
+        slot: -1,
+        matchId: null,
+        resumeToken: null,
+        matchEnded: false,
+        lastState: null,
+        tick: 0,
+        snapshotCount: 0,
+        pendingSends: new Map(),
+      };
+      clients.push(cstate);
+      const p = new Promise((resolve, reject) => wireClient(cstate, i, resolve, reject));
       connectPromises.push(p);
     }
 
@@ -322,10 +398,12 @@ async function main() {
       await new Promise((r) => setTimeout(r, 500));
     }
     clearInterval(inputInterval);
+    stopReconnecting = true;
     const durationMs = Date.now() - start;
 
     const allEnded = clients.every((c) => c.matchEnded);
     console.log(`match ${allEnded ? 'ended cleanly' : 'DID NOT END within ' + maxWaitMs + 'ms'} after ${durationMs}ms`);
+    if (REMOTE) console.log(`reconnects during run: ${totalReconnects} (non-zero means RTT/bandwidth include reconnect overhead, not a clean steady-state connection)`);
 
     const withState = clients.filter((c) => c.lastState !== null);
     const hashes = withState.map((c) => hashStateBuffer(c.lastState));
@@ -360,6 +438,10 @@ async function main() {
       const cpuS = ((l.utimeTicks + l.stimeTicks) - (f.utimeTicks + f.stimeTicks)) / hz;
       console.log(`over ${wallS.toFixed(1)}s wall: ${cpuS.toFixed(2)}s CPU -> ${((cpuS / wallS) * 100).toFixed(1)}% of one core`);
       console.log(`RSS start ${f.rssKb}KB end ${l.rssKb}KB peak ${Math.max(...rssCpuSamples.map(s=>s.rssKb))}KB`);
+    } else if (REMOTE && !NO_SSH_METRICS) {
+      console.log(`EMPTY -- 0 usable samples out of ~${Math.round(durationMs / 2000)} attempts, ${sshFailureCount} ssh failures logged above. RSS/CPU for this run is an unknown, not a zero.`);
+    } else if (NO_SSH_METRICS) {
+      console.log('skipped (--no-ssh-metrics)');
     }
 
     console.log('\n--- bandwidth by 10s window (bytes/s per client alive at window start) ---');
@@ -391,6 +473,19 @@ async function main() {
     process.exitCode = 1;
   } finally {
     clearInterval(sampleInterval);
+    // On any exit path (success or failure) stop reconnecting and close
+    // every client socket explicitly. Without this, a client that errored
+    // out of the initial connect (e.g. never got a welcome) can leave other
+    // clients' sockets open and their reconnect-on-close handlers armed --
+    // those keep the event loop alive and keep re-establishing production
+    // connections indefinitely after the script has already reported
+    // failure and "finished".
+    stopReconnecting = true;
+    for (const c of clients) {
+      try {
+        c.ws.close();
+      } catch {}
+    }
     if (serverProc) serverProc.kill();
   }
 }

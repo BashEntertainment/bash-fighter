@@ -69,7 +69,16 @@ function closeWithError(
 // invisible. See wiki "First-Match Experience Problem" for why this was
 // missing before: the only way to know a disconnect happened was the
 // player noticing themselves.
+// LOG_LEVEL controls verbosity without a logging framework: 'silent'
+// disables all [conn]/[summary] lines (e.g. for a busy test run), 'info'
+// (default) is every lifecycle event below plus the periodic summary --
+// there is deliberately no per-tick or per-frame level, because that
+// firehose is exactly what would cost CPU and fill the disk.
+const LOG_LEVEL = (process.env.LOG_LEVEL ?? 'info').toLowerCase();
+const LOGGING_ENABLED = LOG_LEVEL !== 'silent';
+
 function logConn(conn: ClientConn, event: string, extra?: Record<string, unknown>): void {
+  if (!LOGGING_ENABLED) return;
   const line = {
     ts: new Date().toISOString(),
     connId: conn.id,
@@ -163,6 +172,17 @@ function makeEventsFor(matchId: string) {
     onLobbyUpdate() {
       const match = manager.getMatch(matchId);
       if (match && match.phase === 'lobby') broadcastLobby(match);
+    },
+    onSeatGraceExpired(slot: number) {
+      if (!LOGGING_ENABLED) return;
+      const line = {
+        ts: new Date().toISOString(),
+        connId: null,
+        matchId,
+        slot,
+        event: 'seat_grace_expired',
+      };
+      console.log(`[conn] ${JSON.stringify(line)}`);
     },
     onSnapshot(tick: number, acked: Map<number, number>) {
       const match = manager.getMatch(matchId);
@@ -260,15 +280,21 @@ wss.on('connection', (ws) => {
     }
   });
 
-  ws.on('close', () => {
+  ws.on('close', (code, reason) => {
+    // Close code + reason are the single most useful fact for telling a
+    // client-dropped-it disconnect (1001/1006, no reason) apart from a
+    // server-initiated close (closeWithError always sets a reason string).
+    // Never anything sensitive here -- code is a number, reason is a short
+    // protocol string, never a token or IP.
+    const closeInfo = { code, reason: reason.toString('utf8').slice(0, 120) || null };
     // A spectator or not-yet-assigned socket has no seat to hold open; only
     // a real fighter slot gets the disconnect/grace-period treatment.
     const hadLiveSeat = conn.match && !conn.spectating && conn.slot >= 0;
     if (hadLiveSeat && conn.match) {
       conn.match.markDisconnected(conn.slot);
-      logConn(conn, 'seat_disconnected', { gracePeriod: true });
+      logConn(conn, 'seat_disconnected', { gracePeriod: true, ...closeInfo });
     } else {
-      logConn(conn, 'closed', { hadSeat: false });
+      logConn(conn, 'closed', { hadSeat: false, ...closeInfo });
     }
     if (conn.match) watcherSet(conn.match.id).delete(conn.id);
     clients.delete(conn.id);
@@ -436,6 +462,28 @@ function handleBinary(conn: ClientConn, data: Buffer): void {
 }
 
 setInterval(() => manager.reap(), 30_000).unref();
+
+// Periodic one-line health summary, only when there's something to say --
+// an idle server (no connections, no matches) stays silent rather than
+// printing a heartbeat every 30s forever. Bots count separately from real
+// players so a log reader can tell a bot-filled lobby from a real crowd.
+setInterval(() => {
+  if (!LOGGING_ENABLED) return;
+  const connectionCount = clients.size;
+  const matchCount = manager.matchCount;
+  const playerCount = manager.playerCount;
+  const botCount = manager.botCount;
+  if (connectionCount === 0 && matchCount === 0) return; // idle: stay silent
+  console.log(
+    `[summary] ${JSON.stringify({
+      ts: new Date().toISOString(),
+      connections: connectionCount,
+      matches: matchCount,
+      players: playerCount,
+      bots: botCount,
+    })}`,
+  );
+}, 30_000).unref();
 
 const PORT = Number(process.env.PORT ?? 8081);
 server.listen(PORT, () => {

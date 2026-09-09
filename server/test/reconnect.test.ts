@@ -213,6 +213,9 @@ test('a seat is released after the grace window expires and the token no longer 
   const port = 8103;
   // Tiny grace window so the test doesn't wait out a real 30-60s default.
   const server = startServer(port, { MATCH_RECONNECT_GRACE_MS: '500' });
+  let log = '';
+  server.stdout?.on('data', (d) => (log += d.toString()));
+  server.stderr?.on('data', (d) => (log += d.toString()));
   try {
     await waitForHealth(port, 90000);
     const a = await connectClient(port, 'Alice');
@@ -232,6 +235,13 @@ test('a seat is released after the grace window expires and the token no longer 
     const result = (await late.waitFor((m) => m.t === 'error' || m.t === 'welcome')) as ControlMsg;
     assert.equal(result.t, 'error', 'an expired token must not be granted a seat');
     assert.equal(result.code, 'resume_invalid');
+
+    // Regression: the seat's grace expiry must be observable in the server
+    // log, not just inferable from client-side behaviour -- this is the
+    // exact gap the production incident (undiagnosable early disconnects)
+    // was about.
+    assert.match(log, /"event":"seat_grace_expired"/, `expected a seat_grace_expired log line; server log:\n${log}`);
+    assert.doesNotMatch(log, /resumeToken/i, 'log must never contain a resume token');
 
     late.ws.close();
     b.ws.close();

@@ -52,6 +52,15 @@ export class RoomManager {
     return n;
   }
 
+  /** Bot-filled seats across every live match, reported separately from
+   *  playerCount so a log reader can tell a bot-padded lobby from a real
+   *  crowd of humans. */
+  get botCount(): number {
+    let n = 0;
+    for (const m of this.matches.values()) n += m.seats.filter((s) => s.isBot).length;
+    return n;
+  }
+
   getMatch(id: string): Match | undefined {
     return this.matches.get(id);
   }

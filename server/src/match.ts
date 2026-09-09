@@ -97,6 +97,11 @@ export interface MatchEvents {
   /** Fired while the lobby is filling or counting down, so clients see a
    *  countdown that actually moves. */
   onLobbyUpdate?: () => void;
+  /** Fired when a disconnected seat's grace window expires and its resume
+   *  token is invalidated (releaseSeat). Otherwise a player who comes back
+   *  after the grace window has nothing server-side explaining why they
+   *  landed in a fresh join instead of their old seat. */
+  onSeatGraceExpired?: (slot: number) => void;
   onSnapshot: (tick: number, ackedInputTick: Map<number, number>) => void;
   onEliminated: (slot: number, placement: number, tick: number) => void;
   onMatchEnd: (winner: number | null, leaderboard: number[], tick: number) => void;
@@ -181,7 +186,7 @@ export class Match {
     // time here so expiry is correct regardless of scheduler lag, and
     // self-heal by releasing the seat immediately if it is found stale.
     if (seat.disconnectedAt !== null && Date.now() - seat.disconnectedAt >= RECONNECT_GRACE_MS) {
-      this.releaseSeat(seat.slot);
+      this.releaseSeat(seat.slot, true);
       return undefined;
     }
     return seat;
@@ -197,7 +202,7 @@ export class Match {
     const seat = this.seats.find((s) => s.resumeToken !== null && s.resumeToken === token);
     if (!seat) return undefined;
     if (!seat.connected && seat.disconnectedAt !== null && Date.now() - seat.disconnectedAt >= RECONNECT_GRACE_MS) {
-      this.releaseSeat(seat.slot);
+      this.releaseSeat(seat.slot, true);
       return undefined;
     }
     return seat;
@@ -229,11 +234,13 @@ export class Match {
    *  token can never succeed again. Does not touch the sim -- the seat
    *  keeps simulating on whatever input it already has (neutral, since
    *  markDisconnected zeroed it). Idempotent. */
-  private releaseSeat(slot: number): void {
+  private releaseSeat(slot: number, viaGraceExpiry = false): void {
     this.clearGraceTimer(slot);
     const seat = this.seats[slot];
     if (!seat) return;
+    const wasReclaimable = seat.resumeToken !== null;
     seat.resumeToken = null;
+    if (viaGraceExpiry && wasReclaimable) this.events.onSeatGraceExpired?.(slot);
   }
 
   setInput(slot: number, input: InputFrame, tick: number): void {
@@ -263,7 +270,7 @@ export class Match {
     seat.disconnectedAt = Date.now();
     this.clearGraceTimer(slot);
     if (seat.isBot || seat.eliminated || seat.resumeToken === null || this.phase === 'ended') return;
-    const timer = setTimeout(() => this.releaseSeat(slot), RECONNECT_GRACE_MS);
+    const timer = setTimeout(() => this.releaseSeat(slot, true), RECONNECT_GRACE_MS);
     // Never keep the process alive just for this timer (tests spawn many
     // short-lived matches; production always has the tick-loop timer/http
     // server keeping it alive regardless).

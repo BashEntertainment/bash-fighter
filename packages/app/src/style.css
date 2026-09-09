@@ -584,3 +584,14 @@ html, body {
 #net-status.hidden {
   display: none;
 }
+
+/* Win screen headline: the wordmark's weight without borrowing the
+   wordmark itself, which belongs to the game's name and nothing else. */
+.win-headline {
+  font-size: 48px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  border-bottom: 3px solid var(--accent);
+  padding-bottom: 8px;
+}

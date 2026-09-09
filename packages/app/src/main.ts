@@ -188,7 +188,7 @@ async function beginOnlineMatch(): Promise<void> {
       hud.hide();
       matchOverlay.hide();
       audio.play('match_end');
-      winScreen.show(winnerIndex);
+      winScreen.show(winnerIndex, netMatch?.localSlot());
     },
     onEliminated: (placement, totalFighters) => {
       matchOverlay.show({
@@ -267,7 +267,7 @@ async function beginMatch(): Promise<void> {
     onMatchOver: (winnerIndex) => {
       hud.hide();
       audio.play('match_end');
-      winScreen.show(winnerIndex);
+      winScreen.show(winnerIndex, 0);
       match?.stop();
     },
     transformFrame: (frame) => {

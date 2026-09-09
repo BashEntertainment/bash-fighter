@@ -74,6 +74,30 @@ interface DifficultyTuning {
    * modest at EASY so a beginner-protected match doesn't turn into a
    * pile-on the moment a human takes one hit. */
   finishingPriority: number;
+  /** Whether this difficulty pursues and finishes an opponent it has
+   * already hurt, instead of treating every target the same regardless
+   * of how vulnerable they currently are. This does NOT change target
+   * *selection* (pickTarget's scoring is untouched -- that is what the
+   * reverted finishing-priority experiment changed, and what pushed
+   * double-KOs past tolerance; see finishingPriority above and the dated
+   * wiki page). It only changes how aggressively the bot presses an
+   * already-locked target once that target is visibly vulnerable
+   * (airborne in hitstun from a hit, or deep into its damage range):
+   * lower hesitation on the finishing blow, and for HARD, steering
+   * toward the target's predicted landing spot instead of its current
+   * position -- a real edge-guard, not just a tighter chase. False at
+   * EASY: a beginner must never be chased down and finished. */
+  pursuitEnabled: boolean;
+  /** Hesitation roll (per-mille, lower = more reliable) used instead of
+   * the normal `hesitationPerMille` specifically when the locked target
+   * is currently vulnerable (see isVulnerable()). Irrelevant when
+   * pursuitEnabled is false. */
+  pursuitHesitationPerMille: number;
+  /** Ticks of lead time used to steer toward a vulnerable target's
+   * predicted position (posX + velX*lead) rather than its current spot.
+   * 0 = no lead (aim at current position). Only HARD leads by default --
+   * MEDIUM still pursues but aims at where the target actually is. */
+  pursuitLeadTicks: number;
 }
 
 const TUNING: Record<BotDifficultyValue, DifficultyTuning> = {
@@ -95,6 +119,9 @@ const TUNING: Record<BotDifficultyValue, DifficultyTuning> = {
     protectedTargetPenalty: 900.0,
     protectedClusterMultiplier: 3.0,
     finishingPriority: 0.0,
+    pursuitEnabled: false,
+    pursuitHesitationPerMille: 550,
+    pursuitLeadTicks: 0,
   },
   [BotDifficulty.MEDIUM]: {
     reactionTicks: 14, // ~230ms
@@ -106,6 +133,9 @@ const TUNING: Record<BotDifficultyValue, DifficultyTuning> = {
     protectedTargetPenalty: 0,
     protectedClusterMultiplier: 1.0,
     finishingPriority: 0.0,
+    pursuitEnabled: true,
+    pursuitHesitationPerMille: 60,
+    pursuitLeadTicks: 0,
   },
   [BotDifficulty.HARD]: {
     reactionTicks: 6, // 100ms
@@ -117,6 +147,9 @@ const TUNING: Record<BotDifficultyValue, DifficultyTuning> = {
     protectedTargetPenalty: 0,
     protectedClusterMultiplier: 1.0,
     finishingPriority: 0.0,
+    pursuitEnabled: true,
+    pursuitHesitationPerMille: 10,
+    pursuitLeadTicks: 10,
   },
 };
 
@@ -281,7 +314,9 @@ export class BotController {
     if (target.eliminated) return this.cached;
     const tuning = TUNING[this.difficulty];
     const inRange = this.inAttackRange(self, target);
-    const shouldAttack = inRange && this.rollPerMille() >= tuning.hesitationPerMille;
+    const hesitation =
+      tuning.pursuitEnabled && this.isVulnerable(target) ? tuning.pursuitHesitationPerMille : tuning.hesitationPerMille;
+    const shouldAttack = inRange && this.rollPerMille() >= hesitation;
     const buttons = shouldAttack ? this.cached.buttons | BUTTON_ATTACK : this.cached.buttons & ~BUTTON_ATTACK;
     if (buttons === this.cached.buttons) return this.cached;
     return { buttons, stickX: this.cached.stickX, stickY: this.cached.stickY };
@@ -338,20 +373,38 @@ export class BotController {
       } else if (itemTarget) {
         stickX = signOf(fx.sub(itemTarget.posX, self.posX));
       } else if (target) {
-        const dx = fx.sub(target.posX, self.posX);
-        const dy = fx.sub(target.posY, self.posY);
+        // Pursuit: once a target is visibly vulnerable (knocked into
+        // hitstun/airborne by a hit, or deep into its damage range), aim
+        // at where it is going rather than where it currently is -- this
+        // is the edge-guard/finish lever. Only changes aim and
+        // hesitation for the already-locked target; pickTarget's scoring
+        // is untouched, deliberately (see pursuitEnabled doc comment --
+        // that is what caused the reverted experiment's double-KO
+        // regression).
+        const pursuing = tuning.pursuitEnabled && this.isVulnerable(target);
+        const aimX = pursuing && tuning.pursuitLeadTicks > 0
+          ? fx.add(target.posX, fx.mul(target.velX, fx.fromInt(tuning.pursuitLeadTicks)))
+          : target.posX;
+        const aimY = pursuing && tuning.pursuitLeadTicks > 0
+          ? fx.add(target.posY, fx.mul(target.velY, fx.fromInt(tuning.pursuitLeadTicks)))
+          : target.posY;
+        const dx = fx.sub(aimX, self.posX);
+        const dy = fx.sub(aimY, self.posY);
         stickX = signOf(dx);
         stickY = signOf(dy);
-        if (this.inAttackRange(self, target) && this.rollPerMille() >= tuning.hesitationPerMille) {
+        const hesitation = pursuing ? tuning.pursuitHesitationPerMille : tuning.hesitationPerMille;
+        if (this.inAttackRange(self, target) && this.rollPerMille() >= hesitation) {
           buttons |= BUTTON_ATTACK;
           // Aim: grounded jab/ftilt picked by |stickX| threshold in
           // sim.ts, airborne uair/dair picked by stickY sign — steer the
           // stick to request the appropriate move for the target's
           // relative position rather than always spamming forward-tilt.
+          const rdx = fx.sub(target.posX, self.posX);
+          const rdy = fx.sub(target.posY, self.posY);
           if (!self.grounded) {
-            stickY = dy < 0 ? fx.neg(ONE) : ONE;
-          } else if (fx.abs(dx) > fx.fromFloat(1.5)) {
-            stickX = signOf(dx);
+            stickY = rdy < 0 ? fx.neg(ONE) : ONE;
+          } else if (fx.abs(rdx) > fx.fromFloat(1.5)) {
+            stickX = signOf(rdx);
           } else {
             stickX = 0; // close-range: jab, not forward-tilt.
           }
@@ -549,6 +602,20 @@ export class BotController {
       return self.posX > 0 ? fx.neg(ONE) : ONE;
     }
     return 0;
+  }
+
+  /** A target counts as "vulnerable" for pursuit purposes when it is
+   * visibly in the aftermath of a hit (hitstun, or airborne with real
+   * velocity -- knocked away rather than just jumping) or already deep
+   * into its damage range and therefore one solid hit from elimination.
+   * Deliberately cheap and local to the target snapshot -- no memory of
+   * who hit them or when, so this stays correct even if another fighter
+   * landed the original blow. */
+  private isVulnerable(target: FighterSnapshot): boolean {
+    if (target.hitstun > 0) return true;
+    if (!target.grounded && fx.add(fx.abs(target.velX), fx.abs(target.velY)) > fx.fromFloat(3.0)) return true;
+    if (fx.toFloat(target.percent) >= 100) return true;
+    return false;
   }
 
   private inAttackRange(self: FighterSnapshot, target: FighterSnapshot): boolean {

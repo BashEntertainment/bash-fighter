@@ -206,15 +206,26 @@ export function computeSafeExtents(
   // guarantees ground is safe for as long as the *whole* field is
   // alive, which is correct but means a match where nobody ever gets
   // eliminated (no combat, no boundary pressure) would otherwise never
-  // resolve. Past a long ceiling -- three times the normal
+  // resolve. Past a long ceiling -- 1.25x the normal
   // shrinkFullyClosedTick schedule, well beyond any measured real match
   // length (110-207s) -- ground protection is allowed to relax on time
   // alone, so every match provably ends even in the total-stalemate
   // case. This does not affect normal play: it only ever bites after
   // the ordinary shrink schedule has already been fully closed for a
   // long while with no resolution.
+  //
+  // REVISED 2026-09-09 (bot pursuit/finish pass): was 3x, then 2x. Both
+  // put the point where relaxation *finishes* (staleTick +
+  // shrinkFullyClosedTick, since the relax itself ramps over one more
+  // full schedule length) beyond this project's own 10-minute regression
+  // ceiling (packages/sim/test/arena-shrink.test.ts) -- seed 1003
+  // legitimately needed the override and didn't get it in time, failing
+  // `npm test`, twice. 1.25x finishes relaxing at 0.9x the ceiling,
+  // leaving real margin for the actual eliminations to occur once the
+  // ring is fully tight, and is still generous next to real observed
+  // match durations (110-207s).
   if (settings && settings.shrinkFullyClosedTick > 0) {
-    const staleTick = settings.shrinkFullyClosedTick * 3;
+    const staleTick = settings.shrinkFullyClosedTick * 1.25;
     const timeT = fx.clamp(
       fx.sub(fx.ONE, fx.div(fx.fromInt(Math.max(0, tick - staleTick)), fx.fromInt(settings.shrinkFullyClosedTick))),
       0,

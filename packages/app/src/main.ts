@@ -165,6 +165,13 @@ onlineButton.addEventListener('click', () => {
 });
 
 let netMatch: NetMatch | null = null;
+// Set the moment our own seat is eliminated online, cleared at the start
+// of each new online match. Distinguishes "the match ended for everyone,
+// I was still playing" from "I was already out and spectating" so
+// onMatchOver (below) doesn't clobber the honest placement screen a
+// player already saw with a global win/loss overlay for a match they
+// were no longer part of -- see the doc comment on that handler.
+let eliminatedThisOnlineMatch = false;
 
 function serverUrl(): string {
   const params = new URLSearchParams(location.search);
@@ -179,6 +186,7 @@ function serverUrl(): string {
 
 async function beginOnlineMatch(): Promise<void> {
   lastMatchWasOnline = true;
+  eliminatedThisOnlineMatch = false;
   startScreen.hide();
   winScreen.hide();
   spectatorBanner.hide();
@@ -231,20 +239,30 @@ async function beginOnlineMatch(): Promise<void> {
       hud.hide();
       inMatchMovesButton.classList.add('hidden');
       touchControls.hide();
-      matchOverlay.hide();
-      // Regression fix (task #28104): a player who was still "in-match"
-      // when the match ended (as opposed to being eliminated earlier and
-      // switched to 'spectating') never got a state update here, so the
-      // connection chip sat on the stale "In match" label underneath the
-      // win screen for the rest of the session. onStateChange only fires
-      // from NetMatch on connection/lobby/elimination transitions, none
-      // of which cover "the match as a whole just ended" for a fighter
-      // who survived to see it happen.
       setNetStatus('match-complete');
+      // Server-side, a match with no human seats left playing is torn
+      // down immediately to stop paying for a bot-only sim (see
+      // isAbandonedByHumans in server/src/match.ts) rather than waiting
+      // out the minutes the bots would otherwise take to finish. That
+      // matchEnd is a real event, but it is a teardown snapshot of a
+      // fight that was still going, not a fair collective verdict -- if
+      // *we* were still playing when it fired we show it normally below,
+      // but a player who was already eliminated already saw their honest
+      // placement from onEliminated. Re-showing the win screen on top of
+      // that (previously: unconditionally) replaced "You finished 14th of
+      // 20, keep spectating" with a global "Nobody survived"/winner
+      // overlay that had nothing to do with their match, seconds after
+      // they were told their real result. Just clean up quietly instead.
+      if (eliminatedThisOnlineMatch) {
+        matchOverlay.hide();
+        return;
+      }
+      matchOverlay.hide();
       audio.play('match_end');
       winScreen.show(winnerIndex, netMatch?.localSlot());
     },
     onEliminated: (placement, totalFighters) => {
+      eliminatedThisOnlineMatch = true;
       touchControls.hide();
       matchOverlay.show({
         title: `You finished ${placement} of ${totalFighters}`,

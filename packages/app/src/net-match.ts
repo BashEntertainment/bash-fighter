@@ -309,6 +309,14 @@ export class NetMatch {
         break;
       case 'matchEnd':
         this.over = true;
+        // The match is finished -- there is nothing left to resume into, so
+        // drop any saved token now rather than leaving it in sessionStorage
+        // to be replayed by the *next* NetMatch's initial `hello`. Without
+        // this, clicking "Play again"/"Rematch" right after a match ends
+        // opened a fresh socket, sent the stale token, got a legitimate
+        // resume_invalid back from the server, and dead-ended on the
+        // disconnected screen instead of just starting the new match.
+        this.setResumeToken(null);
         this.events.onMatchOver?.(msg.winner);
         break;
       case 'error':

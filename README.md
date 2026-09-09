@@ -69,9 +69,11 @@ CI covers Node 22 and 24.
 git clone https://github.com/BashEntertainment/bash-fighter.git
 cd bash-fighter
 npm install
-npm test        # node --test packages/*/test/**/*.test.ts
-npm run typecheck  # tsc --noEmit -p tsconfig.json
-npm run lint       # eslint .
+npm test            # packages/*/test only — see CONTRIBUTING.md "Running the tests"
+npm run test:server  # server/test — not covered by `npm test`
+npm run test:all      # both; what CI runs
+npm run typecheck    # tsc --noEmit -p tsconfig.json
+npm run lint          # eslint .
 ```
 
 To play locally against yourself or a second local client:

@@ -9,10 +9,12 @@
   ],
   "scripts": {
     "build": "npm run build -w @bash-fighter/server && npm run build -w @bash-fighter/app",
-    "test": "node --test packages/*/test/**/*.test.ts",
+    "test": "node --test --test-isolation=none packages/*/test/**/*.test.ts",
     "test:vitest": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test:server": "node --test --test-isolation=none --test-concurrency=1 server/test/*.test.ts",
+    "test:all": "npm test && npm run test:server"
   },
   "devDependencies": {
     "@types/node": "^26.5.0",

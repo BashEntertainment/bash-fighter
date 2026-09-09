@@ -13,21 +13,77 @@ See [`README.md`](./README.md) for the package layout and
 
 ## Dev environment setup
 
-Requirements: Node 24+ (the test suite relies on Node's built-in
-TypeScript type-stripping, not a separate build step).
+Requirements: Node 22.8+ or 24+ (the test suite relies on Node's built-in
+TypeScript type-stripping and on `--test-isolation=none`, both of which
+need Node 22.8 or later).
 
 ```sh
 git clone https://github.com/BashEntertainment/bash-fighter.git
 cd bash-fighter
 npm install
-npm test          # node --test packages/*/test/**/*.test.ts
-npm run typecheck # tsc --noEmit -p tsconfig.json
-npm run lint      # eslint .
+npm test            # packages/*/test — see "Running the tests" below
+npm run test:server # server/test — not covered by `npm test`
+npm run test:all     # both of the above; what CI runs
+npm run typecheck   # tsc --noEmit -p tsconfig.json
+npm run lint         # eslint .
 ```
 
 To run the app and server locally, see the "Running it locally" section
 of `README.md`. Work inside a single package where possible and run that
 package's tests before opening a PR.
+
+### Running the tests
+
+`npm test` runs every test in `packages/*/test/**/*.test.ts` — 334 tests
+as of this writing, including the heavy N-fighter/battle-royale suites
+(`determinism-20`, `stress-match-end`, `items-hazards`, `bot`). Nothing
+is skipped by default; there is no separate "heavy" script to remember.
+
+It runs as `node --test --test-isolation=none packages/*/test/**/*.test.ts`.
+The `--test-isolation=none` flag is the important part and is **not**
+optional — without it, Node's test runner spawns one child process per
+test *file*, and each of those processes costs roughly 150MB of baseline
+overhead before it runs a single assertion. With the default test
+concurrency (tied to your CPU core count), that overhead multiplies: on
+an 8-way-concurrent run we measured peak RSS of **~838MB** for a suite
+whose actual test logic needs under 150MB. That is what OOM-kills the
+suite on a small container or a modest contributor laptop — it is a test
+*runner configuration* problem, not a memory leak in `packages/sim` or
+anywhere else in the library code. `--test-isolation=none` runs the whole
+suite in a single process instead, which we measured at a peak RSS of
+**~148-183MB** and a wall time of **6-12 seconds**, regardless of core
+count. See the "Test suite memory" table below for the full numbers.
+
+`server/test/*.test.ts` (websocket reconnection, mid-match join, spectator
+rate — real sockets and timers) is a separate script, `npm run test:server`,
+kept apart from the packages suite's single process because it uses real
+network sockets and timers. It's small (10 tests, ~19s) so it doesn't need
+splitting further. **It is not included in `npm test`** — run it
+explicitly. CI runs both via `npm run test:all`, so don't rely on `npm
+test` alone to catch a server regression.
+
+If you're on a genuinely memory-constrained machine, run test files one
+package at a time instead of the aggregate scripts:
+
+```sh
+node --test --test-isolation=none packages/sim/test/*.test.ts
+```
+
+#### Test suite memory (measured 2026-09-08, in a 1.9GB/1-vCPU container)
+
+| Command | Tests | Peak RSS | Wall time |
+|---|---|---|---|
+| `npm test` (isolation=none, this repo's default) | 334 | ~148-183MB | 6-12s |
+| same suite, `--test-concurrency=8`, no isolation flag (the old script's behaviour on any multi-core machine) | 334 | ~838MB | ~12s |
+| `npm run test:server` | 10 | not separately measured; small | ~19s |
+
+The 838MB figure is not hypothetical — it's what the old `npm test`
+script actually did on any machine with several CPU cores (most
+contributor laptops and CI runners qualify). This container only avoided
+it before because it has a single vCPU, so the old default's concurrency
+happened to collapse to 1 here. On a multi-core machine the old script
+really did risk OOM; `--test-isolation=none` is the fix, not a bigger
+memory limit.
 
 ## Determinism rules (read this before touching `packages/sim`)
 

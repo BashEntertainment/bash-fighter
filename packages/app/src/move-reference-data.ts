@@ -24,17 +24,44 @@
 // move's "feel" (a read, a mixup, a kill confirm) that raw numbers can't.
 // If playtesting finds these descriptions read as generic, that's the
 // signal to revisit and add authored copy to packages/content instead.
-import { ALL_CHARACTERS } from '@bash-fighter/content';
-import { fixed as fx, moveTotalDuration, type CharacterData, type MoveDef } from '@bash-fighter/sim';
+//
+// Revised 2026-09-09 after playing the shipped v1 live: comparing each
+// move against the whole roster put nearly every character's moves in
+// the same middle bucket ("medium-speed, mid-range, moderate") because
+// most characters cluster near the roster average -- three
+// near-identical sentences per character taught a reader nothing and
+// read as visibly auto-generated. Switched to comparing a move against
+// that same character's other three moves instead (see `describe` below),
+// and added the actual input for each move, which the first version
+// hadn't included at all despite being the most useful single fact in a
+// move list -- doubly so now that touch controls exist and a phone
+// player can't glance at a keyboard to know what a button does.
+import { fixed as fx, moveTotalDuration, MoveId, type CharacterData, type MoveDef } from '@bash-fighter/sim';
 
 export interface MoveReferenceEntry {
   id: number;
   name: string;
+  input: string;
   description: string;
   damage: number;
   startup: number;
   totalFrames: number;
 }
+
+// Exactly how each move is thrown -- read straight out of the real input
+// logic in packages/sim/src/sim.ts (the attack-button branch: grounded +
+// neutral stick = jab, grounded + a held direction = forward tilt,
+// airborne + neutral/up = up air, airborne + held down = down air). This
+// mapping is the same for every character today, so it's written once
+// here rather than per character. If a character ever gets its own
+// input scheme this needs to move per-character; nothing here assumes
+// that yet.
+const INPUT_TEXT: Record<number, { keyboard: string; touch: string }> = {
+  [MoveId.JAB]: { keyboard: 'F, no direction held, on the ground', touch: 'Attack, no direction, on the ground' },
+  [MoveId.FTILT]: { keyboard: 'A or D + F, on the ground', touch: 'Attack while holding a side on the stick, on the ground' },
+  [MoveId.UAIR]: { keyboard: 'F in the air, no direction (or up) held', touch: 'Attack in the air, no direction (or up) held' },
+  [MoveId.DAIR]: { keyboard: 'S + F, in the air', touch: 'Attack while holding down on the stick, in the air' },
+};
 
 function startupOf(move: MoveDef): number {
   return move.windows.find((w) => w.kind === 'startup')?.duration ?? 0;
@@ -59,53 +86,63 @@ function reachOf(move: MoveDef): number {
   return Math.abs(fx.toFloat(hb.offsetX)) + Math.abs(fx.toFloat(hb.offsetY)) + fx.toFloat(hb.width) / 2;
 }
 
-// Roster-wide stats per move id, computed once, used to say "fast" or
-// "slow" relative to the cast rather than an arbitrary absolute cutoff --
-// the same move name (Jab, Forward Tilt, Up Air, Down Air) exists on all
-// eight characters today, so "fast jab" only means something next to the
-// other seven jabs.
-function rosterStatsByMoveId(): Map<number, { startup: number[]; damage: number[]; kb: number[]; reach: number[] }> {
-  const map = new Map<number, { startup: number[]; damage: number[]; kb: number[]; reach: number[] }>();
-  for (const entry of ALL_CHARACTERS) {
-    for (const move of entry.character.moves) {
-      const s = map.get(move.id) ?? { startup: [], damage: [], kb: [], reach: [] };
-      s.startup.push(startupOf(move));
-      s.damage.push(damageOf(move));
-      s.kb.push(knockbackOf(move));
-      s.reach.push(reachOf(move));
-      map.set(move.id, s);
-      }
-  }
-  return map;
+interface Stat {
+  id: number;
+  startup: number;
+  kb: number;
+  reach: number;
 }
 
-const ROSTER_STATS = rosterStatsByMoveId();
-
-function tertile(value: number, values: number[]): 'low' | 'mid' | 'high' {
-  const sorted = [...values].sort((a, b) => a - b);
-  const lo = sorted[Math.floor(sorted.length / 3)] ?? value;
-  const hi = sorted[Math.floor((sorted.length * 2) / 3)] ?? value;
-  if (value <= lo) return 'low';
-  if (value >= hi) return 'high';
-  return 'mid';
-}
-
-const SPEED_WORD: Record<'low' | 'mid' | 'high', string> = { low: 'fast', mid: 'medium-speed', high: 'slow' };
-const POWER_WORD: Record<'low' | 'mid' | 'high', string> = { low: 'weak', mid: 'moderate', high: 'strong' };
-const REACH_WORD: Record<'low' | 'mid' | 'high', string> = { low: 'short-range', mid: 'mid-range', high: 'long-reach' };
-
-function describe(move: MoveDef): string {
-  const stats = ROSTER_STATS.get(move.id);
-  const startup = startupOf(move);
+// Describe a move relative to *that character's own other three moves*,
+// not the whole roster. Rationale (see wiki writeup, 2026-09-09 revision):
+// comparing against the roster put almost every character's move in the
+// same "medium/moderate" middle bucket, since most characters cluster
+// near the average -- three near-identical sentences per character
+// taught a reader nothing and read as obviously auto-generated. A move
+// is genuinely worth calling out when it's the fastest, slowest,
+// hardest-hitting, weakest, longest-reaching, or shortest-reaching of
+// that *specific* character's four moves -- that's the comparison a
+// player actually makes when choosing which button to press. If a move
+// isn't the extreme on any axis, we say so plainly instead of forcing an
+// adjective that isn't true.
+function describe(move: MoveDef, ownStats: Stat[]): string {
   const dmg = damageOf(move);
-  const kb = knockbackOf(move);
-  const reach = reachOf(move);
-  const speed = stats ? SPEED_WORD[tertile(startup, stats.startup)] : 'medium-speed';
-  const power = stats ? POWER_WORD[tertile(kb, stats.kb)] : 'moderate';
-  const range = stats ? REACH_WORD[tertile(reach, stats.reach)] : 'mid-range';
-  const dirWord =
-    move.id === 2 ? 'above you' : move.id === 3 ? 'below you' : 'in front of you';
-  return `${cap(speed)}, ${range} hit ${dirWord} — ${dmg} damage, ${power} knockback.`;
+
+  const byStartup = [...ownStats].sort((a, b) => a.startup - b.startup);
+  const byKb = [...ownStats].sort((a, b) => a.kb - b.kb);
+  const byReach = [...ownStats].sort((a, b) => a.reach - b.reach);
+
+  const isExtreme = (sorted: Stat[], id: number, key: keyof Stat): 'min' | 'max' | null => {
+    if (sorted.length < 2) return null;
+    const first = sorted[0] as Stat;
+    const last = sorted[sorted.length - 1] as Stat;
+    const second = sorted[1] as Stat;
+    const secondLast = sorted[sorted.length - 2] as Stat;
+    if (first[key] === last[key]) return null; // all tie, nothing to say
+    if (first.id === id && first[key] !== second[key]) return 'min';
+    if (last.id === id && last[key] !== secondLast[key]) return 'max';
+    return null;
+  };
+
+  const notes: string[] = [`${dmg} damage`];
+
+  const speedNote = isExtreme(byStartup, move.id, 'startup');
+  if (speedNote === 'min') notes.push('the fastest of the four to come out');
+  else if (speedNote === 'max') notes.push('the slowest of the four to come out');
+
+  const kbNote = isExtreme(byKb, move.id, 'kb');
+  if (kbNote === 'max') notes.push('hits hardest of the four');
+  else if (kbNote === 'min') notes.push('the weakest knockback of the four');
+
+  const reachNote = isExtreme(byReach, move.id, 'reach');
+  if (reachNote === 'max') notes.push('the longest reach of the four');
+  else if (reachNote === 'min') notes.push('the shortest reach of the four');
+
+  // Every move always states damage; it adds at most the traits that are
+  // actually distinctive for it, so a move that isn't extreme on any
+  // axis reads as a short, plain, honest line instead of padded filler.
+  const [first, ...rest] = notes;
+  return rest.length === 0 ? `${first}.` : `${first} -- ${rest.join(', ')}.`;
 }
 
 function cap(s: string): string {
@@ -113,12 +150,22 @@ function cap(s: string): string {
 }
 
 export function moveReferenceFor(character: CharacterData): MoveReferenceEntry[] {
-  return character.moves.map((m) => ({
+  const ownStats: Stat[] = character.moves.map((m) => ({
     id: m.id,
-    name: m.name,
-    description: describe(m),
-    damage: damageOf(m),
     startup: startupOf(m),
-    totalFrames: moveTotalDuration(m),
+    kb: knockbackOf(m),
+    reach: reachOf(m),
   }));
+  return character.moves.map((m) => {
+    const input = INPUT_TEXT[m.id];
+    return {
+      id: m.id,
+      name: m.name,
+      input: input ? cap(input.keyboard) + ' (touch: ' + input.touch.charAt(0).toLowerCase() + input.touch.slice(1) + ')' : '',
+      description: describe(m, ownStats),
+      damage: damageOf(m),
+      startup: startupOf(m),
+      totalFrames: moveTotalDuration(m),
+    };
+  });
 }

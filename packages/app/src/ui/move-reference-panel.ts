@@ -77,6 +77,7 @@ export class MoveReferencePanel {
       row.className = 'move-reference-row';
       row.innerHTML = `
         <div class="move-reference-name">${move.name}</div>
+        <div class="move-reference-input">${move.input}</div>
         <div class="move-reference-desc">${move.description}</div>
       `;
       this.listEl.appendChild(row);

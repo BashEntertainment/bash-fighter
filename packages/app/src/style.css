@@ -386,6 +386,13 @@ html, body {
   margin-bottom: 4px;
 }
 
+.move-reference-input {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--accent);
+  margin-bottom: 4px;
+}
+
 .move-reference-desc {
   font-family: var(--font-ui);
   font-size: 13px;

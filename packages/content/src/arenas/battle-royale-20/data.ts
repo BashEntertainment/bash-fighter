@@ -8,6 +8,9 @@ import type { ArenaData } from '../../../../sim/src/arena/types.ts';
 
 export const BATTLE_ROYALE_20_ARENA: ArenaData = {
   name: 'Bash Colosseum (20p)',
+  // Neutral stone-grey accent: the balanced, original stage -- no strong
+  // personality, everything else is judged against it.
+  accentColor: 0x9aa0a8,
   platforms: [
     // Wide main ground.
     { minX: fx.fromInt(-480), maxX: fx.fromInt(480), y: fx.fromInt(0) },
@@ -26,8 +29,16 @@ export const BATTLE_ROYALE_20_ARENA: ArenaData = {
   blastMaxY: fx.fromInt(520),
   // 20 spawn points spread across the main platform, alternating sides so
   // adjacent fighter indices don't start adjacent on stage.
+  //
+  // BUG FIX (this task's stage audit): the previous formula used
+  // `i % 10` as the slot, which repeats every 10 indices -- fighters 0
+  // and 10, 1 and 11, ... 9 and 19 were all assigned the exact same (x, y)
+  // spawn point, i.e. 20 "spawn points" that were really only 10 unique
+  // positions, each stacked with two fighters on top of each other at
+  // match start. `Math.floor(i / 2)` makes every one of the 20 positions
+  // distinct while keeping the alternating-sides property.
   spawnPoints: Array.from({ length: 20 }, (_, i) => {
-    const slot = i % 10;
+    const slot = Math.floor(i / 2);
     const side = i % 2 === 0 ? 1 : -1;
     const x = side * fx.fromInt(40 + slot * 40);
     return { x, y: fx.fromInt(0) };

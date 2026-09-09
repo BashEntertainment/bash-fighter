@@ -20,6 +20,16 @@ export {
   type CharacterEntry,
 } from './characters.ts';
 export { BATTLE_ROYALE_20_ARENA } from './arenas/battle-royale-20/data.ts';
+export { THE_UNDERCROFT_ARENA } from './arenas/the-undercroft/data.ts';
+export { THE_SPIRE_ARENA } from './arenas/the-spire/data.ts';
+export {
+  ALL_ARENAS,
+  DEFAULT_ARENA_ID,
+  resolveArenaId,
+  isKnownArenaId,
+  pickArenaId,
+  type ArenaEntry,
+} from './arenas.ts';
 export { BASH_FIGHTER_ITEM_SET } from './items/data.ts';
 export { BASH_FIGHTER_HAZARD } from './hazards/data.ts';
 export { createMatchSim } from './match-sim.ts';

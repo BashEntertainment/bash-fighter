@@ -299,7 +299,7 @@ export class NetMatch {
         this.events.onLobby?.(msg.players, msg.capacity, msg.countdownTicks);
         break;
       case 'matchStart':
-        this.startMatch(msg.numFighters, msg.seed, msg.slot, msg.characterIds);
+        this.startMatch(msg.numFighters, msg.seed, msg.slot, msg.characterIds, msg.arenaId);
         break;
       case 'eliminated':
         if (msg.slot === this.mySlot && !this.spectating) {
@@ -346,7 +346,13 @@ export class NetMatch {
     }
   }
 
-  private startMatch(numFighters: number, seed: number, slot: number, characterIds?: string[]): void {
+  private startMatch(
+    numFighters: number,
+    seed: number,
+    slot: number,
+    characterIds?: string[],
+    arenaId?: string,
+  ): void {
     this.numFighters = numFighters;
     this.mySlot = slot;
     this.spectating = slot < 0;
@@ -361,8 +367,8 @@ export class NetMatch {
       this.characters = new Array(numFighters).fill(PLACEHOLDER_CHARACTER);
     }
     this.effectsBridge.setContext(this.characters, this.mySlot);
-    this.localSim = createMatchSim(seed, numFighters, undefined, this.characters);
-    this.renderSim = createMatchSim(seed, numFighters, undefined, this.characters);
+    this.localSim = createMatchSim(seed, numFighters, undefined, this.characters, arenaId);
+    this.renderSim = createMatchSim(seed, numFighters, undefined, this.characters, arenaId);
     // The server always builds matches via createMatchSim too (see
     // server/src/*), so this.localSim.getArena() is the arena actually
     // being played on -- feed the renderer that, not a default guess.

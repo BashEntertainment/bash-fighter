@@ -156,7 +156,7 @@ function broadcastMatchStart(match: Match): void {
       numFighters: match.seats.length,
       slot: c.spectating ? -1 : c.slot,
       settings: {},
-      arenaId: 'battle-royale-20',
+      arenaId: match.arenaId,
       names: match.seats.map((s) => s.name),
       characterIds: match.seats.map((s) => s.characterId),
     });
@@ -391,7 +391,7 @@ function handleResume(conn: ClientConn, token: string): void {
     numFighters: match.seats.length,
     slot,
     settings: {},
-    arenaId: 'battle-royale-20',
+    arenaId: match.arenaId,
     names: match.seats.map((s) => s.name),
     characterIds: match.seats.map((s) => s.characterId),
   });

@@ -4,7 +4,7 @@
 import { randomBytes } from 'node:crypto';
 import { Sim, makeInputFrame, type InputFrame, type MatchSettings } from '@bash-fighter/sim/src/index.ts';
 import { BotController, BotDifficulty, deriveBotSeed, type BotDifficultyValue } from '@bash-fighter/sim/src/ai/bot.ts';
-import { createMatchSim, resolveCharacterId, DEFAULT_CHARACTER_ID } from '@bash-fighter/content/src/index.ts';
+import { createMatchSim, resolveCharacterId, DEFAULT_CHARACTER_ID, pickArenaId } from '@bash-fighter/content/src/index.ts';
 import { SNAPSHOT_HZ } from '@bash-fighter/net/src/protocol.ts';
 import { recordTickDurationMs } from './tick-metrics.ts';
 
@@ -126,6 +126,11 @@ export class Match {
   seats: Seat[] = [];
   sim: Sim | null = null;
   seed = 0;
+  /** Stage this match plays on, chosen once in start() from the match
+   *  seed (see pickArenaId) -- server-decided, never client-chosen, and
+   *  told to every client via MatchStartMessage.arenaId so a joining or
+   *  reconnecting client builds the identical Sim (see match-sim.ts). */
+  arenaId = 'battle-royale-20';
   tick = 0;
   private bots = new Map<number, BotController>();
   private timer: NodeJS.Timeout | null = null;
@@ -283,6 +288,10 @@ export class Match {
     if (this.phase !== 'lobby') return;
     this.phase = 'playing';
     this.seed = seedFromMatchId(this.id);
+    // Seeded, not wall-clock-rotated: two matches created in the same
+    // second must not collide, and a match must be able to replay
+    // identically from its recorded seed (see pickArenaId's comment).
+    this.arenaId = pickArenaId(this.seed);
     // Per-seat character, resolved from each seat's requested id (see
     // Seat.characterId's comment for the bot/unset/unknown-id fallback).
     const characters = this.seats.map((seat) => resolveCharacterId(seat.characterId));
@@ -292,7 +301,7 @@ export class Match {
     // clock. Never set in production (systemd unit does not set it).
     const shrinkOverride = process.env.MATCH_SHRINK_FULLY_CLOSED_TICK;
     if (shrinkOverride) settingsOverride.shrinkFullyClosedTick = Number(shrinkOverride);
-    this.sim = createMatchSim(this.seed, this.seats.length, settingsOverride, characters);
+    this.sim = createMatchSim(this.seed, this.seats.length, settingsOverride, characters, this.arenaId);
     const difficulty = botDifficultyFromEnv();
     // Human (non-bot) seats, passed to every bot so EASY's anti-dogpile
     // tuning (protectedTargetPenalty/protectedClusterMultiplier in

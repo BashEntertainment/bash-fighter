@@ -26,6 +26,12 @@ export interface StageBounds {
   blastMaxX: number;
   blastMinY: number;
   blastMaxY: number;
+  /** Optional per-stage accent (0xRRGGBB) for the platform edge highlight
+   * only. Falls back to PALETTE.stageEdge when absent. This is the whole
+   * visual-identity budget a stage gets beyond its own geometry: no fill
+   * colour change, no gradients, nothing that touches the danger/warning
+   * palette. */
+  accentColor?: number;
 }
 
 /** Where the blast-zone boundary will be at a fixed lookahead from now
@@ -111,7 +117,7 @@ export function drawStage(
     g.rect(topL.x, topL.y + depthPx * 0.55, width, depthPx * 0.45);
     g.fill({ color: PALETTE.background, alpha: 0.35 });
     g.rect(topL.x, topL.y, width, Math.max(3, depthPx * 0.08));
-    g.fill({ color: PALETTE.stageEdge });
+    g.fill({ color: bounds.accentColor ?? PALETTE.stageEdge });
   }
 
   // Future boundary: a fainter amber dashed line at where the current

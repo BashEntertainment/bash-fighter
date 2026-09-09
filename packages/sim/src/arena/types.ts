@@ -30,4 +30,11 @@ export interface ArenaData {
   /** Spawn/respawn points, cycled by fighter index modulo length so an
    * arena can define fewer points than the match's fighter count. */
   spawnPoints: readonly SpawnPoint[];
+  /** Cosmetic only: a restrained accent colour (0xRRGGBB) the renderer may
+   * use for this stage's platform edge highlight, so stages read as
+   * visually distinct without touching fill colour, gradients, or any
+   * colour reserved for danger/warning. Never read by packages/sim --
+   * purely a hint the renderer chooses to use or ignore. Optional so
+   * existing/omitted data still validates. */
+  accentColor?: number;
 }

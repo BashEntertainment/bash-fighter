@@ -22,5 +22,8 @@ export function arenaDataToStageBounds(arena: ArenaData): StageBounds {
     blastMaxX: fx.toFloat(arena.blastMaxX),
     blastMinY: fx.toFloat(arena.blastMinY),
     blastMaxY: fx.toFloat(arena.blastMaxY),
+    // Cosmetic only -- see ArenaData.accentColor's comment. Sim state
+    // never depends on this.
+    accentColor: arena.accentColor,
   };
 }

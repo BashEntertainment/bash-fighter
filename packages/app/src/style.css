@@ -290,6 +290,132 @@ html, body {
   width: 100%;
 }
 
+/* In-game move reference (repo issue #5) -- packages/app/src/ui/move-reference-panel.ts.
+   Sits above everything, same treatment as match-overlay, but never
+   pauses or ends a match underneath it -- it's a read-only lookup a
+   player can dismiss and resume from where they left off. */
+.move-reference-panel {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 10, 10, 0.86);
+  z-index: 60;
+}
+
+.move-reference-panel.hidden {
+  display: none;
+}
+
+.move-reference-inner {
+  width: min(560px, 90vw);
+  max-height: 80vh;
+  overflow-y: auto;
+  background: var(--panel);
+  border: 1px solid #2c3037;
+  padding: 28px 30px;
+}
+
+.move-reference-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 18px;
+}
+
+.move-reference-title {
+  font-family: var(--font-ui);
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.move-reference-close {
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-dim);
+  background: transparent;
+  border: 1px solid #2c3037;
+  padding: 6px 14px;
+  cursor: pointer;
+}
+
+.move-reference-close:hover {
+  color: var(--ink);
+}
+
+.move-reference-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 18px;
+}
+
+.move-reference-tab {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-dim);
+  background: transparent;
+  border: 1px solid #2c3037;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+.move-reference-tab.active {
+  color: var(--ink);
+  border-color: var(--ink);
+}
+
+.move-reference-row {
+  border-top: 1px solid #23262b;
+  padding: 12px 0;
+}
+
+.move-reference-row:first-child {
+  border-top: none;
+}
+
+.move-reference-name {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+  margin-bottom: 4px;
+}
+
+.move-reference-desc {
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--ink-dim);
+  line-height: 1.5;
+}
+
+.in-match-moves-btn {
+  position: fixed;
+  top: 14px;
+  right: 14px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-dim);
+  background: rgba(20, 23, 27, 0.85);
+  border: 1px solid #2c3037;
+  padding: 6px 12px;
+  cursor: pointer;
+  z-index: 40;
+}
+
+.in-match-moves-btn:hover {
+  color: var(--ink);
+}
+
+.in-match-moves-btn.hidden {
+  display: none;
+}
+
 /* Brief controls reminder at match start -- packages/app/src/ui/controls-hint.ts. */
 .controls-hint {
   position: fixed;
@@ -416,6 +542,10 @@ html, body {
   border-left-width: 2px;
 }
 
+.hud-list.dense .hud-card .slot-num {
+  font-size: 9px;
+}
+
 .hud-list.dense .hud-card .pct {
   font-size: 15px;
 }
@@ -430,6 +560,14 @@ html, body {
   border-left: 3px solid var(--ink-dim);
   padding: 10px 16px;
   min-width: 140px;
+}
+
+.hud-card .slot-num {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink-dim);
+  letter-spacing: 0.04em;
 }
 
 .hud-card .pct {

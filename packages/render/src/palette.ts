@@ -54,7 +54,19 @@ export const PALETTE = {
   itemOutline: 0x0b0d10,
   hazardFill: 0x5a5f66, // falling debris: cold grey rock
   hazardOutline: 0x0b0d10,
-  hazardWarning: 0xe8b23c, // telegraph marker, reuses the amber accent (not danger red, which means "already hurts you")
+  // Telegraph marker for "about to hurt you" (hazard/edge warning), as
+  // distinct from `danger` ("already hurting you", red). Was amber
+  // (0xe8b23c) until the 2026-09-09 colour-accessibility audit: amber and
+  // this palette's red collapse into very similar mid-tone yellows/oranges
+  // under protanopia and deuteranopia simulation (see the wiki page for
+  // the simulated screenshots), which is exactly the pair this project
+  // leans on hardest for "about to hurt you" vs "hurting you". Blue keeps
+  // clean separation from red across every common colour-vision
+  // deficiency, so the two severities never collapse into "which one was
+  // this again". Width/pulse-speed escalation (see fighter-sprite.ts's
+  // drawEdgeWarning) still carries the same information as a second,
+  // colour-independent channel.
+  hazardWarning: 0x4c9ed9,
 } as const;
 
 export const FONT_FAMILY = '"Iosevka", "JetBrains Mono", ui-monospace, monospace';

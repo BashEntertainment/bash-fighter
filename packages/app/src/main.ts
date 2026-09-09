@@ -9,9 +9,10 @@ import { SpectatorController } from './spectator/controller.ts';
 import { NetMatch, type ConnectionState } from './net-match.ts';
 import { MatchOverlay } from './ui/match-overlay.ts';
 import { ControlsHint } from './ui/controls-hint.ts';
+import { MoveReferencePanel } from './ui/move-reference-panel.ts';
 import { TouchControls } from './ui/touch-controls.ts';
 import { isTouchCapable } from '@bash-fighter/input';
-import { PLACEHOLDER_CHARACTER, resolveCharacterId } from '@bash-fighter/content';
+import { PLACEHOLDER_CHARACTER, resolveCharacterId, ALL_CHARACTERS } from '@bash-fighter/content';
 import type { ArenaBounds } from '@bash-fighter/render';
 import { AudioManager } from '@bash-fighter/audio';
 
@@ -124,6 +125,30 @@ onlineButton.textContent = 'Play online';
 // the end of the screen, below the local key bindings and off the bottom
 // of most viewports.
 (startScreen.root.querySelector('#primary-actions') ?? startScreen.root).appendChild(onlineButton);
+
+// Move reference (repo issue #5): reachable from the start screen at any
+// time, and from inside a match (bound below) without ending it.
+const movesPanel = new MoveReferencePanel(appRoot);
+const movesButton = document.createElement('button');
+movesButton.className = 'btn btn-plain';
+movesButton.id = 'moves-btn';
+movesButton.textContent = 'Move reference';
+movesButton.addEventListener('click', () => movesPanel.show(startScreen.selectedCharacterId));
+(startScreen.root.querySelector('#primary-actions') ?? startScreen.root).appendChild(movesButton);
+
+const inMatchMovesButton = document.createElement('button');
+inMatchMovesButton.id = 'in-match-moves-btn';
+inMatchMovesButton.className = 'in-match-moves-btn hidden';
+inMatchMovesButton.textContent = 'Moves (M)';
+inMatchMovesButton.addEventListener('click', () => movesPanel.show());
+appRoot.appendChild(inMatchMovesButton);
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'm' || e.key === 'M') {
+    if (movesPanel.isOpen) movesPanel.hide();
+    else movesPanel.show();
+  }
+});
+
 onlineButton.addEventListener('click', () => {
   void beginOnlineMatch();
 });
@@ -148,6 +173,7 @@ async function beginOnlineMatch(): Promise<void> {
   spectatorBanner.hide();
   matchOverlay.hide();
   hud.hide();
+      inMatchMovesButton.classList.add('hidden');
   touchControls.hide();
   const generation = ++matchGeneration;
 
@@ -192,6 +218,7 @@ async function beginOnlineMatch(): Promise<void> {
     },
     onMatchOver: (winnerIndex) => {
       hud.hide();
+      inMatchMovesButton.classList.add('hidden');
       touchControls.hide();
       matchOverlay.hide();
       audio.play('match_end');
@@ -229,10 +256,12 @@ async function beginOnlineMatch(): Promise<void> {
         controlsHint.maybeShow();
       }
       hud.show();
+      inMatchMovesButton.classList.remove('hidden');
       if (touchCapable) touchControls.show();
       hud.update(netMatch.currentSnapshots(), undefined, netMatch.localSlot());
     } else {
       hud.hide();
+      inMatchMovesButton.classList.add('hidden');
       touchControls.hide();
     }
     requestAnimationFrame(onlineHudTick);
@@ -259,6 +288,7 @@ async function beginMatch(): Promise<void> {
   spectatorBanner.hide();
   matchOverlay.hide();
   hud.show();
+      inMatchMovesButton.classList.remove('hidden');
   if (touchCapable) touchControls.show();
   controlsHint.maybeShow();
   const generation = ++matchGeneration;
@@ -274,10 +304,19 @@ async function beginMatch(): Promise<void> {
   // Player 1 (the local slot) gets the chosen character; slot 1 stays the
   // default placeholder -- this local harness is 2 human-controlled slots,
   // not bot-filled, so there is no bot roster to randomize here.
-  const localCharacters = [resolveCharacterId(startScreen.selectedCharacterId), PLACEHOLDER_CHARACTER];
+  // Dev/QA helper only: ?crowd20=1 fills local (offline, single-device)
+  // practice mode with all 8 characters cycled to fill 20 slots, so a
+  // crowded match can be screenshotted without needing 20 real
+  // connections. Local practice mode never touches the netcode, so this
+  // has no effect on real online matches.
+  const __DEBUG_CROWD = new URLSearchParams(location.search).get('crowd20') === '1';
+  const localCharacters = __DEBUG_CROWD
+    ? Array.from({ length: 20 }, (_, i) => (ALL_CHARACTERS[i % ALL_CHARACTERS.length] as (typeof ALL_CHARACTERS)[number]).character)
+    : [resolveCharacterId(startScreen.selectedCharacterId), PLACEHOLDER_CHARACTER];
   const localMatch: Match = new Match(canvasRoot, localCharacters, Date.now() & 0xffffffff, {
     onMatchOver: (winnerIndex) => {
       hud.hide();
+      inMatchMovesButton.classList.add('hidden');
       touchControls.hide();
       audio.play('match_end');
       winScreen.show(winnerIndex, 0);

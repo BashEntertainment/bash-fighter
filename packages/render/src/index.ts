@@ -383,6 +383,7 @@ export class Renderer {
         character: char,
         anim: char ? resolveAnimation(char.name) : undefined,
         isLocalPlayer: frame.localPlayerIndex === i,
+        slotNumber: i,
         edgeDangerFrac:
           frame.localPlayerIndex === i ? computeEdgeDangerFrac(f.x, f.y, stageForDraw) : undefined,
       });

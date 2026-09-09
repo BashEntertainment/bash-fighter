@@ -54,7 +54,7 @@ export class Hud {
     while (this.cards.length < count) {
       const card = document.createElement('div');
       card.className = 'hud-card';
-      card.innerHTML = '<div class="pct">0%</div><div class="stocks"></div>';
+      card.innerHTML = '<div class="slot-num"></div><div class="pct">0%</div><div class="stocks"></div>';
       this.cards.push(card);
       this.list.appendChild(card);
     }
@@ -83,6 +83,8 @@ export class Hud {
       card.style.borderLeftColor = PLAYER_HEX[i % PLAYER_HEX.length] as string;
       const pctEl = card.querySelector('.pct') as HTMLDivElement;
       const stocksEl = card.querySelector('.stocks') as HTMLDivElement;
+      const numEl = card.querySelector('.slot-num') as HTMLDivElement;
+      numEl.textContent = '#' + String(i + 1);
       const pct = Math.round(fx.toFloat(s.percent));
       pctEl.textContent = `${pct}%`;
       pctEl.style.color = s.state === FighterStateId.DEAD ? '#666' : pct >= 100 ? PALETTE_DANGER_HEX : '';

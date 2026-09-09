@@ -4,8 +4,8 @@
 // world-scale set by the caller (camera zoom) -- the caller still does
 // `sprite.root.position.set(...)` and `sprite.root.scale.set(cam.scale)`
 // exactly as before; everything pose-driven lives on the `body` child.
-import { Container, Graphics } from 'pixi.js';
-import { PALETTE } from './palette.ts';
+import { Container, Graphics, Text } from 'pixi.js';
+import { PALETTE, FONT_FAMILY } from './palette.ts';
 import { drawSilhouetteForCharacter } from './silhouette-dispatch.ts';
 import { BODY_WIDTH, BODY_HEIGHT, HEAD_RADIUS } from './fighter-shape-placeholder.ts';
 import { computePose, NEUTRAL_POSE, type Pose, type PoseInput } from './fighter-pose.ts';
@@ -42,6 +42,12 @@ export interface FighterVisualState {
    * crowd. Presentation-only -- never read by the sim, never sent over
    * the wire. */
   isLocalPlayer?: boolean;
+  /** This fighter's stable slot index (0-based), shown as a small number
+   * badge above every fighter, always -- a colour-independent identity
+   * cue so a colour-blind player (or anyone in a 20-fighter crowd) can
+   * confirm who they're looking at without relying on hue at all. See
+   * the accessibility audit on the wiki for why this exists. */
+  slotNumber?: number;
   /** 0 = comfortably inside the blast-zone boundary, 1 = at or past it.
    * Only ever meaningful (and only ever set by the app layer) for the
    * local player's own fighter -- this is the "you personally are about
@@ -82,6 +88,11 @@ export class FighterSprite {
 
   private readonly localMarker = new Graphics();
   private readonly edgeWarning = new Graphics();
+  private readonly numberBadge = new Text({
+    text: '',
+    style: { fontFamily: FONT_FAMILY, fontSize: 11, fill: PALETTE.hud, fontWeight: '700' },
+  });
+  private lastSlotNumber: number | undefined;
 
   // Render-only pulse clock for the edge-danger ring (see draw()). Ticks
   // once per draw() call, never read by the sim, never synced across
@@ -95,6 +106,9 @@ export class FighterSprite {
     this.root.addChild(this.shieldGfx);
     this.root.addChild(this.localMarker);
     this.root.addChild(this.edgeWarning);
+    this.numberBadge.anchor.set(0.5, 1);
+    this.numberBadge.resolution = 2;
+    this.root.addChild(this.numberBadge);
   }
 
   draw(state: FighterVisualState): void {
@@ -154,6 +168,23 @@ export class FighterSprite {
     this.edgeWarning.clear();
     const danger = state.isLocalPlayer ? (state.edgeDangerFrac ?? 0) : 0;
     if (danger > 0) this.drawEdgeWarning(danger);
+
+    // Slot-number badge: drawn for every fighter, always -- see the
+    // FighterVisualState.slotNumber comment. This is the one identity
+    // cue in the whole rendering vocabulary that carries no colour
+    // information at all, so it survives every colour-vision variant
+    // simulated for the accessibility pass, and it also just helps in a
+    // crowd of 20 same-shaped bots.
+    if (state.slotNumber !== undefined) {
+      if (this.lastSlotNumber !== state.slotNumber) {
+        this.numberBadge.text = String(state.slotNumber + 1);
+        this.lastSlotNumber = state.slotNumber;
+      }
+      this.numberBadge.visible = true;
+      this.numberBadge.position.set(0, -(BODY_HEIGHT + HEAD_RADIUS * 2 + 22));
+    } else {
+      this.numberBadge.visible = false;
+    }
   }
 
   /** A small downward-pointing chevron hovering above the fighter's head,

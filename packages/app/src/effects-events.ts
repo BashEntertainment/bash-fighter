@@ -1,8 +1,9 @@
 // Observes sim state (via FighterSnapshot diffs the app layer already
 // takes for the HUD/stock-lost callbacks) and turns it into presentation
-// events: hits, blocks, eliminations, item pickups/uses. This is the one
-// place that decides "something worth feeling just happened" -- the
-// renderer and audio layer only ever react to what comes out of here.
+// events: hits, blocks, eliminations, item pickups/uses, and match-flow
+// milestones (final two, victory). This is the one place that decides
+// "something worth feeling just happened" -- the renderer and audio
+// layer only ever react to what comes out of here.
 //
 // Deliberately reads snapshots only, never sim internals: it must work
 // identically whether fed from a local Match's per-tick snapshots or from
@@ -14,12 +15,14 @@
 import { fixed as fx, FighterStateId, type FighterSnapshot, type ItemSnapshot } from '@bash-fighter/sim';
 
 export type EffectEvent =
-  | { type: 'hit'; fighterIndex: number; strength: number; strong: boolean; medium: boolean; dirX: number; dirY: number }
+  | { type: 'hit'; fighterIndex: number; strength: number; strong: boolean; medium: boolean; damage: number; dirX: number; dirY: number }
   | { type: 'block'; fighterIndex: number }
   | { type: 'eliminated'; fighterIndex: number }
   | { type: 'itemPickup'; fighterIndex: number }
   | { type: 'itemUse'; slot: number }
-  | { type: 'jump'; fighterIndex: number };
+  | { type: 'jump'; fighterIndex: number }
+  | { type: 'finalTwo' }
+  | { type: 'victory'; fighterIndex: number };
 
 // Knockback magnitudes for the placeholder character's four moves run
 // roughly 3-19 (see the Combat Model wiki page); percent-gain-per-hit is a
@@ -34,6 +37,15 @@ function damageToStrength(damageDelta: number): number {
   // Normalize against the heaviest known move (10 dmg) with generous
   // headroom for items (Bash Bomb is 18) so nothing clips silently.
   return Math.max(0, Math.min(1, damageDelta / 18));
+}
+
+function countAlive(snapshots: readonly FighterSnapshot[], numFighters: number): number {
+  let alive = 0;
+  for (let i = 0; i < numFighters; i++) {
+    const f = snapshots[i];
+    if (f && !f.eliminated) alive++;
+  }
+  return alive;
 }
 
 /** Diffs two fighter-snapshot arrays for the same numFighters and
@@ -75,6 +87,7 @@ export function detectFighterEvents(
         strength,
         strong,
         medium,
+        damage: damageDelta,
         dirX: dirX / len,
         dirY: dirY / len,
       });
@@ -92,7 +105,25 @@ export function detectFighterEvents(
     if (p.grounded && !c.grounded && fx.toFloat(c.velY) > 0.5 && damageDelta <= 0.05) {
       events.push({ type: 'jump', fighterIndex: i });
     }
+
+    // Victory: this fighter's placement just resolved to 1st (winner).
+    if (p.placement !== 1 && c.placement === 1) {
+      events.push({ type: 'victory', fighterIndex: i });
+    }
   }
+
+  // Final two: alive count just dropped from >2 to exactly 2. Only
+  // meaningful for matches that started with more than 2 fighters (a
+  // 1v1 match is "final two" from tick zero -- not a milestone worth a
+  // sound there).
+  if (numFighters > 2) {
+    const aliveBefore = countAlive(prev, numFighters);
+    const aliveAfter = countAlive(curr, numFighters);
+    if (aliveBefore > 2 && aliveAfter === 2) {
+      events.push({ type: 'finalTwo' });
+    }
+  }
+
   return events;
 }
 

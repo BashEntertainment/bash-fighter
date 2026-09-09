@@ -14,17 +14,32 @@ import type { Pose } from './fighter-pose.ts';
 // (was 12x20) so the overall bounding box is unambiguously the smallest
 // pointed shape in the cast, clear of Zephyr's squat-but-wider silhouette
 // even with all colour and internal detail removed.
-const HALF_W = 5;
+const HALF_W = 6;
 const HEIGHT = 15;
 
+// 2026-09-09 spike pass: with colour stripped, Voltling's smooth convex
+// diamond read too close to Wisp's smooth convex lens. Fixed by making
+// the body itself jagged -- concave notches down each side -- instead of
+// a plain diamond, so Voltling reads as a spiky bolt and Wisp stays a
+// smooth floating lens; the two shape families no longer overlap.
 export function drawVoltlingSilhouette(g: Graphics, tint: number, facing: 1 | -1, pose: Pose): void {
-  // Body: a narrow diamond (kite shape) instead of a capsule or circle --
-  // sharp angular silhouette reads as "fast/fragile", the opposite feel
-  // of Ballast's soft round weight.
   const topY = -HEIGHT;
   const botY = 0;
-  const midY = -HEIGHT * 0.55;
-  g.poly([0, topY, HALF_W, midY, 0, botY, -HALF_W, midY]);
+  const midY = topY + HEIGHT * 0.55;
+  g.poly([
+    0, topY,
+    HALF_W * 0.55, topY + HEIGHT * 0.22,
+    HALF_W * 0.2, topY + HEIGHT * 0.3,
+    HALF_W, topY + HEIGHT * 0.55,
+    HALF_W * 0.25, topY + HEIGHT * 0.66,
+    HALF_W * 0.6, botY,
+    0, topY + HEIGHT * 0.8,
+    -HALF_W * 0.6, botY,
+    -HALF_W * 0.25, topY + HEIGHT * 0.66,
+    -HALF_W, topY + HEIGHT * 0.55,
+    -HALF_W * 0.2, topY + HEIGHT * 0.3,
+    -HALF_W * 0.55, topY + HEIGHT * 0.22,
+  ]);
   g.fill({ color: tint });
   g.stroke({ color: PALETTE.fighterOutline, width: 2 });
 

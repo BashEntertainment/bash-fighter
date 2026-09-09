@@ -31,10 +31,22 @@ if (!isolationFlag) {
 }
 
 const args = process.argv.slice(2);
+console.error(
+  `run-tests.mjs: Node ${process.versions.node}, using flag ${isolationFlag}`,
+);
 const result = spawnSync(
   process.execPath,
   ['--test', isolationFlag, ...args],
   { stdio: 'inherit' },
 );
+
+if (result.error) {
+  console.log(`::error::run-tests.mjs spawn error: ${result.error.stack || result.error}`);
+}
+if (result.status !== 0) {
+  console.log(
+    `::error::run-tests.mjs: node --test ${isolationFlag} exited ${result.status} (signal ${result.signal}) on Node ${process.versions.node}`,
+  );
+}
 
 process.exit(result.status ?? 1);

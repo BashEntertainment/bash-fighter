@@ -360,6 +360,7 @@ export class NetMatch {
     if (this.characters.length !== numFighters) {
       this.characters = new Array(numFighters).fill(PLACEHOLDER_CHARACTER);
     }
+    this.effectsBridge.setContext(this.characters, this.mySlot);
     this.localSim = createMatchSim(seed, numFighters, undefined, this.characters);
     this.renderSim = createMatchSim(seed, numFighters, undefined, this.characters);
     // The server always builds matches via createMatchSim too (see

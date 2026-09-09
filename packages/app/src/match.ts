@@ -21,6 +21,7 @@ import { InputManager } from '@bash-fighter/input';
 import {
   Renderer,
   arenaDataToStageBounds,
+  computeEdgeDangerFrac,
   type RenderFighterState,
   type RenderItemState,
   type RenderHazardState,
@@ -83,6 +84,11 @@ export class Match {
   private lastStocks: number[];
   private over = false;
   private pendingEvents: import('./effects-events.ts').EffectEvent[] = [];
+  // Debounce for the boundary-danger sound: only fires on the falling->
+  // rising crossing of the threshold, never continuously while inside the
+  // danger band (a player standing at the edge would otherwise get a
+  // sound every frame -- the opposite of useful signal).
+  private edgeDangerSounding = false;
   private readonly hashBuf: StateBuffer;
 
   private readonly numFighters: number;
@@ -100,6 +106,9 @@ export class Match {
     this.characters = characters;
     this.audio = audio;
     this.effectsBridge = new EffectsAudioBridge(audio);
+    // Local play: the human is always fighter slot 0 by convention (the
+    // rest are bots) -- see InputManager wiring below.
+    this.effectsBridge.setContext(characters, 0);
     this.sim = sim ?? new Sim(seed, characters.length, characters);
     this.numFighters = this.sim.numFighters;
     this.renderer = new Renderer(arenaDataToStageBounds(this.sim.getArena()));
@@ -260,6 +269,25 @@ export class Match {
 
     const { hitEffects, eliminationEffects } = this.effectsBridge.consume(this.pendingEvents, this.currSnapshots);
     this.pendingEvents = [];
+
+    // Hazard/boundary danger cue for the local player only (index 0 in
+    // local play -- see the EffectsAudioBridge.setContext call above).
+    // Debounced on the threshold crossing so it announces "you're now in
+    // danger", not a continuous alarm.
+    const localSnap = this.currSnapshots[0];
+    if (localSnap && !localSnap.eliminated) {
+      const liveBounds = currentArenaBounds(this.sim.getCurrentBlastRect());
+      const danger = computeEdgeDangerFrac(fx.toFloat(localSnap.posX), fx.toFloat(localSnap.posY), {
+        platforms: [],
+        blastMinX: liveBounds.minX,
+        blastMaxX: liveBounds.maxX,
+        blastMinY: liveBounds.minY,
+        blastMaxY: liveBounds.maxY,
+      });
+      const inDanger = danger > 0.6;
+      if (inDanger && !this.edgeDangerSounding) this.audio.playHazardWarning(true);
+      this.edgeDangerSounding = inDanger;
+    }
 
     // Blast-zone shrink: local 2-human matches (this class) previously
     // never told the Renderer about the live/shrinking rect at all, so

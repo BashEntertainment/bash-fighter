@@ -166,7 +166,7 @@ const EDGE_WARN_DISTANCE_WORLD = 55;
  * player standing near a corner is close to two edges. Cheap: four
  * subtractions and a min/max, called once per frame for the local
  * player only (never for the other 19 fighters). */
-function computeEdgeDangerFrac(x: number, y: number, stage: StageBounds): number {
+export function computeEdgeDangerFrac(x: number, y: number, stage: StageBounds): number {
   const distLeft = x - stage.blastMinX;
   const distRight = stage.blastMaxX - x;
   const distBottom = y - stage.blastMinY;

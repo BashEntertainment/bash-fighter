@@ -28,6 +28,18 @@ export interface StageBounds {
   blastMaxY: number;
 }
 
+/** Where the blast-zone boundary will be at a fixed lookahead from now
+ * (see PREVIEW_LOOKAHEAD_TICKS in the app layer). Lets a player see the
+ * boundary they need to react to, not just the one they're already at.
+ * Optional and separate from StageBounds because callers without a live
+ * shrink schedule (menus, tests) have nothing to put here. */
+ export interface BlastPreview {
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+}
+
 // How thick the platform slab reads, in world units — scales with the
 // camera like everything else, so it stays proportionally chunky whether
 // we're zoomed into a 400-unit stage or a much bigger one later.
@@ -39,6 +51,7 @@ export function drawStage(
   cam: CameraView,
   viewWidth: number,
   viewHeight: number,
+  preview?: BlastPreview | null,
 ): void {
   g.clear();
 
@@ -57,6 +70,33 @@ export function drawStage(
   g.rect(insideTL.x, insideTL.y, insideBR.x - insideTL.x, insideBR.y - insideTL.y);
   g.fill({ color: PALETTE.background });
 
+  // Anticipation band: the strip of ground that is currently safe but
+  // will be outside the boundary by the time `preview` is reached (see
+  // PREVIEW_LOOKAHEAD_TICKS in the app layer). Drawn as a low-alpha amber
+  // fill between the current boundary and the future one, then punched
+  // back out to background colour inside the future boundary -- same
+  // outer/inner overlay technique as the blast-zone wash above, so it's
+  // just two more rects, not a shader or a mask. Skipped entirely once
+  // the future boundary is (numerically) the same as the current one --
+  // late in a match the shrink has already finished and a zero-width
+  // band would just be visual noise.
+  const hasPreview =
+    !!preview &&
+    (Math.abs(preview.minX - bounds.blastMinX) > 0.5 ||
+      Math.abs(preview.maxX - bounds.blastMaxX) > 0.5 ||
+      Math.abs(preview.minY - bounds.blastMinY) > 0.5 ||
+      Math.abs(preview.maxY - bounds.blastMaxY) > 0.5);
+
+  if (hasPreview && preview) {
+    g.rect(insideTL.x, insideTL.y, insideBR.x - insideTL.x, insideBR.y - insideTL.y);
+    g.fill({ color: PALETTE.hazardWarning, alpha: 0.16 });
+
+    const futureTL = worldToScreen(preview.minX, preview.maxY, cam, viewWidth, viewHeight);
+    const futureBR = worldToScreen(preview.maxX, preview.minY, cam, viewWidth, viewHeight);
+    g.rect(futureTL.x, futureTL.y, futureBR.x - futureTL.x, futureBR.y - futureTL.y);
+    g.fill({ color: PALETTE.background });
+  }
+
   // Solid platform slabs, each drawn with a visible top edge and a
   // darker underside so every one reads as a floating platform, not a
   // flat line. A single-slab stage is just this loop running once.
@@ -74,11 +114,29 @@ export function drawStage(
     g.fill({ color: PALETTE.stageEdge });
   }
 
+  // Future boundary: a fainter amber dashed line at where the current
+  // boundary is headed. Drawn before the current (red) boundary so the
+  // red line stays visually on top -- "this already hurts you" always
+  // reads stronger than "this will hurt you soon".
+  if (hasPreview && preview) {
+    const futureTL = worldToScreen(preview.minX, preview.maxY, cam, viewWidth, viewHeight);
+    const futureBR = worldToScreen(preview.maxX, preview.minY, cam, viewWidth, viewHeight);
+    drawDashedRect(
+      g,
+      futureTL.x,
+      futureTL.y,
+      futureBR.x - futureTL.x,
+      futureBR.y - futureTL.y,
+      PALETTE.hazardWarning,
+      0.55,
+    );
+  }
+
   // Blast zone boundary: dashed rectangle around the whole arena.
-  drawDashedRect(g, insideTL.x, insideTL.y, insideBR.x - insideTL.x, insideBR.y - insideTL.y, PALETTE.danger);
+  drawDashedRect(g, insideTL.x, insideTL.y, insideBR.x - insideTL.x, insideBR.y - insideTL.y, PALETTE.danger, 0.8);
 }
 
-function drawDashedRect(g: Graphics, x: number, y: number, w: number, h: number, color: number): void {
+function drawDashedRect(g: Graphics, x: number, y: number, w: number, h: number, color: number, alpha: number): void {
   const dash = 10;
   const gap = 8;
   const segments: [number, number, number, number][] = [
@@ -99,5 +157,5 @@ function drawDashedRect(g: Graphics, x: number, y: number, w: number, h: number,
       g.lineTo(x0 + dx * t1, y0 + dy * t1);
     }
   }
-  g.stroke({ color, width: 2, alpha: 0.8 });
+  g.stroke({ color, width: 2, alpha });
 }

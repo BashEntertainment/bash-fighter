@@ -31,6 +31,7 @@ import { FixedTimestepLoop } from './loop.ts';
 import { AudioManager } from '@bash-fighter/audio';
 import { detectFighterEvents, detectItemEvents } from './effects-events.ts';
 import { EffectsAudioBridge } from './effects-audio.ts';
+import { currentArenaBounds, previewArenaBounds } from './arena-preview.ts';
 
 // Item HELD state id (mirrors packages/sim/src/sim.ts's private ItemState
 // enum: 0=world, 1=held, 2=thrown, 3=armed). Not exported by the sim
@@ -260,6 +261,17 @@ export class Match {
     const { hitEffects, eliminationEffects } = this.effectsBridge.consume(this.pendingEvents, this.currSnapshots);
     this.pendingEvents = [];
 
+    // Blast-zone shrink: local 2-human matches (this class) previously
+    // never told the Renderer about the live/shrinking rect at all, so
+    // it always drew the arena's original, never-shrinking footprint --
+    // the arena-shrink sim logic ran correctly underneath but nothing
+    // ever became visible. aliveCount comes from the snapshots already
+    // built above rather than a new Sim method, since the sim's own
+    // aliveCount() is private and this is exactly the count it would
+    // return.
+    const aliveCount = this.currSnapshots.filter((s) => !s.eliminated).length;
+    const blastRect = this.sim.getCurrentBlastRect();
+
     const frame: RenderFrame = {
       fighters,
       characters: this.characters,
@@ -269,6 +281,14 @@ export class Match {
       hash: this.currentHash(),
       hitEffects,
       eliminationEffects,
+      liveArenaBounds: currentArenaBounds(blastRect),
+      previewArenaBounds: previewArenaBounds(
+        this.sim.getArena(),
+        this.sim.getTick(),
+        aliveCount,
+        this.numFighters,
+        this.sim.getMatchSettings(),
+      ),
     };
     this.renderer.render(this.events.transformFrame ? this.events.transformFrame(frame) : frame);
   }

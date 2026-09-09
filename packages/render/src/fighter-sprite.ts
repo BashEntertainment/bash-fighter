@@ -42,6 +42,15 @@ export interface FighterVisualState {
    * crowd. Presentation-only -- never read by the sim, never sent over
    * the wire. */
   isLocalPlayer?: boolean;
+  /** 0 = comfortably inside the blast-zone boundary, 1 = at or past it.
+   * Only ever meaningful (and only ever set by the app layer) for the
+   * local player's own fighter -- this is the "you personally are about
+   * to die" cue, deliberately not a generic screen-wide effect, so a
+   * player connects the warning to their own position on the stage
+   * rather than a vignette they have to interpret. Presentation-only:
+   * derived from the already-broadcast blast rect and fighter position,
+   * never fed back into the sim. */
+  edgeDangerFrac?: number;
 }
 
 // World units, not pixels — the root container is scaled by the camera's
@@ -72,12 +81,20 @@ export class FighterSprite {
   private stateTicks = 0;
 
   private readonly localMarker = new Graphics();
+  private readonly edgeWarning = new Graphics();
+
+  // Render-only pulse clock for the edge-danger ring (see draw()). Ticks
+  // once per draw() call, never read by the sim, never synced across
+  // clients -- purely local screen timing, same category as stateTicks
+  // above.
+  private pulseTicks = 0;
 
   constructor(playerIndex: number) {
     this.bodyColor = PALETTE.playerColors[playerIndex % PALETTE.playerColors.length] as number;
     this.root.addChild(this.body);
     this.root.addChild(this.shieldGfx);
     this.root.addChild(this.localMarker);
+    this.root.addChild(this.edgeWarning);
   }
 
   draw(state: FighterVisualState): void {
@@ -132,6 +149,11 @@ export class FighterSprite {
 
     this.localMarker.clear();
     if (state.isLocalPlayer) this.drawLocalMarker();
+
+    this.pulseTicks += 1;
+    this.edgeWarning.clear();
+    const danger = state.isLocalPlayer ? (state.edgeDangerFrac ?? 0) : 0;
+    if (danger > 0) this.drawEdgeWarning(danger);
   }
 
   /** A small downward-pointing chevron hovering above the fighter's head,
@@ -146,6 +168,26 @@ export class FighterSprite {
     m.fill({ color: PALETTE.hud });
     m.circle(0, -1, BODY_WIDTH * 0.85);
     m.stroke({ color: PALETTE.hud, width: 2, alpha: 0.9 });
+  }
+
+  /** Pulsing ring around the local player's own fighter as they approach,
+   * then cross, the blast-zone boundary. `danger` is 0..1: rises from 0
+   * starting a fixed world-distance out from the boundary, hits 1 right
+   * at the line, and stays 1 while actually outside it (still taking
+   * blast-zone damage). Colour shifts amber -> red and the pulse speeds
+   * up as danger rises, so the escalation itself carries information,
+   * not just a static icon. Tied to the fighter's own screen position
+   * (not a full-screen flash) so a player in a 20-fighter crowd knows
+   * unambiguously that it's *them* the warning is about. */
+  private drawEdgeWarning(danger: number): void {
+    const clamped = Math.min(1, danger);
+    const color = clamped < 1 ? PALETTE.hazardWarning : PALETTE.danger;
+    const pulseHz = 1.5 + clamped * 3.5; // calmer near the threshold, frantic once outside
+    const pulse = 0.5 + 0.5 * Math.sin(this.pulseTicks * (pulseHz * 0.1));
+    const radius = BODY_WIDTH * 1.35;
+    const alpha = 0.35 + 0.45 * clamped + 0.2 * pulse * clamped;
+    this.edgeWarning.circle(0, -BODY_HEIGHT / 2, radius);
+    this.edgeWarning.stroke({ color, width: 3 + 2 * clamped, alpha });
   }
 
   private drawShieldBubble(state: FighterVisualState): void {

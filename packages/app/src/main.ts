@@ -285,7 +285,7 @@ async function beginMatch(): Promise<void> {
       }
 
       if (!currentSpectator.isActive) {
-        return { ...frame, fighters };
+        return { ...frame, fighters, localPlayerIndex: LOCAL_SLOT };
       }
 
       const now = performance.now();
@@ -302,7 +302,7 @@ async function beginMatch(): Promise<void> {
         dtSeconds,
       });
 
-      return { ...frame, fighters, liveArenaBounds: arena, cameraOverride };
+      return { ...frame, fighters, liveArenaBounds: arena, cameraOverride, localPlayerIndex: LOCAL_SLOT };
     },
   }, undefined, audio);
   match = localMatch;

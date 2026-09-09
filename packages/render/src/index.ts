@@ -99,6 +99,13 @@ export interface RenderFrame {
    * draw and frame instead of the static stage bounds. Falls back to the
    * Renderer's static StageBounds-derived arena when omitted. */
   liveArenaBounds?: ArenaBounds;
+  /** Where the blast-zone boundary will be at a fixed lookahead (app
+   * layer decides how far ahead -- see PREVIEW_LOOKAHEAD_TICKS in
+   * packages/app). Drawn as a fainter amber preview line/band so a
+   * player can see the boundary they need to react to, not just the one
+   * they're already at. Omit or null when the mode has no shrink, or
+   * once the shrink has already fully closed. */
+  previewArenaBounds?: ArenaBounds | null;
   /** When set, the renderer paints with this exact camera instead of
    * computing its own fit-everyone camera. This is how the app layer's
    * spectator camera (follow / overview / smoothed) takes over — the
@@ -143,6 +150,31 @@ function mainGroundY(stage: StageBounds): number {
 }
 
 const PLAYER_COLOR_COUNT = PALETTE.playerColors.length;
+
+// How far inside the current blast-zone boundary the local player's own
+// edge-danger ring (fighter-sprite.ts's drawEdgeWarning) starts ramping
+// up. World units, not pixels, so it scales correctly as the boundary
+// shrinks. Picked against the default arena's ~260/120-unit half-extents
+// and the ~55%-of-original final shrink size (packages/sim/src/
+// arena-shrink.ts's FINAL_SHRINK_FRACTION): 55 units is close enough to
+// the edge that it doesn't fire mid-stage, but far enough to give a
+// player time to react even once the arena has mostly closed.
+const EDGE_WARN_DISTANCE_WORLD = 55;
+
+/** 0 = comfortably inside the boundary, 1 = at or past it. Distance is to
+ * the *nearest* edge of the current (not preview) blast rect, since a
+ * player standing near a corner is close to two edges. Cheap: four
+ * subtractions and a min/max, called once per frame for the local
+ * player only (never for the other 19 fighters). */
+function computeEdgeDangerFrac(x: number, y: number, stage: StageBounds): number {
+  const distLeft = x - stage.blastMinX;
+  const distRight = stage.blastMaxX - x;
+  const distBottom = y - stage.blastMinY;
+  const distTop = stage.blastMaxY - y;
+  const nearest = Math.min(distLeft, distRight, distBottom, distTop);
+  if (nearest <= 0) return 1; // already outside on at least one axis
+  return Math.max(0, 1 - nearest / EDGE_WARN_DISTANCE_WORLD);
+}
 
 export class Renderer {
   readonly app = new Application();
@@ -323,7 +355,7 @@ export class Renderer {
     const shake = this.effects.update(dtMs);
     this.world.position.set(shake.x, shake.y);
 
-    drawStage(this.stageLayer, stageForDraw, cam, vw, vh);
+    drawStage(this.stageLayer, stageForDraw, cam, vw, vh, frame.previewArenaBounds);
 
     for (let i = 0; i < frame.fighters.length; i++) {
       const f = frame.fighters[i] as RenderFighterState;
@@ -351,6 +383,8 @@ export class Renderer {
         character: char,
         anim: char ? resolveAnimation(char.name) : undefined,
         isLocalPlayer: frame.localPlayerIndex === i,
+        edgeDangerFrac:
+          frame.localPlayerIndex === i ? computeEdgeDangerFrac(f.x, f.y, stageForDraw) : undefined,
       });
     }
 

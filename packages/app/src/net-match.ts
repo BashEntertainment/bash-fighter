@@ -25,6 +25,7 @@ import {
   type RenderFrame,
   type StageBounds,
 } from '@bash-fighter/render';
+import { currentArenaBounds, previewArenaBounds } from './arena-preview.ts';
 
 // See packages/app/src/match.ts for why these mirror the sim's private
 // ItemState enum and the stylized hazard marker size instead of importing
@@ -303,6 +304,16 @@ export class NetMatch {
       case 'eliminated':
         if (msg.slot === this.mySlot && !this.spectating) {
           this.spectating = true;
+          // Once we're eliminated there is nothing left for *this* seat to
+          // resume into -- the match plays on for everyone else, but our
+          // token now only reclaims a spectator view of a match we're about
+          // to leave. Clicking "Play again" from the elimination overlay
+          // opens a brand new NetMatch; without clearing this here, its
+          // initial `hello` replays the stale token, the server correctly
+          // rejects it (the seat is gone), and the player lands on a
+          // disconnected screen instead of a fresh lobby. Same fix as
+          // matchEnd below, just triggered earlier.
+          this.setResumeToken(null);
           this.events.onStateChange?.('spectating', `placement ${msg.placement}`);
           this.events.onEliminated?.(msg.placement, this.numFighters);
         }
@@ -586,6 +597,14 @@ export class NetMatch {
       hitEffects: this.pendingHitEffects,
       eliminationEffects: this.pendingEliminationEffects,
       localPlayerIndex: !this.spectating && this.mySlot >= 0 ? this.mySlot : undefined,
+      liveArenaBounds: currentArenaBounds(this.renderSim.getCurrentBlastRect()),
+      previewArenaBounds: previewArenaBounds(
+        this.renderSim.getArena(),
+        this.currSnapTick,
+        fighters.filter((f) => !f.eliminated).length,
+        this.numFighters,
+        this.renderSim.getMatchSettings(),
+      ),
     };
     this.pendingHitEffects = [];
     this.pendingEliminationEffects = [];

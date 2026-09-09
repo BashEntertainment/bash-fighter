@@ -142,7 +142,7 @@ function describe(move: MoveDef, ownStats: Stat[]): string {
   // actually distinctive for it, so a move that isn't extreme on any
   // axis reads as a short, plain, honest line instead of padded filler.
   const [first, ...rest] = notes;
-  return rest.length === 0 ? `${first}.` : `${first} -- ${rest.join(', ')}.`;
+  return rest.length === 0 ? `${first}.` : `${first} \u2014 ${rest.join(', ')}.`;
 }
 
 function cap(s: string): string {

@@ -64,54 +64,46 @@ test('SimMatchAdapter: liveArenaBounds tracks the sim blast rect, including shri
   assert.ok(Number.isFinite(bounds.minX) && Number.isFinite(bounds.maxX));
 });
 
-test('SimMatchAdapter: reflects elimination, placement, and koCount when the collapsing arena catches fighters outside the safe zone', () => {
-  // Custom arena: spawn points at x=+-200, inside the *initial* blast zone
-  // (+-260) but outside the *fully-shrunk* one (65% of 260 = 169 as of the
-  // 2026-09-09 arena-shrink cascade fix — see
-  // [[Arena Collapse Cascade: Why Matches End With Nobody Left 2026-09-09]],
-  // FINAL_SHRINK_FRACTION raised from 0.55 to 0.65). With
-  // shrinkFullyClosedTick=1 the arena is fully closed by tick 1, so a
-  // fighter standing still at its spawn point is caught outside the safe
-  // zone almost immediately — exercising the real elimination path
-  // (computeCurrentBlastRect -> checkBlastZone), just compressed in time
-  // rather than testing a different mechanism.
+test('SimMatchAdapter: a fighter standing on the platform is never eliminated by an instantly-fully-shrunk boundary, no matter how tight the schedule', () => {
+  // REVISED 2026-09-09 for the arena-shrink rework (see wiki "Arena
+  // Collapse Cascade: Why Matches End With Nobody Left 2026-09-09" and
+  // "Arena Shrink Rework: Fighting Decides Matches 2026-09-09"). The old
+  // version of this test *intentionally* built a platform wider than the
+  // blast zone and asserted the shrunk boundary swept over it, eliminating
+  // a fighter standing still on solid ground — that was the very defect
+  // the rework fixes, so that assertion is now the wrong thing to test for.
+  // This version keeps the platform narrower than the blast zone and
+  // drives shrinkFullyClosedTick down to 1 (instant full closure): every
+  // fighter still standing on the platform must survive regardless, because
+  // computeSafeExtents() derives its floor from the platform's own bounding
+  // box, not a hand-picked fraction. (A fighter cannot walk or spawn past a
+  // platform's edge while grounded -- the ground-collision clamp in sim.ts
+  // that another agent owns prevents it -- so "off the platform" is not a
+  // reachable state to also assert on here; the arena-shrink unit tests and
+  // the passive-player bot test cover boundary elimination once the field
+  // has actually thinned.)
   const arena: ArenaData = {
     name: 'test-shrink-arena',
-    platforms: [{ minX: fx.fromInt(-400), maxX: fx.fromInt(400), y: fx.fromInt(0) }],
+    platforms: [{ minX: fx.fromInt(-100), maxX: fx.fromInt(100), y: fx.fromInt(0) }],
     blastMinX: fx.fromInt(-260),
     blastMaxX: fx.fromInt(260),
     blastMinY: fx.fromInt(-260),
     blastMaxY: fx.fromInt(260),
     spawnPoints: [
-      { x: fx.fromInt(200), y: fx.fromInt(0) },
-      { x: fx.fromInt(-200), y: fx.fromInt(0) },
+      { x: fx.fromInt(60), y: fx.fromInt(0) },
+      { x: fx.fromInt(-60), y: fx.fromInt(0) },
     ],
   };
   const sim = new Sim(4, N, undefined, arena, { shrinkFullyClosedTick: 1 });
   const inputs = idleInputs(N);
-  let ticks = 0;
   const maxTicks = 200;
-  while (!sim.isMatchOver() && ticks < maxTicks) {
-    sim.advance(inputs);
-    ticks++;
-  }
+  for (let t = 0; t < maxTicks; t++) sim.advance(inputs);
   const adapter = new SimMatchAdapter(makeMatchLike(sim) as never);
   adapter.update();
 
-  assert.ok(ticks < maxTicks, `match should end from arena shrink within ${maxTicks} ticks, took ${ticks}`);
-
-  let eliminatedCount = 0;
-  let sawPlacement1 = false;
   for (let i = 0; i < N; i++) {
     const st = adapter.status(i);
-    if (st.eliminated) {
-      eliminatedCount++;
-      assert.ok(st.eliminationTick !== null && st.eliminationTick >= 0);
-      assert.ok(st.placement !== null && st.placement >= 1 && st.placement <= N);
-    }
-    if (st.placement === 1) sawPlacement1 = true;
+    assert.equal(st.eliminated, false, `fighter ${i} standing on the platform was eliminated by an instantly-shrunk boundary`);
   }
-  assert.ok(eliminatedCount >= N - 1, 'match being over means at most one survivor remains');
-  assert.ok(sawPlacement1, 'the winner (or last eliminated) must have placement 1');
-  assert.equal(adapter.isMatchOver(), true);
+  assert.equal(adapter.isMatchOver(), false, 'the whole field standing safely on the platform means the match is not over');
 });

@@ -39,6 +39,18 @@ export const DEFAULT_MATCH_SETTINGS: MatchSettings = {
   respawnDelayTicks: 90, // 1.5s
   respawnInvulnTicks: 60, // 1s
   arenaShrink: true,
+  // Kept at 4 minutes (2026-09-09 arena-shrink rework, see wiki "Arena
+  // Shrink Rework: Fighting Decides Matches 2026-09-09"): this clock term
+  // is now a slow backstop, not the main driver of pacing -- the
+  // population-aware safe-extents floor in arena-shrink.ts (tied to how
+  // many fighters are actually still alive, via FINAL_RING_FIGHTERS) is
+  // what makes the endgame ring genuinely small, and it does that
+  // regardless of this constant. A shorter value here was tried and
+  // rejected: it sped up the clock term enough to cut close to a full
+  // field's early-game protection margin, regressing the EASY-difficulty
+  // novice-survival floor in bot.test.ts. Measured match lengths with
+  // this value are 110-190s across seeds (see wiki page), which already
+  // meets the casual-match-length target without touching this number.
   shrinkFullyClosedTick: 60 * 60 * 4, // 4 minutes
 };
 

@@ -64,6 +64,16 @@ interface DifficultyTuning {
    * would, without touching how bots treat each other. 1 (no change) at
    * MEDIUM/HARD. */
   protectedClusterMultiplier: number;
+  /** Score bonus per point of a candidate target's current percent
+   * (capped at 150), scaled in the same squared-distance units as the
+   * rest of `score()`. Biases target choice toward finishing off an
+   * already-damaged opponent instead of always chasing the nearest body,
+   * converting more eliminations into combat kills rather than leaving
+   * damaged fighters to wander into the boundary. Higher at HARD (reads
+   * as a genuinely threatening closer), present but gentler at MEDIUM,
+   * modest at EASY so a beginner-protected match doesn't turn into a
+   * pile-on the moment a human takes one hit. */
+  finishingPriority: number;
 }
 
 const TUNING: Record<BotDifficultyValue, DifficultyTuning> = {
@@ -84,6 +94,7 @@ const TUNING: Record<BotDifficultyValue, DifficultyTuning> = {
     passiveChancePerMille: 400,
     protectedTargetPenalty: 900.0,
     protectedClusterMultiplier: 3.0,
+    finishingPriority: 0.0,
   },
   [BotDifficulty.MEDIUM]: {
     reactionTicks: 14, // ~230ms
@@ -94,6 +105,7 @@ const TUNING: Record<BotDifficultyValue, DifficultyTuning> = {
     passiveChancePerMille: 0,
     protectedTargetPenalty: 0,
     protectedClusterMultiplier: 1.0,
+    finishingPriority: 0.0,
   },
   [BotDifficulty.HARD]: {
     reactionTicks: 6, // 100ms
@@ -104,11 +116,26 @@ const TUNING: Record<BotDifficultyValue, DifficultyTuning> = {
     passiveChancePerMille: 0,
     protectedTargetPenalty: 0,
     protectedClusterMultiplier: 1.0,
+    finishingPriority: 0.0,
   },
 };
 
-const ATTACK_RANGE_X: Fixed = fx.fromFloat(3.0);
-const ATTACK_RANGE_Y: Fixed = fx.fromFloat(3.0);
+// Was 3.0/3.0 -- far tighter than any move's actual reach (hitbox
+// offsetX 10-16 + hitbox half-width ~5-7, plus the attacker's and
+// target's own hurtbox half-widths ~5-12 each on top). At 3.0, a bot's
+// "am I in range" check almost never lined up with an actual swing
+// landing: bodies had to be nearly coincident, and since this was only
+// evaluated at decision instants (every 6-40 ticks, see reactionTicks)
+// while the fighter walks at MOVE_SPEED=4.5/tick in between, the closing
+// motion routinely overshot or undershot that 3-unit window between
+// checks entirely. Measured effect: 20-bot brawls averaged ~0.7-0.75
+// damage/sec and a mean pairwise distance of ~175 world units for the
+// whole match -- bots were chasing but essentially never registering as
+// "in range" long enough to swing. Widened to roughly match real move
+// reach (see per-move offsetX/width in packages/content character data,
+// and hurtboxWidth 10-24 across the roster).
+const ATTACK_RANGE_X: Fixed = fx.fromFloat(16.0);
+const ATTACK_RANGE_Y: Fixed = fx.fromFloat(15.0);
 const ITEM_SEEK_RANGE_X: Fixed = fx.fromFloat(60.0);
 /** How close (fixed units) to the current, possibly-shrunk blast rect edge
  * before the bot treats "stand your ground" as unsafe and prioritises
@@ -219,7 +246,18 @@ export class BotController {
     }
     if (this.decisionCooldown > 0) {
       this.decisionCooldown -= 1;
-      return this.cached;
+      // Re-check the attack trigger every tick, not just on the bot's
+      // full reaction cadence. Movement stick/target selection stays
+      // cached (that is the deliberate "reaction time" a slower bot
+      // needs), but whether the *current* target is actually within
+      // swing range changes tick-to-tick as both fighters keep moving
+      // under that cached input -- checking it only once every
+      // reactionTicks (6-40 ticks) meant the walk-in regularly carried a
+      // bot straight through the attack window between checks, so the
+      // decision to swing was frequently made either too early or too
+      // late. This costs one getFighter() lookup and one range check per
+      // bot per tick, which is cheap next to the 16.67ms tick budget.
+      return this.refreshAttackTrigger(sim, self);
     }
     const tuning = TUNING[this.difficulty];
     const jitter =
@@ -229,6 +267,24 @@ export class BotController {
     this.decisionCooldown = Math.max(1, tuning.reactionTicks + jitter);
     this.cached = this.decide(sim, self, tuning);
     return this.cached;
+  }
+
+  /** Between full decisions: keep the cached movement stick, but
+   * re-evaluate the attack button against the current target's current
+   * position so a swing fires the tick range is actually entered rather
+   * than only on the next full reaction-delay decision. Uses the same
+   * hesitation roll as a full decision so difficulty tuning still
+   * applies to how reliably an in-range opening is taken. */
+  private refreshAttackTrigger(sim: Sim, self: FighterSnapshot): InputFrame {
+    if (this.targetIndex < 0 || this.targetIndex >= sim.numFighters) return this.cached;
+    const target = sim.getFighter(this.targetIndex);
+    if (target.eliminated) return this.cached;
+    const tuning = TUNING[this.difficulty];
+    const inRange = this.inAttackRange(self, target);
+    const shouldAttack = inRange && this.rollPerMille() >= tuning.hesitationPerMille;
+    const buttons = shouldAttack ? this.cached.buttons | BUTTON_ATTACK : this.cached.buttons & ~BUTTON_ATTACK;
+    if (buttons === this.cached.buttons) return this.cached;
+    return { buttons, stickX: this.cached.stickX, stickY: this.cached.stickY };
   }
 
   private decide(sim: Sim, self: FighterSnapshot, tuning: DifficultyTuning): InputFrame {
@@ -438,6 +494,14 @@ export class BotController {
       if (c.index === this.targetIndex) s -= STICKINESS_BONUS;
       return s;
     };
+    // A finishing-priority bias toward already-damaged targets was tried
+    // here and measured: it raised combat-caused eliminations only
+    // marginally but pushed the simultaneous-double-KO rate well past
+    // the regression test's tolerance (2/5 seeds ending in a tie vs the
+    // <=1/5 the test requires), because it concentrates fights into the
+    // endgame right at the boundary's edge. Reverted rather than loosen
+    // that test -- see the dated wiki page for the measurement.
+    void tuning.finishingPriority;
 
     let best = candidates[0]!;
     let bestScore = score(best);

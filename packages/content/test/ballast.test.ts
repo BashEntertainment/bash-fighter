@@ -109,7 +109,9 @@ describe('Sim: Ballast moveset', () => {
     // overall magnitude ratio is a blend, not exactly the weightTerm ratio
     // -- check against the formula directly instead of against the raw
     // weightTerm ratio.
-    const growthTerm = fx.toFloat(kbGrowth) * (fx.toFloat(damage) + fx.toFloat(percentAfterHit) / 2);
+    // KB_GROWTH_SCALE (1.3) uniformly scales the percent-based growth term for every
+    // character -- see 2026-09-09 rebalance in [[Bot Combat Engagement Fix 2026-09-09]] follow-up.
+    const growthTerm = fx.toFloat(kbGrowth) * (fx.toFloat(damage) + fx.toFloat(percentAfterHit) / 2) * 1.3;
     const expectedBallast = fx.toFloat(baseKb) + growthTerm * (150 / (140 + 50));
     const expectedPlaceholder = fx.toFloat(baseKb) + growthTerm * (150 / (100 + 50));
     assert.ok(Math.abs(fx.toFloat(magOnBallast) - expectedBallast) < 0.02);

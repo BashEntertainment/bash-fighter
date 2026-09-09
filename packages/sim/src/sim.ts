@@ -724,11 +724,33 @@ export class Sim {
     // the alive count tightens the ring the same tick for everyone still
     // in play (deterministic function of tick + alive count, see
     // arena-shrink.ts; stored back into state so save/load carries it).
-    const rect = computeCurrentBlastRect(this.arena, this.tick, this.aliveCount(), this.numFighters, this.settings);
-    this.blastMinX = rect.minX;
-    this.blastMaxX = rect.maxX;
-    this.blastMinY = rect.minY;
-    this.blastMaxY = rect.maxY;
+    // Rate-limit the ring's *movement*, not just its target: without this,
+    // a burst of eliminations (e.g. two fighters trading a double-KO) can
+    // drop the alive count enough that the population-aware safe extents
+    // in arena-shrink.ts jump straight to a much smaller target on the
+    // very next tick, instantly stranding everyone else outside it -- the
+    // "arena collapse cascade" (see wiki "Arena Collapse Cascade: Why
+    // Matches End With Nobody Left"). The ring is meant to be pressure,
+    // not an executioner: a fighter standing in what was safe ground a
+    // moment ago must get a real window to see the ring move and react,
+    // not be killed by a discontinuity. MAX_SHRINK_STEP caps how far any
+    // one edge can move in a single 60Hz tick; the schedule in
+    // arena-shrink.ts still decides the *target*, this only smooths the
+    // approach to it -- 0.75 units/tick = 45 units/sec, comfortably
+    // faster than the schedule's steady-state closing speed (ordinary
+    // play unaffected) but slow enough that even the largest single-tick
+    // jump in target takes several real seconds to fully arrive.
+    const target = computeCurrentBlastRect(this.arena, this.tick, this.aliveCount(), this.numFighters, this.settings);
+    const maxStep: Fixed = fx.fromFloat(0.75);
+    const stepToward = (prev: Fixed, next: Fixed): Fixed => {
+      if ((next as number) > (prev as number)) return fx.min(next, fx.add(prev, maxStep));
+      if ((next as number) < (prev as number)) return fx.max(next, fx.sub(prev, maxStep));
+      return next;
+    };
+    this.blastMinX = stepToward(this.blastMinX, target.minX);
+    this.blastMaxX = stepToward(this.blastMaxX, target.maxX);
+    this.blastMinY = stepToward(this.blastMinY, target.minY);
+    this.blastMaxY = stepToward(this.blastMaxY, target.maxY);
     // Items and hazards (this task's items 1/2): world/held/thrown/armed
     // item physics and use-effects, then hazard fall/damage, then the two
     // PRNG-driven spawn attempts — all after combat/blast-zone resolution

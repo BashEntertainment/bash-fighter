@@ -20,7 +20,18 @@ export const HITSTUN_PER_MAGNITUDE: Fixed = fx.fromFloat(0.6);
 export const MIN_HITSTUN_TICKS = 2;
 export const MAX_HITSTUN_TICKS = 240;
 
-/** magnitude = baseKb + kbGrowth * (damage + percentAfterHit / 2) * (150 / (weight + 50)) */
+// Uniform multiplier on the *percent-scaled* portion of knockback only
+// (never on baseKnockback). Applied identically to every character, so the
+// authored per-move base/growth numbers and the existing weight-based
+// scaling (150/(weight+50)) keep the roster's relative spread (light
+// fighters still fly further than heavy ones, in the same ratio as before)
+// -- this only raises how hard a landed, percent-scaled hit finishes
+// someone, so combat can end matches before the ring does. 1.3 chosen as
+// a moderate first step: see wiki page "Bot Combat Engagement Fix
+// 2026-09-09" follow-up for before/after measurement.
+export const KB_GROWTH_SCALE: Fixed = fx.fromFloat(1.3);
+
+/** magnitude = baseKb + KB_GROWTH_SCALE * kbGrowth * (damage + percentAfterHit / 2) * (150 / (weight + 50)) */
 export function computeKnockbackMagnitude(
   damage: Fixed,
   percentAfterHit: Fixed,
@@ -30,7 +41,7 @@ export function computeKnockbackMagnitude(
 ): Fixed {
   const weightTerm = fx.div(WEIGHT_NUM, fx.add(weight, WEIGHT_OFFSET));
   const percentTerm = fx.add(damage, fx.div(percentAfterHit, PERCENT_DIVISOR));
-  const scaled = fx.mul(knockbackGrowth, percentTerm);
+  const scaled = fx.mul(fx.mul(knockbackGrowth, percentTerm), KB_GROWTH_SCALE);
   return fx.add(baseKnockback, fx.mul(scaled, weightTerm));
 }
 

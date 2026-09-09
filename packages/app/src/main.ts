@@ -88,6 +88,16 @@ const controlsHint = new ControlsHint(appRoot);
 const touchControls = new TouchControls(appRoot);
 const touchCapable = isTouchCapable();
 
+// Test-only hook: lets an automated harness (dispatching real PointerEvents
+// at the touch controls) read the live sim state to assert the fighter
+// actually moved/acted, rather than merely that a handler fired. Only
+// wired up when the touch-capability override is in effect (see
+// packages/input/src/touch.ts), so it never exists for real users.
+if (touchCapable) {
+  (window as unknown as { __bashTestMatch?: () => Match | null }).__bashTestMatch = () => match;
+  (window as unknown as { __bashTestTouch?: () => TouchControls }).__bashTestTouch = () => touchControls;
+}
+
 const startScreen = new StartScreen(appRoot, () => {
   void beginMatch();
 });
@@ -108,6 +118,7 @@ function setNetStatus(state: ConnectionState, detail?: string): void {
     waiting: 'Waiting for players…',
     'in-match': 'In match',
     spectating: 'Spectating',
+    'match-complete': 'Match complete',
     disconnected: 'Disconnected',
     reconnecting: 'Reconnecting…',
     error: 'Connection error',
@@ -221,6 +232,15 @@ async function beginOnlineMatch(): Promise<void> {
       inMatchMovesButton.classList.add('hidden');
       touchControls.hide();
       matchOverlay.hide();
+      // Regression fix (task #28104): a player who was still "in-match"
+      // when the match ended (as opposed to being eliminated earlier and
+      // switched to 'spectating') never got a state update here, so the
+      // connection chip sat on the stale "In match" label underneath the
+      // win screen for the rest of the session. onStateChange only fires
+      // from NetMatch on connection/lobby/elimination transitions, none
+      // of which cover "the match as a whole just ended" for a fighter
+      // who survived to see it happen.
+      setNetStatus('match-complete');
       audio.play('match_end');
       winScreen.show(winnerIndex, netMatch?.localSlot());
     },

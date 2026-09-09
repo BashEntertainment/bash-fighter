@@ -56,6 +56,7 @@ export type ConnectionState =
   | 'waiting'
   | 'in-match'
   | 'spectating'
+  | 'match-complete'
   | 'disconnected'
   | 'reconnecting'
   | 'error';

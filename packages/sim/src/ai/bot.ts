@@ -134,6 +134,12 @@ const STICKINESS_BONUS = 400.0;
  * roughly 1.8-3.2s per lock — long enough to actually fight, short enough
  * that pairs don't orbit for a whole match. */
 const TARGET_LOCK_DECISIONS = 8;
+/** Alive-fighter count at/above which protectedIndices scoring runs at
+ * full strength; below this it fades linearly to 0 protection at 2
+ * fighters left (see pickTarget). Keeps the beginner-safety purpose of
+ * protection intact for the crowded opening of a match while closing the
+ * late-game "stand still, stay protected, coast to a win" exploit. */
+const LATE_GAME_ALIVE_THRESHOLD = 6;
 const ONE = fx.ONE;
 const EMPTY_SET: ReadonlySet<number> = new Set();
 
@@ -250,6 +256,16 @@ export class BotController {
       // handles turning this into a real button-press edge.
       if (!self.grounded && self.jumpsUsed < MAX_JUMPS && self.velY < 0) {
         if (this.requestJump()) buttons |= BUTTON_JUMP;
+      }
+      // Retreating from the collapsing boundary must not mean "never
+      // fights again" -- a bot already in range of its target still gets
+      // a free swing on the way in (retreat direction wins the stick, the
+      // attack button is nearly free). Without this, a boundary-hugging
+      // endgame turns into everyone silently walking inward and no one
+      // ever getting eliminated by combat, which is its own kind of
+      // boring standstill and part of why a passive player could coast.
+      if (target && this.inAttackRange(self, target) && this.rollPerMille() >= tuning.hesitationPerMille) {
+        buttons |= BUTTON_ATTACK;
       }
     } else {
       // --- Item seeking: closest reachable world item, if any. ---
@@ -395,10 +411,30 @@ export class BotController {
     };
 
     const tuning = TUNING[this.difficulty];
+    // Protection (see protectedTargetPenalty/protectedClusterMultiplier)
+    // exists to stop a fresh beginner being swarmed in the opening seconds
+    // of a 20-fighter match. Left at full strength for the whole match, it
+    // does the opposite job late: once the field has thinned and the
+    // arena has collapsed down to its endgame size, a protected fighter
+    // who simply stands still is nearly unattackable by EASY bots and
+    // (per unsafeDirection) never leaves the safe zone either, so they
+    // coast to a win without ever being at real risk -- the exact bug
+    // this task fixes. Fade protection out as fewer fighters remain: full
+    // strength while the lobby is still crowded (>= LATE_GAME_ALIVE_THRESHOLD
+    // alive), linearly down to none once only two fighters are left, so
+    // the beginner-safety purpose survives the opening flurry but a
+    // turtling player is fair game again by the time the match is close
+    // to over.
+    const aliveTotal = candidates.length + 1;
+    const protectionScale =
+      aliveTotal >= LATE_GAME_ALIVE_THRESHOLD
+        ? 1.0
+        : Math.max(0, aliveTotal - 2) / (LATE_GAME_ALIVE_THRESHOLD - 2);
     const score = (c: FighterSnapshot & { index: number }): number => {
-      const clusterMult = this.protectedIndices.has(c.index) ? tuning.protectedClusterMultiplier : 1.0;
+      const isProtected = this.protectedIndices.has(c.index);
+      const clusterMult = isProtected ? 1.0 + (tuning.protectedClusterMultiplier - 1.0) * protectionScale : 1.0;
       let s = distSqTo(c) + density(c) * CLUSTER_PENALTY * clusterMult;
-      if (this.protectedIndices.has(c.index)) s += tuning.protectedTargetPenalty;
+      if (isProtected) s += tuning.protectedTargetPenalty * protectionScale;
       if (c.index === this.targetIndex) s -= STICKINESS_BONUS;
       return s;
     };

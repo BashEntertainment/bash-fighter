@@ -155,3 +155,86 @@ describe('EASY difficulty: novice survival against 19 bots', () => {
     );
   });
 });
+
+describe('Task #28104: protectedIndices must fade as the field thins', () => {
+  // Regression for the exploit: EASY bots' protectedIndices aversion
+  // (added for the first-match beginner experience, see wiki "First-
+  // Match Experience Problem") never faded with match progress. Combined
+  // with the pre-existing, separately-tracked "Arena Collapse Cascade"
+  // geometry bug (the collapsing boundary sweeping over solid ground
+  // faster than anyone can retreat, out of scope here), a passive player
+  // who simply never left the safe center was both never worth attacking
+  // next to closer unprotected fighters *and* never at risk. This test
+  // isolates the protection-fade piece: at a full lobby, a bot strongly
+  // prefers a closer protected candidate's farther unprotected rival
+  // (today's behaviour); once the field has thinned to a handful of
+  // fighters, the bias must be weak enough that raw distance decides
+  // instead, so a protected target sitting right next to a bot is no
+  // longer untouchable.
+  /** Forces pickTarget's periodic weighted-random re-roll out of the way
+   * so the returned target reflects the plain score comparison
+   * deterministically -- the re-roll exists to keep a big lobby from
+   * settling into fixed pairs and is irrelevant to what this test is
+   * checking (whether protection fades with alive count). */
+  function suppressReroll(bot: BotController): void {
+    (bot as unknown as { targetLockDecisions: number }).targetLockDecisions = 999;
+  }
+
+  function buildScenario(totalFighters: number, protectedDist: number, unprotectedDist: number): Sim {
+    // Fighter 1 is the bot under test, at the origin. Fighter 0
+    // (protected) sits `protectedDist` to its right; fighter 2
+    // (unprotected) sits `unprotectedDist` to its left. Any filler
+    // fighters (3+) are parked far off on a wide platform so they never
+    // win on distance.
+    const wideArena: ArenaData = {
+      name: 'test-protection-fade',
+      platforms: [{ minX: fx.fromInt(-3000), maxX: fx.fromInt(3000), y: fx.fromInt(0) }],
+      blastMinX: fx.fromInt(-4000),
+      blastMaxX: fx.fromInt(4000),
+      blastMinY: fx.fromInt(-2000),
+      blastMaxY: fx.fromInt(2000),
+      spawnPoints: [
+        { x: fx.fromInt(protectedDist), y: fx.fromInt(0) },
+        { x: fx.fromInt(0), y: fx.fromInt(0) },
+        { x: fx.fromInt(-unprotectedDist), y: fx.fromInt(0) },
+        ...Array.from({ length: Math.max(0, totalFighters - 3) }, (_, i) => ({
+          x: fx.fromInt(2000 + i),
+          y: fx.fromInt(0),
+        })),
+      ],
+    };
+    return new Sim(MATCH_SEED, totalFighters, undefined, wideArena, {
+      winCondition: 'stocks',
+      startingStocks: 5,
+      arenaShrink: false,
+    });
+  }
+
+  it('prefers the farther unprotected candidate over a close protected one at full lobby size', () => {
+    // distSq(protected) = 7^2 = 49, +900 full penalty = 949.
+    // distSq(unprotected) = 20^2 = 400. 400 < 949: unprotected wins.
+    const sim = buildScenario(6, 7, 20);
+    const protectedSlots = new Set([0]);
+    const bot = new BotController(1, BotDifficulty.EASY, deriveBotSeed(MATCH_SEED, 1), protectedSlots);
+    suppressReroll(bot);
+    const input = bot.nextInput(sim);
+    // Fighter 2 is to the left (negative x); moving toward it means a
+    // negative stickX.
+    assert.ok(fx.toFloat(input.stickX) < 0, `expected bot to move toward the farther unprotected fighter (negative stickX), got ${fx.toFloat(input.stickX)}`);
+  });
+
+  it('prefers the close protected candidate once the field has thinned', () => {
+    // Same close protected distance (49), but the unprotected candidate
+    // is placed far enough away (35^2 = 1225) that even the faded
+    // penalty (900 * 0.25 = 225, total 274) still beats it decisively.
+    const sim = buildScenario(3, 7, 35);
+    const protectedSlots = new Set([0]);
+    const bot = new BotController(1, BotDifficulty.EASY, deriveBotSeed(MATCH_SEED, 1), protectedSlots);
+    suppressReroll(bot);
+    const input = bot.nextInput(sim);
+    // Fighter 0 is to the right (positive x); with protection faded at
+    // this alive count, plain distance should win and the bot should
+    // move toward it (positive stickX).
+    assert.ok(fx.toFloat(input.stickX) > 0, `expected bot to move toward the close protected fighter (positive stickX) once the field thinned, got ${fx.toFloat(input.stickX)}`);
+  });
+});

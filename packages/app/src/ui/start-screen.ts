@@ -26,7 +26,7 @@ export class StartScreen {
     this.root.id = 'start-screen';
     this.root.innerHTML = `
       <div class="wordmark">BASH FIGHTER</div>
-      <div class="subtitle">Twenty fighters, one arena, last one standing. Free and open source, plays in your browser.</div>
+      <div class="subtitle">Twenty fighters, a different arena every match, last one standing. Free and open source, plays in your browser.</div>
       <div class="roster-label">Choose your fighter</div>
       <div id="roster-mount"></div>
       <div id="primary-actions"></div>

@@ -13,6 +13,7 @@
 // process.allowedNodeEnvironmentFlags instead. See CONTRIBUTING.md
 // "Running the tests" for the memory numbers this flag fixes.
 import { spawnSync } from 'node:child_process';
+import process from 'node:process';
 
 // Feature-detect the flag name instead of guessing from the Node version
 // string: Node 22.8-ish renamed --experimental-test-isolation to the
@@ -42,16 +43,36 @@ const args = process.argv.slice(2);
 console.error(
   `run-tests.mjs: Node ${process.versions.node}, using flag ${isolationFlag}`,
 );
+// Capture output (not just inherit) so that on failure we can surface the
+// actual failing test names as ::error:: annotations — useful in CI where
+// nobody signed in can otherwise see the raw job log.
 const result = spawnSync(
   process.execPath,
   ['--test', isolationFlag, ...args],
-  { stdio: 'inherit' },
+  { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 },
 );
+if (result.stdout) process.stdout.write(result.stdout);
+if (result.stderr) process.stderr.write(result.stderr);
 
 if (result.error) {
   console.log(`::error::run-tests.mjs spawn error: ${result.error.stack || result.error}`);
 }
 if (result.status !== 0) {
+  const combined = `${result.stdout || ''}\n${result.stderr || ''}`;
+  const notOkLines = combined
+    .split('\n')
+    .filter((l) => l.startsWith('not ok'))
+    .slice(0, 20);
+  for (const line of notOkLines) {
+    console.log(`::error::${line.replace(/\r$/, '')}`);
+  }
+  if (notOkLines.length === 0) {
+    // No "not ok" TAP lines found — the failure is likely before tests ran
+    // at all (a crash, an unhandled rejection, a bad glob). Surface the
+    // last chunk of output instead.
+    const tail = combined.trim().split('\n').slice(-15).join(' | ');
+    console.log(`::error::run-tests.mjs: no TAP failures found; tail of output: ${tail}`);
+  }
   console.log(
     `::error::run-tests.mjs: node --test ${isolationFlag} exited ${result.status} (signal ${result.signal}) on Node ${process.versions.node}`,
   );

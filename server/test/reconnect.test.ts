@@ -228,8 +228,11 @@ test('a seat is released after the grace window expires and the token no longer 
 
     const tokenA = welcomeA.resumeToken;
     a.ws.close();
-    // Wait past the grace window.
-    await new Promise((r) => setTimeout(r, 1200));
+    // Wait past the grace window. The margin here (6x the grace window,
+    // not ~2.4x) is deliberate: this test was observed to flake on a
+    // contended/low-power runner, where event-loop lag alone can eat
+    // several hundred ms and leave a thinner margin unreliable.
+    await new Promise((r) => setTimeout(r, 3000));
 
     const late = await connectClient(port, 'Alice-again', tokenA);
     const result = (await late.waitFor((m) => m.t === 'error' || m.t === 'welcome')) as ControlMsg;

@@ -27,28 +27,32 @@ export class StartScreen {
     this.root.className = 'screen';
     this.root.id = 'start-screen';
     this.root.innerHTML = `
-      <div class="wordmark">BASH FIGHTER</div>
-      <div class="subtitle">Twenty fighters, a different arena every match, last one standing. Free and open source, plays in your browser.</div>
-      <div class="roster-label">Choose your fighter</div>
-      <div id="roster-mount"></div>
-      <div id="primary-actions"></div>
-      <div class="hint">The arena shrinks as fighters are eliminated. Empty slots are filled by bots so a match always starts.</div>
-      <button class="btn btn-secondary" id="watch-replay-btn">Watch a replay</button>
-      <details class="local-play">
-        <summary>Play locally on one keyboard</summary>
-        <div class="select-row">
-          <div class="select-card p1">
-            <h3>Player 1</h3>
-            <pre class="bindings p1-bindings">${bindingLines(DEFAULT_P1_BINDING)}</pre>
+      <div class="hero">
+        <div class="wordmark">BASH FIGHTER</div>
+        <div class="subtitle">Twenty fighters, a different arena every match, last one standing. Free and open source, plays in your browser.</div>
+        <div id="primary-actions"></div>
+      </div>
+      <div class="below-fold">
+        <div class="roster-label">Choose your fighter</div>
+        <div id="roster-mount"></div>
+        <div class="hint">The arena shrinks as fighters are eliminated. Empty slots are filled by bots so a match always starts.</div>
+        <button class="btn btn-secondary" id="watch-replay-btn">Watch a replay</button>
+        <details class="local-play">
+          <summary>Play locally on one keyboard</summary>
+          <div class="select-row">
+            <div class="select-card p1">
+              <h3>Player 1</h3>
+              <pre class="bindings p1-bindings">${bindingLines(DEFAULT_P1_BINDING)}</pre>
+            </div>
+            <div class="select-card p2">
+              <h3>Player 2</h3>
+              <pre class="bindings p2-bindings">${bindingLines(DEFAULT_P2_BINDING)}</pre>
+            </div>
           </div>
-          <div class="select-card p2">
-            <h3>Player 2</h3>
-            <pre class="bindings p2-bindings">${bindingLines(DEFAULT_P2_BINDING)}</pre>
-          </div>
-        </div>
-        <button class="btn btn-secondary" id="start-btn">Start local match</button>
-        <div class="hint">Either player can plug in a gamepad to take over their slot. F3 toggles the debug overlay.</div>
-      </details>
+          <button class="btn btn-secondary" id="start-btn">Start local match</button>
+          <div class="hint">Either player can plug in a gamepad to take over their slot. F3 toggles the debug overlay.</div>
+        </details>
+      </div>
     `;
     parent.appendChild(this.root);
 

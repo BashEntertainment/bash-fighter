@@ -89,15 +89,22 @@ export function computeCamera(
   const halfViewWorldY = cfg.viewHeight / 2 / scale;
   let centerX = fCenterX;
   let centerY = fCenterY;
+  // Only pull the center away from the fighters when the arena is
+  // actually too small to let it sit freely (the view would otherwise
+  // show dead space beyond the arena edge). When the arena fits inside
+  // the view on an axis, keep centering on the fighters themselves --
+  // forcing the center to the arena's own midpoint here (the previous
+  // behaviour) is what produced a large empty band on stages whose
+  // floor is wider than it is tall relative to the screen: the X axis
+  // picks the binding scale, which leaves Y with slack, and snapping
+  // to the arena's vertical midpoint then frames empty sky above a
+  // field of fighters clustered on the ground instead of the ground
+  // itself.
   if (cfg.arena.maxX - cfg.arena.minX > halfViewWorldX * 2) {
     centerX = Math.min(Math.max(centerX, cfg.arena.minX + halfViewWorldX), cfg.arena.maxX - halfViewWorldX);
-  } else {
-    centerX = (cfg.arena.minX + cfg.arena.maxX) / 2;
   }
   if (cfg.arena.maxY - cfg.arena.minY > halfViewWorldY * 2) {
     centerY = Math.min(Math.max(centerY, cfg.arena.minY + halfViewWorldY), cfg.arena.maxY - halfViewWorldY);
-  } else {
-    centerY = (cfg.arena.minY + cfg.arena.maxY) / 2;
   }
 
   return { centerX, centerY, scale };

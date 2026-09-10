@@ -73,6 +73,17 @@ window.addEventListener(
   { once: true },
 );
 
+// Every fixed top-right overlay control (sound, and later the in-match
+// Controls/Moves buttons) lives in this one flex row instead of each
+// picking its own hardcoded `right` offset -- hardcoded offsets are what
+// let the Moves button and this mute button land exactly on top of each
+// other before. The row lays its children out left-to-right and wraps
+// if it ever runs out of width, so nothing can collide at any viewport
+// size.
+const topRightControls = document.createElement('div');
+topRightControls.id = 'top-right-controls';
+appRoot.appendChild(topRightControls);
+
 const muteButton = document.createElement('button');
 muteButton.id = 'mute-btn';
 muteButton.className = 'mute-btn';
@@ -86,7 +97,7 @@ muteButton.addEventListener('click', () => {
   audio.toggleMuted();
   refreshMuteLabel();
 });
-appRoot.appendChild(muteButton);
+topRightControls.appendChild(muteButton);
 
 const hud = new Hud(appRoot);
 const spectatorBanner = new SpectatorBanner(appRoot);
@@ -197,7 +208,7 @@ inMatchSettingsButton.id = 'in-match-settings-btn';
 inMatchSettingsButton.className = 'in-match-moves-btn hidden';
 inMatchSettingsButton.textContent = 'Controls (C)';
 inMatchSettingsButton.addEventListener('click', () => settingsPanel.show());
-appRoot.appendChild(inMatchSettingsButton);
+topRightControls.appendChild(inMatchSettingsButton);
 window.addEventListener('keydown', (e) => {
   if (e.key === 'c' || e.key === 'C') {
     if (settingsPanel.isOpen) settingsPanel.hide();
@@ -217,7 +228,7 @@ inMatchMovesButton.id = 'in-match-moves-btn';
 inMatchMovesButton.className = 'in-match-moves-btn hidden';
 inMatchMovesButton.textContent = 'Moves (M)';
 inMatchMovesButton.addEventListener('click', () => movesPanel.show());
-appRoot.appendChild(inMatchMovesButton);
+topRightControls.appendChild(inMatchMovesButton);
 window.addEventListener('keydown', (e) => {
   if (e.key === 'm' || e.key === 'M') {
     if (movesPanel.isOpen) movesPanel.hide();

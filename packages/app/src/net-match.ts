@@ -26,6 +26,7 @@ import {
   type StageBounds,
 } from '@bash-fighter/render';
 import { currentArenaBounds, previewArenaBounds } from './arena-preview.ts';
+import { resyncLocalTickAfterSnapshot } from './reconnect-resync.ts';
 
 // See packages/app/src/match.ts for why these mirror the sim's private
 // ItemState enum and the stylized hazard marker size instead of importing
@@ -504,6 +505,25 @@ export class NetMatch {
     // locally-buffered input newer than what the server has acked, so the
     // local fighter's predicted position stays correct instead of
     // snapping backwards every time a snapshot arrives.
+    //
+    // Resync guard (task #28231): startMatch() resets this.localTick to 0
+    // unconditionally, including on a resumed reconnect -- but a resume's
+    // first snapshot carries the real, large mid-match server tick. Without
+    // this guard, this.localTick (small, counting ticks-since-resume) stays
+    // permanently far behind snap.tick, so the loop below (`t <=
+    // this.localTick`) never executes again for the rest of the match: the
+    // local player's own prediction goes silently dead after any reconnect,
+    // and gets worse with every subsequent one. Found via
+    // scripts/reconnect-divergence-harness.mjs, which showed the replay
+    // window drifting to -52, -123, -192 ticks over three reconnect cycles
+    // with this guard absent, and pinned at 0 with it present. This does not
+    // touch remote fighters or eliminations (those always come straight
+    // from the authoritative snapshot via renderSim, never localSim), so it
+    // is a prediction/responsiveness regression, not the survivor-list
+    // divergence from the original report -- but it is real and it is a
+    // genuine consequence of the reconnect path the prior pass didn't
+    // exercise.
+    this.localTick = resyncLocalTickAfterSnapshot(this.localTick, snap.tick);
     this.localSim.loadState(snap.state);
     for (const tick of Array.from(this.inputHistory.keys())) {
       if (tick <= snap.ackedInputTick) this.inputHistory.delete(tick);

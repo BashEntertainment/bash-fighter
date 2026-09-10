@@ -14,7 +14,7 @@
 // other bug happened to make the connectivity tests above pass.
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { Sim } from '../src/sim.ts';
+import { Sim, FighterField } from '../src/sim.ts';
 import { makeInputFrame, BUTTON_ATTACK } from '../src/types.ts';
 import * as fx from '../src/math/fixed.ts';
 import { MoveId, moveTotalDuration, type CharacterData, type MoveDef } from '../src/moves/types.ts';
@@ -25,7 +25,7 @@ import { ALL_CHARACTERS } from '../../content/src/characters.ts';
 // precedent of reaching into the buffer directly rather than duplicating
 // sim internals).
 const F = { POS_X: 0, POS_Y: 1, VEL_X: 2, VEL_Y: 3, STATE: 4, FACING: 5, GROUNDED: 6 };
-const FIELD_COUNT = 26; // FighterField.FIELD_COUNT (kept in sync manually; see sim.ts)
+const FIELD_COUNT = FighterField.FIELD_COUNT; // imported, never hand-synced
 const STATE_ATTACK = 5; // FighterStateId.ATTACK — see entities/fighter.ts; avoided importing to keep this test decoupled from state numbering churn, value only used to *not* fight the sim (unused directly here).
 void STATE_ATTACK;
 

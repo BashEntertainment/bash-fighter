@@ -2,7 +2,7 @@
 // hit-ID dedup system, knockback, hitstun, shielding, stocks, and match end.
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { Sim } from '../src/sim.ts';
+import { Sim, FighterField } from '../src/sim.ts';
 import { makeInputFrame, BUTTON_ATTACK, BUTTON_SHIELD } from '../src/types.ts';
 import * as fx from '../src/math/fixed.ts';
 import { aabbOverlap, makeBoxCentered } from '../src/hitbox.ts';
@@ -193,7 +193,7 @@ describe('Sim: meteor knockback off-stage', () => {
     // separate question of whether an attack can connect at range.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const view = (sim as any).data as Int32Array;
-    const FIELD_COUNT = 26; // FighterField.FIELD_COUNT (kept in sync manually; see sim.ts)
+    const FIELD_COUNT = FighterField.FIELD_COUNT; // imported, never hand-synced
     const STATE = 4;
     const GROUNDED = 6;
     const POS_X = 0;

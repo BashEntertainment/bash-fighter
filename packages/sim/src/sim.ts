@@ -138,7 +138,7 @@ const HazardField = {
  * Per-fighter hit-dedup fields (LAST_HIT_FROM_0/1 in the 2-fighter version)
  * were pulled out into a separate N*N dedup table sized from the actual
  * fighter count (see Sim.dedupIndex) so this stride does not grow with N. */
-const FighterField = {
+export const FighterField = {
   POS_X: 0,
   POS_Y: 1,
   VEL_X: 2,

@@ -4,6 +4,7 @@
 // moment it's added to that package's roster, with no change here.
 import { ALL_CHARACTERS } from '@bash-fighter/content';
 import { renderCharacterIcon } from '@bash-fighter/render';
+import { moveReferenceFor } from '../move-reference-data.ts';
 
 // Deterministic per-id color, used both as the card's tint and as the fill
 // colour handed to renderCharacterIcon -- the icon is the character's own
@@ -22,11 +23,31 @@ export class CharacterSelect {
   readonly root: HTMLDivElement;
   private selectedId: string;
   private readonly cards = new Map<string, HTMLButtonElement>();
+  private readonly previewTitleEl: HTMLDivElement;
+  private readonly previewListEl: HTMLDivElement;
 
   constructor(parent: HTMLElement, defaultId: string, onChange: (id: string) => void) {
     this.root = document.createElement('div');
-    this.root.className = 'roster-row';
+    this.root.className = 'roster-select';
     this.root.id = 'character-select';
+
+    const row = document.createElement('div');
+    row.className = 'roster-row';
+
+    // Moveset preview: shows the moves of whichever card was most
+    // recently hovered/focused, falling back to the current selection, so
+    // a player can see what a character does before picking them without
+    // leaving this screen. Reuses the same data source and row shape as
+    // the in-match move reference panel (move-reference-data.ts) instead
+    // of duplicating move copy here.
+    const preview = document.createElement('div');
+    preview.className = 'roster-preview';
+    preview.innerHTML = `
+      <div class="roster-preview-title"></div>
+      <div class="roster-preview-list"></div>
+    `;
+    this.previewTitleEl = preview.querySelector('.roster-preview-title') as HTMLDivElement;
+    this.previewListEl = preview.querySelector('.roster-preview-list') as HTMLDivElement;
 
     for (const entry of ALL_CHARACTERS) {
       const card = document.createElement('button');
@@ -56,27 +77,57 @@ export class CharacterSelect {
 
       card.append(swatch, name, weight);
       card.addEventListener('click', () => this.select(entry.id, onChange));
+      // Preview updates on hover/keyboard-focus without changing the pick,
+      // so a player can flip through movesets before committing. Falls
+      // back to the selected character on mouseleave/blur rather than
+      // going blank.
+      card.addEventListener('mouseenter', () => this.renderPreview(entry.id));
+      card.addEventListener('focus', () => this.renderPreview(entry.id));
+      card.addEventListener('mouseleave', () => this.renderPreview(this.selectedId));
+      card.addEventListener('blur', () => this.renderPreview(this.selectedId));
       this.cards.set(entry.id, card);
-      this.root.appendChild(card);
+      row.appendChild(card);
     }
 
+    this.root.append(row, preview);
     parent.appendChild(this.root);
     // Fall back to the first roster entry if defaultId isn't known (e.g.
     // roster changed), so there is always a valid selection to start with.
     const initial = this.cards.has(defaultId) ? defaultId : (ALL_CHARACTERS[0]?.id ?? defaultId);
     this.selectedId = initial;
     this.applySelectionStyles();
+    this.renderPreview(initial);
   }
 
   private select(id: string, onChange: (id: string) => void): void {
-    if (id === this.selectedId) return;
-    this.selectedId = id;
-    this.applySelectionStyles();
-    onChange(id);
+    if (id !== this.selectedId) {
+      this.selectedId = id;
+      this.applySelectionStyles();
+      onChange(id);
+    }
+    this.renderPreview(id);
   }
 
   private applySelectionStyles(): void {
     for (const [cid, card] of this.cards) card.classList.toggle('selected', cid === this.selectedId);
+  }
+
+  private renderPreview(id: string): void {
+    const entry = ALL_CHARACTERS.find((e) => e.id === id);
+    if (!entry) return;
+    this.previewTitleEl.textContent = `${entry.character.name} — moves`;
+    const moves = moveReferenceFor(entry.character);
+    this.previewListEl.innerHTML = '';
+    for (const move of moves) {
+      const row = document.createElement('div');
+      row.className = 'roster-preview-row';
+      row.innerHTML = `
+        <div class="roster-preview-name">${move.name}</div>
+        <div class="roster-preview-input">${move.input}</div>
+        <div class="roster-preview-desc">${move.description}</div>
+      `;
+      this.previewListEl.appendChild(row);
+    }
   }
 
   get value(): string {

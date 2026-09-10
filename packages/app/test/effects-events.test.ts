@@ -31,6 +31,7 @@ function baseFighter(overrides: Partial<FighterSnapshot> = {}): FighterSnapshot 
     eliminatedTick: -1,
     placement: 0,
     jumpsUsed: 0,
+    inRingDanger: false,
     ...overrides,
   };
 }

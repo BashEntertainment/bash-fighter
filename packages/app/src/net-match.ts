@@ -114,6 +114,7 @@ function snapshotToRenderFighter(s: FighterSnapshot): RenderFighterState {
     shieldHealth: s.shieldHealth,
     hitstun: s.hitstun,
     eliminated: s.eliminated,
+    inRingDanger: s.inRingDanger,
   } as RenderFighterState;
 }
 
@@ -151,6 +152,7 @@ export class NetMatch {
   private characterId = DEFAULT_CHARACTER_ID;
   private characters: CharacterData[] = [];
   private mySlot = -1;
+  private ringDamageAudioCooldownTicks = 0;
   private spectating = false;
   private matchStarted = false;
   private over = false;
@@ -498,6 +500,18 @@ export class NetMatch {
         this.pendingHitEffects.push(...hitEffects);
         this.pendingEliminationEffects.push(...eliminationEffects);
       }
+      // Ring pressure (2026-09-10): alarm for the local player actually taking accumulating
+      // out-of-bounds damage. Throttled the same way as the local-match adapter so it reads as
+      // a damage pulse, not a drone.
+      if (this.mySlot >= 0) {
+        const mySnap = currF[this.mySlot];
+        if (this.ringDamageAudioCooldownTicks > 0) this.ringDamageAudioCooldownTicks -= 1;
+        if (mySnap && !mySnap.eliminated && mySnap.inRingDanger && this.ringDamageAudioCooldownTicks <= 0) {
+          this.audio.playRingDamage(true);
+          this.ringDamageAudioCooldownTicks = 18;
+        }
+      }
+
       this.renderSim.loadState(snap.state); // leave renderSim pointed at latest, as callers below expect
     }
 

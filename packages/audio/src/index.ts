@@ -449,6 +449,14 @@ export class AudioManager {
     this.playChirp(650, false, 0.15, isOwn ? 0.55 : 0.2, isOwn);
   }
 
+  /** Repeating low, harsh pulse for actually taking ring (out-of-bounds) damage, distinct from
+   * the single rising playHazardWarning chirp that announces crossing into danger. Caller
+   * throttles how often this fires (roughly once per 0.3s while inRingDanger stays true) so it
+   * reads as a damage-over-time alarm, not a continuous drone. */
+  playRingDamage(isOwn: boolean): void {
+    this.playTone(140, 0.12, isOwn ? 0.5 : 0.15, isOwn, 'sawtooth');
+  }
+
   /** Down to the final two fighters -- a distinct rising two-note cue,
    * played once. */
   playFinalTwo(): void {

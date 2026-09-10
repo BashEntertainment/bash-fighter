@@ -89,6 +89,7 @@ export class Match {
   // danger band (a player standing at the edge would otherwise get a
   // sound every frame -- the opposite of useful signal).
   private edgeDangerSounding = false;
+  private ringDamageAudioCooldownTicks = 0;
   private readonly hashBuf: StateBuffer;
 
   private readonly numFighters: number;
@@ -221,6 +222,8 @@ export class Match {
         stocks: curr.stocks,
         shieldHealth: curr.shieldHealth,
         hitstun: curr.hitstun,
+        eliminated: curr.eliminated,
+        inRingDanger: curr.inRingDanger,
       });
     }
     const items: RenderItemState[] = [];
@@ -295,6 +298,15 @@ export class Match {
       const inDanger = danger > 0.6;
       if (inDanger && !this.edgeDangerSounding) this.audio.playHazardWarning(true);
       this.edgeDangerSounding = inDanger;
+
+      // Ring pressure (2026-09-10): the local player is actually taking accumulating
+      // out-of-bounds damage, not just approaching the line. Distinct, throttled alarm so it
+      // reads as "you are being hurt, move now" rather than a continuous drone.
+      if (this.ringDamageAudioCooldownTicks > 0) this.ringDamageAudioCooldownTicks -= 1;
+      if (localSnap.inRingDanger && this.ringDamageAudioCooldownTicks <= 0) {
+        this.audio.playRingDamage(true);
+        this.ringDamageAudioCooldownTicks = 18; // ~0.3s at 60tps: audible as a pulse, not a drone
+      }
     }
 
     // Blast-zone shrink: local 2-human matches (this class) previously

@@ -41,6 +41,9 @@ export interface RenderFighterState {
   /** Match-level elimination (battle-royale "out"), distinct from the
    * sim's per-life DEAD state. An eliminated fighter is never drawn. */
   eliminated?: boolean;
+  /** Taking ring (out-of-bounds) damage this tick -- the 2026-09-10 pressure
+   * redesign. Drives the red pulse overlay in drawFighters. */
+  inRingDanger?: boolean;
 }
 
 /** One item's render-ready state: world-space floats, already read from

@@ -165,8 +165,26 @@ const FighterField = {
   JUMPS_USED: 23, // jumps taken since last grounded; reset to 0 on landing
   PREV_JUMP_HELD: 24, // 0/1: BUTTON_JUMP state last tick, for edge-triggering
   DROP_THROUGH_TIMER: 25, // ticks remaining to ignore 'pass-through' platforms, 0 = none
-  FIELD_COUNT: 26,
+  RING_DAMAGE_TICK: 26, // last tick this fighter took ring (out-of-bounds) damage, -1 if never
+  FIELD_COUNT: 27,
 } as const;
+
+/** Ring-pressure tuning (2026-09-10): the collapsing boundary no longer kills on contact. A
+ * fighter outside it takes rapid accumulating damage instead, which both threatens elimination
+ * on its own (via the hard backstop below) and, because knockback scales with percent, makes
+ * that fighter dramatically easier for anyone else to launch. The ring's job becomes making
+ * fighters vulnerable and pushing the field together; knockouts finish them. */
+/** Percent damage applied per tick to a fighter outside the safe (soft) boundary. At 60
+ * ticks/s this is 7.2%/s -- survivable for a couple of seconds, punishing to linger in. */
+const RING_DAMAGE_PER_TICK = fx.fromFloat(0.12);
+/** Extra distance beyond the soft boundary before the *hard* backstop (still an instant,
+ * contact kill) applies. This is the lethal backstop: it stops a damaged fighter who simply
+ * drifts outward forever from surviving on chip damage alone, without making the soft boundary
+ * itself an executioner. Kept generous so it is a rare last resort, not routine play. */
+const RING_HARD_MARGIN = fx.fromInt(90);
+/** Small constant inward nudge applied to velocity while taking ring damage -- what makes the
+ * ring push fighters together rather than just hurt them in place. */
+const RING_INWARD_PUSH = fx.fromFloat(0.35);
 
 /** Max jumps allowed per airborne phase: one grounded jump + one aerial
  * ("double") jump, matching standard platform-fighter convention. */
@@ -216,6 +234,7 @@ export interface FighterSnapshot {
   eliminatedTick: number; // -1 if not eliminated
   placement: number; // 0 until decided; 1 = winner
   jumpsUsed: number; // jumps taken since last grounded (0..MAX_JUMPS)
+  inRingDanger: boolean; // taking ring (out-of-bounds) damage this tick -- presentation hook
 }
 
 export interface ItemSnapshot {
@@ -376,6 +395,7 @@ export class Sim {
     d[base + FighterField.JUMPS_USED] = 0;
     d[base + FighterField.PREV_JUMP_HELD] = 0;
     d[base + FighterField.DROP_THROUGH_TIMER] = 0;
+    d[base + FighterField.RING_DAMAGE_TICK] = -1;
   }
 
   /** Mid-match life reset after a non-final KO: position/percent/shield
@@ -401,6 +421,7 @@ export class Sim {
     d[base + FighterField.JUMPS_USED] = 0;
     d[base + FighterField.PREV_JUMP_HELD] = 0;
     d[base + FighterField.DROP_THROUGH_TIMER] = 0;
+    d[base + FighterField.RING_DAMAGE_TICK] = -1;
     this.setState(base, FighterStateId.IDLE);
   }
 
@@ -511,6 +532,7 @@ export class Sim {
       eliminatedTick: d[base + FighterField.ELIMINATED_TICK] as number,
       placement: d[base + FighterField.PLACEMENT] as number,
       jumpsUsed: d[base + FighterField.JUMPS_USED] as number,
+      inRingDanger: (d[base + FighterField.RING_DAMAGE_TICK] as number) === this.tick,
     };
   }
 
@@ -1608,9 +1630,34 @@ export class Sim {
     if (state === FighterStateId.DEAD || state === FighterStateId.RESPAWN) return;
     const posX = d[base + FighterField.POS_X] as number;
     const posY = d[base + FighterField.POS_Y] as number;
-    const outOfBounds =
+
+    const outsideSoft =
       posX < this.blastMinX || posX > this.blastMaxX || posY < this.blastMinY || posY > this.blastMaxY;
-    if (!outOfBounds) return;
+    if (!outsideSoft) return;
+
+    const outsideHard =
+      posX < fx.sub(this.blastMinX, RING_HARD_MARGIN) ||
+      posX > fx.add(this.blastMaxX, RING_HARD_MARGIN) ||
+      posY < fx.sub(this.blastMinY, RING_HARD_MARGIN) ||
+      posY > fx.add(this.blastMaxY, RING_HARD_MARGIN);
+
+    if (!outsideHard) {
+      // Soft boundary: damaging pressure, not a kill. Accumulating percent both threatens the
+      // hard backstop on its own over time and makes this fighter far easier for anyone else to
+      // launch (knockback scales with percent) -- that's the whole point of the redesign.
+      const percentBefore = d[base + FighterField.PERCENT] as number;
+      d[base + FighterField.PERCENT] = fx.add(percentBefore, RING_DAMAGE_PER_TICK);
+      d[base + FighterField.RING_DAMAGE_TICK] = this.tick;
+      d[base + FighterField.LAST_ATTACKER] = -1; // ring damage does not credit a KO to anyone
+      // Nudge inward on whichever axes are actually out of bounds, on top of existing velocity,
+      // so the ring pushes fighters back toward the middle (and each other) instead of just
+      // hurting them in place.
+      if (posX < this.blastMinX) d[base + FighterField.VEL_X] = fx.add(d[base + FighterField.VEL_X] as number, RING_INWARD_PUSH);
+      else if (posX > this.blastMaxX) d[base + FighterField.VEL_X] = fx.sub(d[base + FighterField.VEL_X] as number, RING_INWARD_PUSH);
+      if (posY < this.blastMinY) d[base + FighterField.VEL_Y] = fx.add(d[base + FighterField.VEL_Y] as number, RING_INWARD_PUSH);
+      else if (posY > this.blastMaxY) d[base + FighterField.VEL_Y] = fx.sub(d[base + FighterField.VEL_Y] as number, RING_INWARD_PUSH);
+      return;
+    }
 
     d[base + FighterField.DEATH_COUNT] = (d[base + FighterField.DEATH_COUNT] as number) + 1;
     const attacker = d[base + FighterField.LAST_ATTACKER] as number;

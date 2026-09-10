@@ -23,7 +23,14 @@ export const THE_SPIRE_ARENA: ArenaData = {
     // Ground floor -- wide enough on its own to hold all 20 spawns, so
     // the fully-shrunk endgame rectangle always keeps solid footing
     // regardless of which tier is contested. Solid: the stage's floor.
-    { minX: fx.fromInt(-220), maxX: fx.fromInt(220), y: fx.fromInt(0) },
+    // Widened 2026-09-09 from -220..220: at that width, 20 linear
+    // 22-unit-spaced spawns (hurtbox width 16) put every fighter within
+    // point-blank attack range of a neighbour at tick 0 -- a firing-squad
+    // opening that production logs showed causing 8 combat eliminations
+    // in the first ~4s on this stage alone (see Match Duration Contradiction
+    // wiki page, 2026-09-09). -400..400 matches the other two stages'
+    // spawn spread instead of forcing them adjacent.
+    { minX: fx.fromInt(-400), maxX: fx.fromInt(400), y: fx.fromInt(0) },
     // Tier 1: two platforms flanking the centre, low enough to be a quick
     // first hop up. Pass-through, like every tier above the ground --
     // this is the stage the drop-through primitive matters most for:
@@ -40,7 +47,7 @@ export const THE_SPIRE_ARENA: ArenaData = {
   ],
   // Two vertical walls just outside the tier platforms' widest extent,
   // starting just above the ground floor and running to the top perch.
-  // Below y=60 the tower is fully open (the ground floor spans -220..220
+  // Below y=60 the tower is fully open (the ground floor spans -400..400
   // uninterrupted); above it, the walls narrow the playable column to
   // -170..170 so climbing the tower means committing to its shaft rather
   // than drifting past the tiers in open air on either side. This is the
@@ -54,17 +61,20 @@ export const THE_SPIRE_ARENA: ArenaData = {
   // its 780-unit vertical span (900 here): the width/height ratio, not
   // just the platform count, is what makes this read as a tower rather
   // than a rearranged flat stage.
-  blastMinX: fx.fromInt(-380),
-  blastMaxX: fx.fromInt(380),
+  blastMinX: fx.fromInt(-480),
+  blastMaxX: fx.fromInt(480),
   blastMinY: fx.fromInt(-260),
   blastMaxY: fx.fromInt(640),
-  // All 20 spawns on the ground floor -- it's the only platform wide
-  // enough to hold them without overlap (hurtbox width is 16 units; 22-unit
-  // spacing leaves a comfortable margin), and starting everyone on the
-  // floor is what makes the tower something fighters climb into rather
-  // than a stage some spawn already contesting.
+  // All 20 spawns on the ground floor -- starting everyone on the floor
+  // is what makes the tower something fighters climb into rather than a
+  // stage some spawn already contesting. Spread side-alternating from
+  // centre (2026-09-09 fix) like battle-royale-20 and the-undercroft,
+  // instead of one straight 22-unit-spaced line that put every fighter
+  // in point-blank attack range of a neighbour at tick 0.
   spawnPoints: Array.from({ length: 20 }, (_, i) => {
-    const x = fx.fromInt(-209 + i * 22);
+    const slot = Math.floor(i / 2);
+    const side = i % 2 === 0 ? 1 : -1;
+    const x = side * fx.fromInt(24 + slot * 40);
     return { x, y: fx.fromInt(0) };
   }),
 };

@@ -48,6 +48,19 @@ html, body {
   left: var(--hud-sidebar-width);
 }
 
+/* The dense HUD sidebar reserves the full left edge top-to-bottom
+   (see #hud:has() below), which collides head-on with the touch
+   movement stick's fixed bottom-left position -- on any touch device
+   in a real (3+ fighter) match the stick used to sit directly on top
+   of the leaderboard's bottom rows. Shift the stick clear of the
+   sidebar rather than shrinking the sidebar's height, so the
+   leaderboard keeps its space and the stick keeps its reachable
+   bottom-corner position, just moved right of the reserved column.
+   Found in the mobile touch-quality pass, 2026-09-10. */
+#app:has(.hud-list.dense) .touch-stick-base {
+  left: calc(var(--hud-sidebar-width) + 20px);
+}
+
 .screen {
   position: absolute;
   inset: 0;
@@ -1107,6 +1120,20 @@ html, body {
 
   .win-headline {
     font-size: 32px;
+  }
+
+  /* Every full-screen overlay (start screen's hero, win screen,
+     elimination/placement screens) starts flush at the top; at narrow
+     widths its centered heading is wide enough to run under the fixed
+     top-right Sound/Controls/Moves row (found: "BASH FIGHTER" and
+     "Nobody survived" both clipped by the Sound button at 390px). Give
+     every .screen the same reserved top gap in one place rather than
+     patching each heading -- .hero is a child of .screen but has no
+     top padding of its own at this breakpoint, so this is the only
+     source of clearance, not a stack. Mobile touch-quality pass,
+     2026-09-10. */
+  .screen {
+    padding-top: 56px;
   }
 
   #hud {

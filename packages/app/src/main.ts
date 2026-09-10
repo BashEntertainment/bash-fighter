@@ -252,11 +252,25 @@ async function beginOnlineMatch(): Promise<void> {
       // teardown (resolved: false) right after elimination -- leaving
       // the player with nothing on screen at all.
       if (eliminatedThisOnlineMatch) {
-        // Already eliminated: onEliminated's placement overlay (with its
-        // own Play again button) is already showing and stays exactly as
-        // it is. A resolved end has nothing to add that the player needs
-        // right now; an unresolved/abandoned one is noise about a match
-        // they're no longer part of. Either way, do nothing here.
+        // Already eliminated. An unresolved/abandoned end is noise about
+        // a match they're no longer part of -- their own placement
+        // overlay (from onEliminated, with its own Play again button)
+        // stays exactly as it is.
+        //
+        // A genuine resolution is NOT noise: they were watching the match
+        // play out and the rule ("a still-watching player must be told
+        // who won") applies to them too. 2026-09-10: this branch used to
+        // return unconditionally here, which meant a spectator who
+        // watched a real match resolve got no winner announcement at
+        // all -- their placement screen just sat there forever with no
+        // update, indistinguishable from a client that had silently
+        // stopped tracking the match. Update the same placement overlay
+        // with the winner appended instead of replacing it -- the player
+        // keeps their own placement, "Play again" and "Keep spectating"
+        // controls, and now also learns who won.
+        if (resolved) {
+          matchOverlay.announceWinner(winnerIndex, netMatch?.localSlot());
+        }
         return;
       }
       if (!resolved) {

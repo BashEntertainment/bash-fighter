@@ -402,6 +402,19 @@ function retireConn(conn: ClientConn): void {
     conn.match.markDisconnected(conn.slot);
   }
   clients.delete(conn.id);
+  // 2026-09-10: removeAllListeners() below strips the socket's 'close'
+  // handler, which is the only place that otherwise deletes conn.id from
+  // watcherSet(match.id) -- so without this explicit delete, every
+  // resumed/reconnected connection leaked its old id into the watcher set
+  // forever. onSnapshot's `clients.get(cid)` guard means a leaked id never
+  // crashes anything, but it does mean the reported watcher count (and
+  // the isAbandonedByHumans/teardown logic that reads it) can overcount
+  // real, currently-connected watchers by every stale id an old match's
+  // reconnects left behind. Delete it here, before the listeners are gone.
+  if (conn.match) {
+    watcherSet(conn.match.id).delete(conn.id);
+    syncWatcherCount(conn.match);
+  }
   try {
     conn.ws.removeAllListeners();
     conn.ws.terminate();

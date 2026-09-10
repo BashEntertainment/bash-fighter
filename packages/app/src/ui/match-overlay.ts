@@ -29,6 +29,22 @@ export interface MatchOverlayContent {
   tone?: 'default' | 'danger';
 }
 
+/** Slot label for the winner line in announceWinner, matching the HUD's
+ * own '#' + (slot + 1) convention (packages/app/src/ui/hud.ts). */
+function slotLabel(slot: number): string {
+  return `#${slot + 1}`;
+}
+
+/** Pure text logic for announceWinner, split out so it has regression
+ * coverage without needing a DOM (see match-overlay.test.ts) -- this is
+ * the part that was actually wrong (missing entirely) in the 2026-09-10
+ * stranded-spectator bug, not the DOM plumbing around it. */
+export function winnerAnnouncementLine(winnerSlot: number | null, localSlot: number | null | undefined): string {
+  if (winnerSlot == null) return 'The match ended with no winner.';
+  if (localSlot != null && localSlot === winnerSlot) return 'The match ended -- you won it!';
+  return `The match ended -- ${slotLabel(winnerSlot)} won.`;
+}
+
 export class MatchOverlay {
   readonly root: HTMLDivElement;
   private readonly panel: HTMLDivElement;
@@ -76,6 +92,24 @@ export class MatchOverlay {
 
   hide(): void {
     this.root.classList.add('hidden');
+  }
+
+  /** 2026-09-10: a spectator who was already eliminated (their own
+   * placement overlay from onEliminated) must still be told who won once
+   * the match genuinely resolves -- "no terminal state may leave the
+   * player with nothing to say happened" applies to them too, even if
+   * they clicked "Keep spectating" and dismissed the overlay. Appends the
+   * winner line to whatever message is already showing (or re-shows the
+   * overlay with just the winner line if it had been dismissed) without
+   * touching the actions -- their own "Play again" / "Keep spectating"
+   * buttons stay exactly as they were. Safe to call multiple times. */
+  announceWinner(winnerSlot: number | null, localSlot: number | null | undefined): void {
+    const already = this.messageEl.dataset.winnerAnnounced === String(winnerSlot);
+    if (already) return;
+    const line = winnerAnnouncementLine(winnerSlot, localSlot);
+    this.messageEl.textContent = `${this.messageEl.textContent} ${line}`.trim();
+    this.messageEl.dataset.winnerAnnounced = String(winnerSlot);
+    this.root.classList.remove('hidden');
   }
 
   get isVisible(): boolean {

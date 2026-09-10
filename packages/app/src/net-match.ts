@@ -41,6 +41,7 @@ import {
   type ServerControlMessage,
 } from '@bash-fighter/net';
 import { FixedTimestepLoop } from './loop.ts';
+import { hashStateBuffer } from '@bash-fighter/sim';
 import { AudioManager } from '@bash-fighter/audio';
 import { detectFighterEvents, detectItemEvents } from './effects-events.ts';
 import { EffectsAudioBridge } from './effects-audio.ts';
@@ -160,6 +161,17 @@ export class NetMatch {
   private currSnapState: Int32Array | null = null;
   private currSnapAt = 0;
   private currSnapTick = 0;
+  // Hash of the last-applied authoritative snapshot, shown in the F3
+  // debug overlay (formatDebugText) so a live cross-reference against the
+  // server's own state is possible at a glance -- see "Client-Server
+  // Match Divergence 2026-09-10" in the wiki for why this matters: the
+  // client previously had no way to show it was still tracking the
+  // server's authoritative state at all.
+  private currSnapHash = '';
+  // Wall-clock time of the last console.warn for a stalled snapshot
+  // stream, so the warning repeats at most once every STALL_WARN_MS while
+  // the condition persists instead of spamming every frame.
+  private lastStallWarnAt = 0;
   // Measured wall-clock gap between the last two received snapshots, used
   // as the interpolation denominator instead of the fixed SNAPSHOT_HZ
   // constant. A spectator connection is throttled server-side to a lower
@@ -463,6 +475,7 @@ export class NetMatch {
     // renderSim, never from localSim's prediction.
     if (this.renderSim) {
       this.renderSim.loadState(snap.state);
+      this.currSnapHash = hashStateBuffer(snap.state);
       const currF: FighterSnapshot[] = [];
       const currItems = [];
       for (let i = 0; i < this.numFighters; i++) currF.push(this.renderSim.getFighter(i));
@@ -533,8 +546,25 @@ export class NetMatch {
     return out;
   }
 
+  private static readonly STALL_THRESHOLD_MS = SNAPSHOT_INTERVAL_MS * 8;
+
+  private checkSnapshotStall(): void {
+    if (this.over || !this.currSnapState) return;
+    const staleMs = performance.now() - this.currSnapAt;
+    if (staleMs < NetMatch.STALL_THRESHOLD_MS) return;
+    const now = performance.now();
+    if (now - this.lastStallWarnAt < NetMatch.STALL_THRESHOLD_MS) return;
+    this.lastStallWarnAt = now;
+    console.warn(
+      '[net-match] snapshot stream stalled: ' + Math.round(staleMs) + 'ms since last authoritative snapshot ' +
+        '(last tick ' + this.currSnapTick + ', hash ' + (this.currSnapHash || '(none)') + '). ' +
+        'See wiki: Client-Server Match Divergence 2026-09-10.',
+    );
+  }
+
   private render(): void {
     if (!this.localSim || !this.renderSim) return;
+    this.checkSnapshotStall();
     const fighters: RenderFighterState[] = new Array(this.numFighters);
 
     // Remote fighters: interpolate between the last two received snapshots.
@@ -628,7 +658,7 @@ export class NetMatch {
       items,
       hazards,
       tick: this.currSnapTick,
-      hash: '',
+      hash: this.currSnapHash,
       hitEffects: this.pendingHitEffects,
       eliminationEffects: this.pendingEliminationEffects,
       localPlayerIndex: !this.spectating && this.mySlot >= 0 ? this.mySlot : undefined,

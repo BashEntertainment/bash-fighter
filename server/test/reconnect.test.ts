@@ -174,12 +174,43 @@ test('client drops mid-match, reconnects with its token, resumes the same slot, 
     // combat RNG to actually end the match here).
     await new Promise((r) => setTimeout(r, 500));
     clearInterval(interval);
-    await new Promise((r) => setTimeout(r, 300));
 
-    const snapA = a2.lastSnapshot();
-    const snapB = b.lastSnapshot();
-    const snapC = c.lastSnapshot();
+    // Each client's lastSnapshot() is populated by its own independent
+    // websocket 'message' event, and the server keeps ticking (and
+    // broadcasting a fresh snapshot every SNAPSHOT_EVERY_N_TICKS) after
+    // clearInterval above -- there is no barrier guaranteeing all three
+    // sockets have drained their *most recent* broadcast at the same
+    // wall-clock instant. A fixed sleep here was a race: long enough on
+    // most runs, but not a guarantee the three clients landed on the same
+    // authoritative tick before we hash-compare their state -- a slower or
+    // faster event-loop scheduling (observed reliably on Node 22, never on
+    // Node 24) can catch two of them one broadcast apart, which is a real
+    // difference between two genuinely different ticks, not a reconnect or
+    // hash bug. Poll until all three explicitly agree on the same tick (or
+    // time out with a clear message) instead of trusting a sleep to have
+    // been long enough.
+    const sameTickDeadline = Date.now() + 5000;
+    let snapA: ReturnType<typeof a2.lastSnapshot> = null;
+    let snapB: ReturnType<typeof b.lastSnapshot> = null;
+    let snapC: ReturnType<typeof c.lastSnapshot> = null;
+    while (Date.now() < sameTickDeadline) {
+      snapA = a2.lastSnapshot();
+      snapB = b.lastSnapshot();
+      snapC = c.lastSnapshot();
+      if (snapA && snapB && snapC && snapA.tick === snapB.tick && snapA.tick === snapC.tick) break;
+      await new Promise((r) => setTimeout(r, 25));
+    }
     assert.ok(snapA && snapB && snapC, 'all three clients should have a snapshot after reconnect');
+    assert.equal(
+      snapA.tick,
+      snapB.tick,
+      `clients never converged on the same authoritative tick within the deadline (A=${snapA.tick} B=${snapB.tick} C=${snapC.tick}); server log:\n${log}`,
+    );
+    assert.equal(
+      snapA.tick,
+      snapC.tick,
+      `clients never converged on the same authoritative tick within the deadline (A=${snapA.tick} B=${snapB.tick} C=${snapC.tick}); server log:\n${log}`,
+    );
     const hashA = hashStateBuffer((snapA as { state: Int32Array }).state);
     const hashB = hashStateBuffer((snapB as { state: Int32Array }).state);
     const hashC = hashStateBuffer((snapC as { state: Int32Array }).state);

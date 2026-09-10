@@ -7,6 +7,7 @@ import { BotController, BotDifficulty, deriveBotSeed, type BotDifficultyValue } 
 import { createMatchSim, resolveCharacterId, DEFAULT_CHARACTER_ID, pickArenaId } from '@bash-fighter/content/src/index.ts';
 import { SNAPSHOT_HZ } from '@bash-fighter/net/src/protocol.ts';
 import { recordTickDurationMs } from './tick-metrics.ts';
+import { PRODUCTION_DEFAULT_BOT_DIFFICULTY_NAME } from './match-defaults.ts';
 
 // --- Reconnection (see wiki "Netcode Design Part 3") ------------------------
 // A dropped socket does not remove the fighter from the sim: it keeps being
@@ -45,7 +46,7 @@ function generateResumeToken(): string {
  *  Defaults to 'medium'. Unknown values fall back to medium rather than
  *  throwing, since a typo in a systemd unit should degrade, not crash. */
 function botDifficultyFromEnv(): BotDifficultyValue {
-  const raw = (process.env.MATCH_BOT_DIFFICULTY ?? 'medium').toLowerCase();
+  const raw = (process.env.MATCH_BOT_DIFFICULTY ?? PRODUCTION_DEFAULT_BOT_DIFFICULTY_NAME).toLowerCase();
   if (raw === 'easy') return BotDifficulty.EASY;
   if (raw === 'hard') return BotDifficulty.HARD;
   return BotDifficulty.MEDIUM;

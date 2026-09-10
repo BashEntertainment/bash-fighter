@@ -8,9 +8,17 @@ import { Sim } from '../packages/sim/src/sim.ts';
 import { BotController, BotDifficulty, deriveBotSeed } from '../packages/sim/src/ai/bot.ts';
 import { ALL_ARENAS } from '../packages/content/src/arenas.ts';
 import * as fx from '../packages/sim/src/math/fixed.ts';
+import { PRODUCTION_DEFAULT_BOT_DIFFICULTY_NAME } from '../server/src/match-defaults.ts';
 
+// Task #28195: defaults to production's real bot difficulty (see
+// server/src/match-defaults.ts) instead of the hardcoded HARD this
+// script originally shipped with, so this experiment's own numbers are
+// comparable to what a live player actually experiences. Override with a
+// 3rd CLI arg.
 const N = 20;
 const SEEDS = parseInt(process.argv[2] || '6', 10);
+const diffArg = (process.argv[3] || PRODUCTION_DEFAULT_BOT_DIFFICULTY_NAME).toUpperCase();
+const DIFFICULTY = BotDifficulty[diffArg] ?? BotDifficulty.MEDIUM;
 const CEIL = 48000; // 800s, generous
 const BASE = 60 * 60 * 4; // default 4min
 const VARIANTS = [
@@ -21,7 +29,7 @@ const VARIANTS = [
 
 function runMatch(arena, seed, shrinkFullyClosedTick) {
   const sim = new Sim(seed, N, undefined, arena, { shrinkFullyClosedTick });
-  const bots = Array.from({ length: N }, (_, i) => new BotController(i, BotDifficulty.HARD, deriveBotSeed(seed, i)));
+  const bots = Array.from({ length: N }, (_, i) => new BotController(i, DIFFICULTY, deriveBotSeed(seed, i)));
   const lastDamageTick = new Array(N).fill(-1);
   const lastPercent = new Array(N).fill(0);
   const wasEliminated = new Array(N).fill(false);

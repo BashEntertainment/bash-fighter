@@ -18,10 +18,29 @@ import { makeInputFrame } from '../packages/sim/src/types.ts';
 import { ALL_ARENAS } from '../packages/content/src/arenas.ts';
 import * as fx from '../packages/sim/src/math/fixed.ts';
 import { DEFAULT_MATCH_SETTINGS } from '../packages/sim/src/match-settings.ts';
+import { PRODUCTION_DEFAULT_BOT_DIFFICULTY_NAME } from '../server/src/match-defaults.ts';
 
+// REVISED 2026-09-09 (task #28195): this harness previously hardcoded
+// BotDifficulty.HARD for every measurement in every wiki-recorded pass
+// (Ring Pressure Not Executioner, KB Growth Scale Revert, Bot
+// Clustering/Vertical/Ring Pacing, Task 28163). Production's actual
+// default is MEDIUM (server/src/match.ts reads MATCH_BOT_DIFFICULTY,
+// defaulting to 'medium' when unset) -- so every one of those
+// combat-share/duration numbers described a harder, more aggressive
+// lobby than almost anyone playing the live site actually gets. HARD
+// bots fight more (tighter attack-decision cadence, less hesitation),
+// so HARD-only measurement systematically over-reports combat share and
+// under-reports how boundary-dominated a real MEDIUM match is. The
+// default here now comes from the same constant server/src/match.ts
+// resolves against production's env var, imported from
+// server/src/match-defaults.ts (not duplicated), so a future change to
+// the production default automatically flows into this harness too.
+// Pass a difficulty explicitly (5th arg) to still measure other tiers.
 const arenaArg = process.argv[2] || 'all';
 const SEEDS = parseInt(process.argv[3] || '8', 10);
 const TICKS = parseInt(process.argv[4] || '21600', 10); // 6 min hard cap @ 60hz -- see drift-guard warning below
+const diffArg = (process.argv[5] || PRODUCTION_DEFAULT_BOT_DIFFICULTY_NAME).toUpperCase();
+const DIFFICULTY = BotDifficulty[diffArg] ?? BotDifficulty.MEDIUM;
 
 // Anti-drift guard (task #28195): this file's own TICKS default (21600 =
 // shrinkFullyClosedTick's current value exactly) gives the stalemate
@@ -43,6 +62,7 @@ if (process.env.MATCH_SHRINK_FULLY_CLOSED_TICK) {
 }
 const N = 20;
 const COMBAT_WINDOW_TICKS = 60; // 1s: "recently hit" window for cause attribution
+console.log(`bot difficulty: ${diffArg} (production default unless overridden by 5th arg)`);
 
 const arenaEntries = arenaArg === 'all' ? ALL_ARENAS : ALL_ARENAS.filter((a) => a.id === arenaArg);
 if (arenaEntries.length === 0) {
@@ -53,7 +73,7 @@ if (arenaEntries.length === 0) {
 function runMatch(arenaEntry, seed, { passiveIndex = -1 } = {}) {
   const sim = new Sim(seed, N, undefined, arenaEntry.arena);
   const bots = Array.from({ length: N }, (_, i) =>
-    i === passiveIndex ? null : new BotController(i, BotDifficulty.HARD, deriveBotSeed(seed, i)),
+    i === passiveIndex ? null : new BotController(i, DIFFICULTY, deriveBotSeed(seed, i)),
   );
   const lastDamageTick = new Array(N).fill(-1);
   const lastPercent = new Array(N).fill(0);

@@ -240,6 +240,40 @@ const LATE_GAME_ALIVE_THRESHOLD = 6;
 const ONE = fx.ONE;
 const EMPTY_SET: ReadonlySet<number> = new Set();
 
+// PACING PASS 2026-09-10 (follow-up to Match Arc Lengthening Pass -- see
+// wiki): knockback-scale tuning alone plateaued at ~63s avg vs a 150-180s
+// target, because 20-fighter FFA runs many parallel 1v1/2v1 skirmishes
+// that resolve independently -- slowing one fight barely slows the whole
+// match. This lever instead spreads out *when* those skirmishes connect:
+// during the opening stretch of a match, every bot (any difficulty) rolls
+// its attack-commit hesitation against a temporarily raised threshold, so
+// fewer of the many simultaneous early scrums land a hit in the same few
+// seconds. It does not touch detection/movement/targeting -- bots still
+// walk up, circle, and swing just as readily -- so this does not make
+// bots look idle or passive, only slower to actually connect early on,
+// spreading first-blood eliminations out over more of the match instead
+// of clustering them in the opening flurry. Ramps down to 0 by
+// EARLY_ENGAGEMENT_RAMP_TICKS, matching the existing early-match
+// knockback dampener's 60s window (knockback.ts) so the two levers ease
+// off together rather than one dragging past the other.
+const EARLY_ENGAGEMENT_HESITATION_BONUS = 300;
+const EARLY_ENGAGEMENT_RAMP_TICKS = 3600; // 60s @ 60Hz
+
+/** Extra per-mille hesitation added on top of a difficulty's normal
+ * hesitation roll while a match is still in its opening stretch, linearly
+ * decaying to 0 by EARLY_ENGAGEMENT_RAMP_TICKS. Deliberately difficulty-
+ * agnostic (same bonus at EASY/MEDIUM/HARD): the goal is fewer *parallel*
+ * connects across the whole 20-fighter lobby early on, not a difficulty
+ * rebalance, and EASY's own beginner-protection scoring (protectedIndices)
+ * is untouched by this. Applied uniformly to the retreat-attack,
+ * chase-attack, and per-tick attack-refresh sites so there is no gap a
+ * player could learn to exploit at one of them but not the others. */
+function earlyEngagementHesitationBonus(tick: number): number {
+  if (tick >= EARLY_ENGAGEMENT_RAMP_TICKS) return 0;
+  const remaining = EARLY_ENGAGEMENT_RAMP_TICKS - Math.max(0, tick);
+  return Math.round((EARLY_ENGAGEMENT_HESITATION_BONUS * remaining) / EARLY_ENGAGEMENT_RAMP_TICKS);
+}
+
 function clampStick(v: Fixed): Fixed {
   return fx.clamp(v, fx.neg(ONE), ONE);
 }
@@ -360,8 +394,9 @@ export class BotController {
     if (target.eliminated) return this.cached;
     const tuning = TUNING[this.difficulty];
     const inRange = this.inAttackRange(self, target);
-    const hesitation =
+    const baseHesitation =
       tuning.pursuitEnabled && this.isVulnerable(target) ? tuning.pursuitHesitationPerMille : tuning.hesitationPerMille;
+    const hesitation = baseHesitation + earlyEngagementHesitationBonus(sim.getTick());
     const shouldAttack = inRange && this.rollPerMille() >= hesitation;
     const buttons = shouldAttack ? this.cached.buttons | BUTTON_ATTACK : this.cached.buttons & ~BUTTON_ATTACK;
     if (buttons === this.cached.buttons) return this.cached;
@@ -413,7 +448,11 @@ export class BotController {
       // endgame turns into everyone silently walking inward and no one
       // ever getting eliminated by combat, which is its own kind of
       // boring standstill and part of why a passive player could coast.
-      if (target && this.inAttackRange(self, target) && this.rollPerMille() >= tuning.hesitationPerMille) {
+      if (
+        target &&
+        this.inAttackRange(self, target) &&
+        this.rollPerMille() >= tuning.hesitationPerMille + earlyEngagementHesitationBonus(sim.getTick())
+      ) {
         buttons |= BUTTON_ATTACK;
       }
     } else {
@@ -450,7 +489,8 @@ export class BotController {
         const dy = fx.sub(aimY, self.posY);
         stickX = signOf(dx);
         stickY = signOf(dy);
-        const hesitation = pursuing ? tuning.pursuitHesitationPerMille : tuning.hesitationPerMille;
+        const baseHesitation = pursuing ? tuning.pursuitHesitationPerMille : tuning.hesitationPerMille;
+        const hesitation = baseHesitation + earlyEngagementHesitationBonus(sim.getTick());
         if (this.inAttackRange(self, target) && this.rollPerMille() >= hesitation) {
           buttons |= BUTTON_ATTACK;
           // Aim: grounded jab/ftilt picked by |stickX| threshold in

@@ -37,7 +37,17 @@ export const MAX_HITSTUN_TICKS = 240;
 // as a named lever (rather than removed outright) so future lethality
 // tuning has one clear place to change, but do not raise it again without
 // the final-two double-KO metric in place first.
-export const KB_GROWTH_SCALE: Fixed = fx.fromFloat(1.0);
+// PACING REWORK 2026-09-10, LEVER 3 (see wiki "Match Pacing Rework"):
+// lowered from 1.0 to 0.75. Prior passes only tried *raising* this (1.3,
+// reverted for stalemates/double-KOs). Production evidence this pass shows
+// matches ending almost entirely by combat inside ~30s with essentially no
+// middle game, so this pass tries the opposite direction: fewer knockback
+// units per point of damage means more hits are needed to finish a fighter,
+// which should extend individual fights (a real middle game) rather than
+// just delaying when they start (see Lever 2, spawn spacing). Measured via
+// production journalctl, one lever at a time -- see wiki page for the
+// keep/revert decision and numbers.
+export const KB_GROWTH_SCALE: Fixed = fx.fromFloat(0.75);
 
 /** magnitude = baseKb + KB_GROWTH_SCALE * kbGrowth * (damage + percentAfterHit / 2) * (150 / (weight + 50)) */
 export function computeKnockbackMagnitude(

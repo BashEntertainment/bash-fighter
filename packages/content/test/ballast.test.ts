@@ -112,7 +112,7 @@ describe('Sim: Ballast moveset', () => {
     // KB_GROWTH_SCALE (see knockback.ts) uniformly scales the percent-based growth
     // term for every character; currently 1.0 (reverted 2026-09-09, see
     // [[Ring Pressure Not Executioner: 2026-09-09 Rebalance]]).
-    const growthTerm = fx.toFloat(kbGrowth) * (fx.toFloat(damage) + fx.toFloat(percentAfterHit) / 2) * 1.0;
+    const growthTerm = fx.toFloat(kbGrowth) * (fx.toFloat(damage) + fx.toFloat(percentAfterHit) / 2) * 0.75;
     const expectedBallast = fx.toFloat(baseKb) + growthTerm * (150 / (140 + 50));
     const expectedPlaceholder = fx.toFloat(baseKb) + growthTerm * (150 / (100 + 50));
     assert.ok(Math.abs(fx.toFloat(magOnBallast) - expectedBallast) < 0.02);

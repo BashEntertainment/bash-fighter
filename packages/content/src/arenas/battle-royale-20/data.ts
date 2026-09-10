@@ -45,10 +45,20 @@ export const BATTLE_ROYALE_20_ARENA: ArenaData = {
   // positions, each stacked with two fighters on top of each other at
   // match start. `Math.floor(i / 2)` makes every one of the 20 positions
   // distinct while keeping the alternating-sides property.
+  // PACING REWORK 2026-09-10 (see wiki dated "Match Pacing Rework"): production
+  // journalctl evidence showed the 20-fighter opening was a single dense scrum
+  // -- every fighter within immediate melee reach of several neighbours at
+  // tick 0, so almost the whole field traded kills inside each bot's very
+  // first AI decision, before any middle game could develop. Per-slot spacing
+  // widened from 40 to 45 units (adjacent same-side gap 80->90, nearest
+  // cross-side gap 40->45, and total span 400->439 each way, still inside
+  // the 480 solid-ground edge) so the opening spreads fighters into separated
+  // skirmishes instead of one shared brawl; still comfortably inside the
+  // +-480 solid-ground span and the +-620 blast bounds.
   spawnPoints: Array.from({ length: 20 }, (_, i) => {
     const slot = Math.floor(i / 2);
     const side = i % 2 === 0 ? 1 : -1;
-    const x = side * fx.fromInt(40 + slot * 40);
+    const x = side * fx.fromInt(34 + slot * 45);
     return { x, y: fx.fromInt(0) };
   }),
 };

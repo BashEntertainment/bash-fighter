@@ -134,20 +134,9 @@ const TUNING: Record<BotDifficultyValue, DifficultyTuning> = {
     pursuitLeadTicks: 0,
     verticalPursuit: false,
   },
-  // REVISED 2026-09-10 (match pacing rework, see wiki dated page): production
-  // journalctl evidence showed MEDIUM (the actual production default) bot-vs-bot
-  // combat cascading continuously for an entire match -- two real production
-  // matches resolved in 22.7s and 29.5s, both ~100% combat-caused eliminations
-  // at a roughly constant rate of one KO every 1-2s from t=0 to the end, with
-  // no slowdown into a middle game and the ring never mattering. reactionTicks
-  // (decision cadence) doubled from 14->28 as the single attributed lever for
-  // this pass: it throttles how often a bot re-evaluates/re-attacks without
-  // touching damage, knockback, or hitstun (combat still feels the same when
-  // it lands), and does not touch EASY (novice protection untouched) or HARD
-  // (skilled/competitive tier untouched).
   [BotDifficulty.MEDIUM]: {
-    reactionTicks: 28, // ~467ms (was 14/~230ms)
-    reactionJitterTicks: 10,
+    reactionTicks: 14, // ~230ms
+    reactionJitterTicks: 6,
     wobbleChancePerMille: 180,
     wobbleMagnitude: fx.fromFloat(0.35),
     hesitationPerMille: 120,

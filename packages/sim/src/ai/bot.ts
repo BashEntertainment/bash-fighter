@@ -209,7 +209,7 @@ const CLUSTER_RADIUS_SQ = 90.0 * 90.0;
 // that a bot never looks unresponsive to a live threat closing on it (the
 // pause only affects *seeking a new target*, not defending against unsafe
 // terrain or an in-range attacker who is already the cached target).
-const RETARGET_COOLDOWN_DECISIONS = 7; // Lever 5, 2026-09-10 pass 3: was 3
+const RETARGET_COOLDOWN_DECISIONS = 3;
 /** Score penalty in squared-distance units (scoring uses squared
  * distance throughout to avoid a sqrt/transcendental call, which
  * packages/sim's lint rule forbids for determinism) added per other

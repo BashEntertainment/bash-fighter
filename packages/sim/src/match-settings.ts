@@ -56,7 +56,7 @@ export const DEFAULT_MATCH_SETTINGS: MatchSettings = {
   // change moves the opposite direction (slower), which only adds
   // protection margin, and the novice-survival regression test still
   // passes (see bot.test.ts).
-  shrinkFullyClosedTick: 60 * 60 * 6, // 6 minutes (was 4)
+  shrinkFullyClosedTick: 60 * 60 * 8, // 8 minutes (was 6) -- Lever 6, 2026-09-10 pass 3: individual fights now last longer with Levers 3/4, ease ring pacing further
 };
 
 /** Fill in mode-appropriate defaults for any fields the caller omitted,

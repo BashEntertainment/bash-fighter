@@ -182,6 +182,10 @@ const RING_DAMAGE_PER_TICK = fx.fromFloat(0.12);
  * drifts outward forever from surviving on chip damage alone, without making the soft boundary
  * itself an executioner. Kept generous so it is a rare last resort, not routine play. */
 const RING_HARD_MARGIN = fx.fromInt(90);
+/** Percent at which ring damage stops being survivable pressure and eliminates the fighter.
+ * Far above any percent reachable in ordinary play (matches resolve around 60-140%), and about
+ * 42 seconds of continuous ring exposure at RING_DAMAGE_PER_TICK. */
+const RING_LETHAL_PERCENT = fx.fromInt(300);
 /** The backstop margin starts closing at three quarters of the shrink schedule and reaches zero
  * exactly at full closure, so a match that has run its whole schedule has a contact-lethal ring
  * again and provably terminates. Real matches resolve in 30-80s, far inside the full-width phase. */
@@ -1664,7 +1668,18 @@ export class Sim {
       posY < fx.sub(this.blastMinY, margin) ||
       posY > fx.add(this.blastMaxY, margin);
 
-    if (!outsideHard) {
+    // Percent-based lethal backstop. Geometry alone cannot guarantee resolution: the safe extents
+    // never contract below "room for the final few", so fighters standing on ground near the
+    // centre are never outside the soft boundary at all, and a lobby that stops landing knockouts
+    // could chip along forever (this is the seed-1001/1003 non-resolution that every pacing lever
+    // kept tripping over). Ring damage therefore becomes lethal once a fighter has taken enough
+    // of it to be far past any survivable percent. Because the threshold is on accumulated
+    // percent and every fighter accumulates at a different rate, deaths arrive staggered rather
+    // than as a simultaneous wipe, so a stalemated match still resolves to exactly one survivor.
+    const percentNow = d[base + FighterField.PERCENT] as number;
+    const ringLethal = (percentNow as number) >= (RING_LETHAL_PERCENT as number);
+
+    if (!outsideHard && !ringLethal) {
       // Soft boundary: damaging pressure, not a kill. Accumulating percent both threatens the
       // hard backstop on its own over time and makes this fighter far easier for anyone else to
       // launch (knockback scales with percent) -- that's the whole point of the redesign.

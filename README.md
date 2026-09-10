@@ -118,6 +118,11 @@ tracks what's built, in progress, and not started. Use the issue forms
 under `.github/ISSUE_TEMPLATE/` to report bugs or propose features, and
 see [`SECURITY.md`](./SECURITY.md) to report a vulnerability privately.
 
+Playtest feedback, feature ideas, and general questions go in
+[GitHub Discussions](https://github.com/BashEntertainment/bash-fighter/discussions),
+not issues — see "Discussions vs. issues" in `CONTRIBUTING.md` for which
+one to use. Played a match on the live server? Tell us how it felt.
+
 ## License
 
 AGPL-3.0 (see [`LICENSE`](./LICENSE)), with a Contributor License Agreement

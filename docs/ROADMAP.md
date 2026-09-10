@@ -81,4 +81,7 @@ first for a reason: rendering, input, and netcode all lean on its
 guarantees, and none of them are worth building against a moving target.
 Within "what's left," prefer picking up whatever unblocks the next item
 on this list over something further down it — check open issues and PRs
-first to avoid duplicating in-flight work.
+first to avoid duplicating in-flight work. For raw playtest feedback and
+feature ideas that aren't scoped issues yet, check
+[Discussions](https://github.com/BashEntertainment/bash-fighter/discussions)
+too — this roadmap gets pulled from there.

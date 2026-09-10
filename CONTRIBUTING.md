@@ -199,3 +199,24 @@ and roster registration, with real file paths and commands — see
 
 Use the forms in `.github/ISSUE_TEMPLATE/`. For a security vulnerability,
 do not open a public issue — see [`SECURITY.md`](./SECURITY.md).
+
+## Discussions vs. issues
+
+Issues are for concrete, actionable work: a specific bug with repro
+steps, or a feature request scoped enough to become a PR. Everything
+more open-ended goes in [Discussions](https://github.com/BashEntertainment/bash-fighter/discussions)
+instead:
+
+- **Playtest feedback** — you played a match and want to say how it felt
+  (pacing, whether the collapsing ring made sense, whether you understood
+  why you lost). This is not a bug report unless something was actually
+  broken.
+- **Feature ideas** — a rough idea that isn't scoped enough to be a PR
+  yet. Discuss it first; if it firms up into something buildable, it can
+  become an issue.
+- **Q&A / general** — how something works, how to run a piece of the
+  codebase, anything that isn't a defect or a concrete proposal.
+
+If you're not sure which one, start with a discussion — it's easy to
+turn a discussion into an issue later, and much noisier to do the
+reverse.

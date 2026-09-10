@@ -201,6 +201,15 @@ const EDGE_SAFETY_MARGIN: Fixed = fx.fromFloat(18.0);
  * early-match spacing so it can actually steer target choice apart
  * before a cluster forms, not just after. */
 const CLUSTER_RADIUS_SQ = 90.0 * 90.0;
+
+// PACING REWORK 2026-09-10, LEVER 4: full decisions a bot sits out before
+// picking a new target after its old one is eliminated (see comment on
+// retargetCooldownDecisions). At MEDIUM's ~14-tick decision cadence this is
+// roughly 3 decisions worth of pause -- long enough to matter, short enough
+// that a bot never looks unresponsive to a live threat closing on it (the
+// pause only affects *seeking a new target*, not defending against unsafe
+// terrain or an in-range attacker who is already the cached target).
+const RETARGET_COOLDOWN_DECISIONS = 3;
 /** Score penalty in squared-distance units (scoring uses squared
  * distance throughout to avoid a sqrt/transcendental call, which
  * packages/sim's lint rule forbids for determinism) added per other
@@ -265,6 +274,15 @@ export class BotController {
    * pairs/clumps and to keep targets changing over a match. */
   private targetLockDecisions = 0;
   private targetSwitchCount = 0;
+  /** PACING REWORK 2026-09-10, LEVER 4 (see wiki "Match Pacing Rework"):
+   * full decisions remaining before this bot will pick a new target after
+   * its current one is eliminated. Production evidence showed a "second
+   * wave" of near-simultaneous eliminations as the field thinned and
+   * survivors immediately piled onto whoever was nearest right after a
+   * kill; this cooldown makes a bot pause/reposition for a beat instead
+   * of instantly chaining into the next fight. Zero by default so a
+   * bot's very first target pick (no prior target) is unaffected. */
+  private retargetCooldownDecisions = 0;
 
   /**
    * @param seed Deterministic per-bot seed. Callers should derive this from
@@ -363,7 +381,19 @@ export class BotController {
     // standing still off-stage is not "passive", it is falling to your
     // death, which is not the point.
     const passive = tuning.passiveChancePerMille > 0 && this.rollPerMille() < tuning.passiveChancePerMille;
-    const target = passive ? null : this.pickTarget(sim, self);
+    if (this.targetIndex >= 0 && sim.getFighter(this.targetIndex).eliminated && this.retargetCooldownDecisions <= 0) {
+      // Our target just died since we last looked (Lever 4): sit out a
+      // few full decisions before chasing whoever is nearest next.
+      this.retargetCooldownDecisions = RETARGET_COOLDOWN_DECISIONS;
+      this.targetIndex = -1;
+    }
+    let target: (FighterSnapshot & { index: number }) | null;
+    if (this.retargetCooldownDecisions > 0) {
+      this.retargetCooldownDecisions -= 1;
+      target = null;
+    } else {
+      target = passive ? null : this.pickTarget(sim, self);
+    }
 
     // --- Recovery / edge safety takes priority over everything else. ---
     if (unsafe !== 0) {

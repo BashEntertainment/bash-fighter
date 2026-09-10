@@ -5,14 +5,26 @@
 // Reed wins neutral by committing to long, slow, high-endlag pokes that
 // punish a whiff hard (space control). Wisp is the opposite half of
 // zoning: the FASTEST startup+endlag of any ranged hitbox in the cast
-// (faster even than Scrapper's close-range jab) at Reed-or-longer range,
-// for the lowest damage/knockback growth in the game -- poke, retreat,
-// repeat, never truly committing. A caught Wisp also dies fast: it is
-// the lightest fighter in the roster.
+// (faster even than Scrapper's close-range jab), for the lowest damage/
+// knockback growth in the game -- poke, retreat, repeat, never truly
+// committing. A caught Wisp also dies fast: it is the lightest fighter
+// in the roster.
+//
+// 2026-09-10 balance correction: every offset originally matched or beat
+// Reed's own reach (e.g. forward tilt tip at 33 units vs Reed's 30) while
+// also being more than twice as fast start-to-finish -- Wisp had no real
+// weakness relative to Reed's archetype, just a strictly better version
+// of it (same or greater range, comparable or higher damage-per-frame,
+// far less punishable). Offsets pulled in on all four moves so every one
+// now reaches clearly *shorter* than the equivalent Reed move (jab tip
+// 17 vs Reed 19, forward tilt 26 vs 30, up/down air 25 vs 25.5) while
+// keeping Wisp's real identity -- still faster and safer than Reed on
+// every move, still longer-ranged than the placeholder baseline -- so
+// speed is traded against range instead of getting both for free.
 //
 // Weight: 65 (lightest in the cast, below Voltling's 70). weightTerm =
 // 150/(65+50) = 1.304 -- the most knockback of any fighter, ~30% more
-// than baseline. The tradeoff for the cast's longest, fastest pokes.
+// than baseline. The tradeoff for the cast's fastest, safest pokes.
 //
 // Hurtbox: 11x30 -- narrower than Reed's 10x36 is tall-for-narrow, but
 // Wisp is shorter and slighter overall, reading as a small drifting
@@ -32,7 +44,7 @@ const jab: MoveDef = {
       hitboxes: [
         {
           id: 0,
-          offsetX: fromFloat(16),
+          offsetX: fromFloat(13),
           offsetY: fromFloat(2),
           width: fromFloat(8),
           height: fromFloat(5),
@@ -59,7 +71,7 @@ const forwardTilt: MoveDef = {
       hitboxes: [
         {
           id: 0,
-          offsetX: fromFloat(26),
+          offsetX: fromFloat(19),
           offsetY: fromFloat(2),
           width: fromFloat(14),
           height: fromFloat(5),
@@ -87,7 +99,7 @@ const upAir: MoveDef = {
         {
           id: 0,
           offsetX: fromFloat(0),
-          offsetY: fromFloat(22),
+          offsetY: fromFloat(18),
           width: fromFloat(7),
           height: fromFloat(14),
           angleIdx: 256,
@@ -114,7 +126,7 @@ const downAir: MoveDef = {
         {
           id: 0,
           offsetX: fromFloat(0),
-          offsetY: fromFloat(-22),
+          offsetY: fromFloat(-18),
           width: fromFloat(7),
           height: fromFloat(14),
           angleIdx: 768,

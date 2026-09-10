@@ -1,6 +1,6 @@
 // Wisp character: schema validation plus sim-level tests exercising its
-// hit-and-run ranged skirmisher archetype (long reach like Reed, but the
-// fastest startup/endlag of any ranged hitbox in the cast, lowest
+// hit-and-run ranged skirmisher archetype (shorter reach than Reed, but
+// the fastest startup/endlag of any ranged hitbox in the cast, lowest
 // damage/knockback growth, lightest weight), matching the pattern in
 // ballast.test.ts / voltling.test.ts / reed.test.ts.
 import { describe, it } from 'node:test';
@@ -51,7 +51,7 @@ describe('validateCharacter: Wisp', () => {
 });
 
 describe('Sim: Wisp moveset', () => {
-  it('jab connects at Reed-or-longer range', () => {
+  it('jab connects at short-to-mid range', () => {
     const sim = new Sim(10, 2, [WISP_CHARACTER, PLACEHOLDER_CHARACTER], undefined, {
       winCondition: 'stocks',
       startingStocks: 3,

@@ -556,6 +556,15 @@ html, body {
   z-index: 40;
 }
 
+/* #in-match-settings-btn and #in-match-moves-btn both use this class and
+   both default to the same fixed top-right slot, so without an offset
+   they stack exactly on top of each other and the first one (Controls)
+   becomes permanently unclickable/unreadable underneath the second
+   (Moves). Give the settings button its own slot to the left. */
+#in-match-settings-btn {
+  right: 118px;
+}
+
 .in-match-moves-btn:hover {
   color: var(--ink);
 }

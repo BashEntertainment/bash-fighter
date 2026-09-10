@@ -221,6 +221,20 @@ export function computeSafeExtents(
   // legitimately needed the override and didn't get it in time, failing
   // `npm test`, twice.
   //
+  // REVISED A THIRD TIME 2026-09-09 (integration-test regression pass):
+  // the 5-minute floor (Math.max(5min, shrinkFullyClosedTick)) below was
+  // itself wrong for the opposite direction -- test/dev configs that
+  // deliberately set a *tiny* shrinkFullyClosedTick (e.g. server/test/
+  // integration.test.ts uses 300 ticks = 5s, to force a fast resolvable
+  // match) got the override pinned to 5 minutes regardless, defeating
+  // the whole point of a fast-forced config and leaving a 3-player match
+  // with no combat stuck relying on ordinary boundary shrink alone.
+  // There is no floor needed: staleTick = shrinkFullyClosedTick already
+  // satisfies "never relax before the clock-driven term would have
+  // fully closed" for every settings value, small or large, because the
+  // clock term itself uses the same shrinkFullyClosedTick as its own
+  // denominator (see tickDenom above) and reaches full closure exactly
+  // then.
   // REVISED AGAIN 2026-09-09 (ring-pacing attribution pass): tying the
   // override's timing to shrinkFullyClosedTick was itself the bug --
   // when the ring-pacing experiment raised shrinkFullyClosedTick from 4
@@ -256,7 +270,7 @@ export function computeSafeExtents(
   // multipliers did.
   const STALEMATE_OVERRIDE_RELAX_TICKS = 60 * 60 * 2; // 2 minutes to fully relax
   if (settings) {
-    const staleTick = Math.max(60 * 60 * 5, settings.shrinkFullyClosedTick);
+    const staleTick = settings.shrinkFullyClosedTick;
     const timeT = fx.clamp(
       fx.sub(fx.ONE, fx.div(fx.fromInt(Math.max(0, tick - staleTick)), fx.fromInt(STALEMATE_OVERRIDE_RELAX_TICKS))),
       0,

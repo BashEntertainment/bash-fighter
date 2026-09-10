@@ -127,7 +127,13 @@ test('a full match played over real WebSockets ends with identical state hashes 
     }, 33);
 
     const start = Date.now();
-    const maxWaitMs = 60_000;
+    // 2026-09-09: was 60_000. With the ring-pacing rework, a 3-player
+    // match with pure movement and no combat now genuinely takes
+    // ~75-80s of wall time to resolve via boundary shrink alone
+    // (measured directly against a standalone server instance). 120s
+    // keeps real margin above that measured ~77s without masking an
+    // actual stall.
+    const maxWaitMs = 120_000;
     while (!clients.every((c) => c.matchEnded)) {
       if (Date.now() - start > maxWaitMs) break;
       await new Promise((r) => setTimeout(r, 200));

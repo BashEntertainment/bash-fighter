@@ -49,18 +49,58 @@ export const MAX_HITSTUN_TICKS = 240;
 // keep/revert decision and numbers.
 export const KB_GROWTH_SCALE: Fixed = fx.fromFloat(0.75);
 
-/** magnitude = baseKb + KB_GROWTH_SCALE * kbGrowth * (damage + percentAfterHit / 2) * (150 / (weight + 50)) */
+// STRUCTURAL PACING LEVER (2026-09-10, see wiki "Match Pacing Rework
+// 2026-09-10 Pass 3" and "Bot Difficulty Correction and Human-Survival
+// Fix 2026-09-10"): every prior pass tuned constants (spacing,
+// KB_GROWTH_SCALE, retarget cooldown, shrink ceiling) and plateaued
+// around ~50s average / ~79s best against a 150-180s target, with
+// run-to-run variance as large as any single lever's effect. Pass 3's
+// own recommendation was a structural change rather than another
+// constant nudge: this is that change.
+//
+// EARLY_MATCH_KB_DAMPENER softens knockback magnitude only, only for the
+// first EARLY_MATCH_RAMP_TICKS of a match, ramping linearly back to 1.0x
+// by the end of the window. It does not touch damage percent (so the
+// percent race is unaffected) and it does not touch EASY's existing
+// protection logic (bot.ts) at all -- this is a combat-model change,
+// applied identically regardless of who is hit.
+//
+// Why knockback and not damage: damage percent is also what a player
+// reads as progress, so half-damaging the opening would make early hits
+// feel like they don't matter. Softening knockback keeps every early
+// hit visibly connecting (same damage, slightly less hitstun) but stops
+// the opening scrum from converting its first exchange directly into
+// blast-zone kills -- which is what was collapsing the match into a
+// single ~20-30s trade. As the window ends, full knockback returns and
+// the middle/endgame plays exactly as before.
+export const EARLY_MATCH_KB_DAMPENER_START = fx.fromFloat(0.45);
+export const EARLY_MATCH_RAMP_TICKS = 1800; // 30s @ 60Hz
+
+/** 0.45x at tick 0, ramping linearly to 1.0x at EARLY_MATCH_RAMP_TICKS and
+ * beyond. Pure function of tick -- safe from both server and client sims,
+ * determinism-preserving (same tick in, same scale out). */
+export function earlyMatchKnockbackScale(tick: number): Fixed {
+  if (tick >= EARLY_MATCH_RAMP_TICKS) return fx.fromInt(1);
+  if (tick <= 0) return EARLY_MATCH_KB_DAMPENER_START;
+  const progress = fx.div(fx.fromInt(tick), fx.fromInt(EARLY_MATCH_RAMP_TICKS));
+  const range = fx.sub(fx.fromInt(1), EARLY_MATCH_KB_DAMPENER_START);
+  return fx.add(EARLY_MATCH_KB_DAMPENER_START, fx.mul(range, progress));
+}
+
+/** magnitude = (baseKb + KB_GROWTH_SCALE * kbGrowth * (damage + percentAfterHit / 2) * (150 / (weight + 50))) * earlyMatchKnockbackScale(tick) */
 export function computeKnockbackMagnitude(
   damage: Fixed,
   percentAfterHit: Fixed,
   baseKnockback: Fixed,
   knockbackGrowth: Fixed,
   weight: Fixed,
+  tick: number = EARLY_MATCH_RAMP_TICKS,
 ): Fixed {
   const weightTerm = fx.div(WEIGHT_NUM, fx.add(weight, WEIGHT_OFFSET));
   const percentTerm = fx.add(damage, fx.div(percentAfterHit, PERCENT_DIVISOR));
   const scaled = fx.mul(fx.mul(knockbackGrowth, percentTerm), KB_GROWTH_SCALE);
-  return fx.add(baseKnockback, fx.mul(scaled, weightTerm));
+  const raw = fx.add(baseKnockback, fx.mul(scaled, weightTerm));
+  return fx.mul(raw, earlyMatchKnockbackScale(tick));
 }
 
 export function computeHitstunTicks(magnitude: Fixed): number {

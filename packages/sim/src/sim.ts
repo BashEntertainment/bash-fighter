@@ -1195,6 +1195,7 @@ export class Sim {
       hb.baseKnockback,
       hb.knockbackGrowth,
       defenderChar.weight,
+      this.tick,
     );
     const attackerBase = attacker * FighterField.FIELD_COUNT;
     const attackerFacing = d[attackerBase + FighterField.FACING] as number;

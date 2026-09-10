@@ -55,8 +55,27 @@ export const BATTLE_ROYALE_20_ARENA: ArenaData = {
   // the 480 solid-ground edge) so the opening spreads fighters into separated
   // skirmishes instead of one shared brawl; still comfortably inside the
   // +-480 solid-ground span and the +-620 blast bounds.
+  //
+  // HUMAN-SURVIVAL FIX (2026-09-10, see wiki "Bot Difficulty Correction and
+  // Human-Survival Fix 2026-09-10"): human seats are always addSeat'd
+  // before bots fill the lobby (server/src/rooms.ts), so a human always
+  // lands on the *lowest* fighter index. The old `slot = floor(i / 2)`
+  // formula put the lowest indices at the smallest |x| -- literally the
+  // exact centre of the whole spread, the single most crowded spot on
+  // the stage at tick 0. A production sample showed the human 3rd-of-20
+  // eliminated inside 30s despite active play, while the match otherwise
+  // ran a healthy multi-phase match around them. Reversing the slot walk
+  // (`9 - floor(i / 2)`) keeps every property of the spacing fix (still
+  // distinct, still alternating sides, same span/gaps) but makes the
+  // *lowest* indices land at the *outer* edge of the spread instead --
+  // so a solo human's spawn is now the least crowded point on the stage,
+  // not the most. Multiple humans in one lobby get the two next-most-open
+  // points, and so on inward. Bot-only harnesses/fixtures are unaffected
+  // in aggregate (it's the same 20 points, just relabelled), but any
+  // fixture keyed to a specific fighter index's exact spawn position
+  // needs regenerating -- see scripts/regen-golden.mjs.
   spawnPoints: Array.from({ length: 20 }, (_, i) => {
-    const slot = Math.floor(i / 2);
+    const slot = 9 - Math.floor(i / 2);
     const side = i % 2 === 0 ? 1 : -1;
     const x = side * fx.fromInt(34 + slot * 45);
     return { x, y: fx.fromInt(0) };

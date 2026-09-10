@@ -71,8 +71,15 @@ export const THE_SPIRE_ARENA: ArenaData = {
   // centre (2026-09-09 fix) like battle-royale-20 and the-undercroft,
   // instead of one straight 22-unit-spaced line that put every fighter
   // in point-blank attack range of a neighbour at tick 0.
+  // HUMAN-SURVIVAL FIX (2026-09-10): same fix as battle-royale-20 -- human
+  // seats always get the lowest fighter indices (server/src/rooms.ts adds
+  // human seats before bot fill), and the old `slot = floor(i / 2)` put
+  // the lowest indices at the smallest |x|, the centre of the spread and
+  // the most crowded point at tick 0. Reversed so low indices land at the
+  // outer edge instead. See wiki "Bot Difficulty Correction and
+  // Human-Survival Fix 2026-09-10".
   spawnPoints: Array.from({ length: 20 }, (_, i) => {
-    const slot = Math.floor(i / 2);
+    const slot = 9 - Math.floor(i / 2);
     const side = i % 2 === 0 ? 1 : -1;
     const x = side * fx.fromInt(24 + slot * 40);
     return { x, y: fx.fromInt(0) };

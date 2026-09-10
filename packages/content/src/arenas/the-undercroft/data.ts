@@ -41,8 +41,11 @@ export const THE_UNDERCROFT_ARENA: ArenaData = {
   // 10 spawns per side, spread along each ground slab, well clear of the
   // chasm edge (closest spawn point is 100 units from the gap) and of the
   // outer blast zone.
+  // HUMAN-SURVIVAL FIX (2026-09-10): same fix as battle-royale-20 -- see
+  // that file's comment. Reversed so low fighter indices (always human
+  // seats) land at the outer edge of the spread, not the centre.
   spawnPoints: Array.from({ length: 20 }, (_, i) => {
-    const slot = Math.floor(i / 2);
+    const slot = 9 - Math.floor(i / 2);
     const side = i % 2 === 0 ? 1 : -1;
     const x = side * fx.fromInt(180 + slot * 38);
     return { x, y: fx.fromInt(0) };

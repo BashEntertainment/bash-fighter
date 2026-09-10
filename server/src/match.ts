@@ -41,15 +41,34 @@ function generateResumeToken(): string {
   return randomBytes(32).toString('hex');
 }
 
-/** MATCH_BOT_DIFFICULTY env var -> BotDifficulty, following the existing
- *  MATCH_MINIMUM / MATCH_COUNTDOWN_SECONDS env-configurable pattern.
- *  Defaults to 'medium'. Unknown values fall back to medium rather than
- *  throwing, since a typo in a systemd unit should degrade, not crash. */
+/** Resolves the bot difficulty a match should use. PRODUCTION_DEFAULT_
+ *  BOT_DIFFICULTY_NAME (server/src/match-defaults.ts) is the single
+ *  source of truth and is what every match uses by default.
+ *
+ *  The MATCH_BOT_DIFFICULTY env var is honoured ONLY when
+ *  MATCH_BOT_DIFFICULTY_ALLOW_OVERRIDE=1 is also set. This is
+ *  deliberate: on 2026-09-10 a stray `MATCH_BOT_DIFFICULTY=easy` sitting
+ *  in the deployed env file silently overrode the code default for an
+ *  unknown period, and a prior pass's harness fix assumed (wrongly,
+ *  without checking) that the env var was unset in production. Requiring
+ *  a second explicit flag makes that class of silent drift impossible:
+ *  a one-line env file edit can no longer change production behaviour
+ *  by itself. Unknown difficulty names fall back to the code default. */
 function botDifficultyFromEnv(): BotDifficultyValue {
-  const raw = (process.env.MATCH_BOT_DIFFICULTY ?? PRODUCTION_DEFAULT_BOT_DIFFICULTY_NAME).toLowerCase();
+  const overrideAllowed = process.env.MATCH_BOT_DIFFICULTY_ALLOW_OVERRIDE === '1';
+  const raw = (
+    overrideAllowed && process.env.MATCH_BOT_DIFFICULTY
+      ? process.env.MATCH_BOT_DIFFICULTY
+      : PRODUCTION_DEFAULT_BOT_DIFFICULTY_NAME
+  ).toLowerCase();
   if (raw === 'easy') return BotDifficulty.EASY;
   if (raw === 'hard') return BotDifficulty.HARD;
-  return BotDifficulty.MEDIUM;
+  if (raw === 'medium') return BotDifficulty.MEDIUM;
+  return (
+    { easy: BotDifficulty.EASY, hard: BotDifficulty.HARD, medium: BotDifficulty.MEDIUM }[
+      PRODUCTION_DEFAULT_BOT_DIFFICULTY_NAME
+    ] ?? BotDifficulty.EASY
+  );
 }
 
 export const TICK_HZ = 60;
@@ -143,6 +162,11 @@ export class Match {
    *  reconnecting client builds the identical Sim (see match-sim.ts). */
   arenaId = 'battle-royale-20';
   tick = 0;
+  // Resolved once in start() and never recomputed -- lets any log line
+  // for the rest of this match's life report the difficulty bots were
+  // actually given, rather than re-deriving it from env. See
+  // botDifficultyFromEnv().
+  botDifficulty: BotDifficultyValue | null = null;
   private bots = new Map<number, BotController>();
   private timer: NodeJS.Timeout | null = null;
   private lastTickAt = 0;
@@ -347,6 +371,7 @@ export class Match {
     this.lastDamageTick = new Array(this.seats.length).fill(-Match.COMBAT_WINDOW_TICKS - 1);
     this.matchStartedAtTick = this.tick;
     const difficulty = botDifficultyFromEnv();
+    this.botDifficulty = difficulty;
     // Human (non-bot) seats, passed to every bot so EASY's anti-dogpile
     // tuning (protectedTargetPenalty/protectedClusterMultiplier in
     // packages/sim/src/ai/bot.ts) knows which fighters are real players.

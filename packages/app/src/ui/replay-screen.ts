@@ -26,6 +26,7 @@ export class ReplayScreen {
     this.root.innerHTML = `
       <div class="wordmark">REPLAYS</div>
       <div class="subtitle">Watch a recorded match play back. These are the same deterministic fixtures the test suite replays to catch regressions.</div>
+      <button class="btn btn-secondary" id="replay-picker-back-btn">Back</button>
       <div id="replay-picker" class="replay-picker"></div>
       <div id="replay-player" class="replay-player hidden">
         <div id="replay-canvas-mount" class="replay-canvas-mount"></div>
@@ -61,6 +62,10 @@ export class ReplayScreen {
       this.hide();
       this.onBack();
     });
+    (this.root.querySelector('#replay-picker-back-btn') as HTMLButtonElement).addEventListener('click', () => {
+      this.hide();
+      this.onBack();
+    });
   }
 
   private async loadFixture(id: string): Promise<void> {
@@ -73,6 +78,11 @@ export class ReplayScreen {
     this.viewer = viewer;
     this.scrubEl.max = String(viewer.totalTicks - 1);
     this.scrubEl.value = '0';
+    // Hide the fixture picker once a replay is loaded -- otherwise it
+    // keeps its full height above the player, pushing the canvas and
+    // Play/scrub/Back controls hundreds of pixels below the fold with
+    // nothing on screen to tell the player anything happened.
+    this.pickerEl.classList.add('hidden');
     this.playerEl.classList.remove('hidden');
     viewer.play();
     this.tickUiLoop();
@@ -95,6 +105,7 @@ export class ReplayScreen {
     this.viewer?.destroy();
     this.viewer = null;
     this.playerEl.classList.add('hidden');
+    this.pickerEl.classList.remove('hidden');
   }
 
   show(): void {

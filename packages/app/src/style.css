@@ -1093,12 +1093,18 @@ html, body {
 
 
 /* Replay viewer (issue #3) */
+#replay-picker-back-btn {
+  margin-top: 0.5rem;
+}
 .replay-picker {
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
   margin: 1rem 0;
   max-width: 520px;
+}
+.replay-picker.hidden {
+  display: none;
 }
 .replay-fixture-card {
   text-align: left;
@@ -1117,6 +1123,15 @@ html, body {
 .replay-canvas-mount {
   width: 100%;
   max-width: 960px;
+  /* Pixi's `resizeTo: parent` reads this element's box to size the
+     canvas. Without an explicit height the mount collapses to its
+     content (the canvas itself), so the canvas falls back to its
+     default 800x600 and the whole player -- picture, scrubber, Play
+     and Back buttons -- gets pushed hundreds of pixels below the
+     fold behind the heading and fixture list above it. A fixed
+     aspect-ratio box gives it a real height to resize into. */
+  aspect-ratio: 4 / 3;
+  max-height: 55vh;
 }
 .replay-controls {
   display: flex;

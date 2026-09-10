@@ -17,10 +17,30 @@ import { BotController, BotDifficulty, deriveBotSeed } from '../packages/sim/src
 import { makeInputFrame } from '../packages/sim/src/types.ts';
 import { ALL_ARENAS } from '../packages/content/src/arenas.ts';
 import * as fx from '../packages/sim/src/math/fixed.ts';
+import { DEFAULT_MATCH_SETTINGS } from '../packages/sim/src/match-settings.ts';
 
 const arenaArg = process.argv[2] || 'all';
 const SEEDS = parseInt(process.argv[3] || '8', 10);
-const TICKS = parseInt(process.argv[4] || '21600', 10); // 6 min hard cap @ 60hz
+const TICKS = parseInt(process.argv[4] || '21600', 10); // 6 min hard cap @ 60hz -- see drift-guard warning below
+
+// Anti-drift guard (task #28195): this file's own TICKS default (21600 =
+// shrinkFullyClosedTick's current value exactly) gives the stalemate
+// override *zero* room to run before the ceiling hits, which is precisely
+// the harness-ceiling bug that previously produced false 67-83% timeout
+// readings on the-undercroft/the-spire (see wiki: Bot Pursuit and
+// Finishing 2026-09-09, and the fix/root-cause in Bot Clustering,
+// Vertical Bots, Ring Pacing 2026-09-09 section 1). Kept as the default
+// here for backward-compatible call sites, but flagged loudly rather than
+// silently trusted.
+console.log('=== Harness settings vs production DEFAULT_MATCH_SETTINGS ===');
+console.log(JSON.stringify(DEFAULT_MATCH_SETTINGS));
+const MIN_SAFE_TICKS = DEFAULT_MATCH_SETTINGS.shrinkFullyClosedTick + 120 * 60;
+if (TICKS < MIN_SAFE_TICKS) {
+  console.log(`WARNING: ticks=${TICKS} < ${MIN_SAFE_TICKS} (shrinkFullyClosedTick + stalemate-override relax window + margin). Any 'timeout'/no-survivor result below is likely a harness-ceiling artifact, not a real stalemate -- prefer scripts/full-sweep-metrics.mjs with its default ceiling, or pass a larger ticks value here.`);
+}
+if (process.env.MATCH_SHRINK_FULLY_CLOSED_TICK) {
+  console.log(`WARNING: MATCH_SHRINK_FULLY_CLOSED_TICK=${process.env.MATCH_SHRINK_FULLY_CLOSED_TICK} is set -- this run will not match production timing.`);
+}
 const N = 20;
 const COMBAT_WINDOW_TICKS = 60; // 1s: "recently hit" window for cause attribution
 

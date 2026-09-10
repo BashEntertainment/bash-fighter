@@ -12,9 +12,32 @@ import { makeInputFrame } from '../packages/sim/src/types.ts';
 import { ALL_ARENAS } from '../packages/content/src/arenas.ts';
 import { ALL_CHARACTERS } from '../packages/content/src/characters.ts';
 import * as fx from '../packages/sim/src/math/fixed.ts';
+import { DEFAULT_MATCH_SETTINGS } from '../packages/sim/src/match-settings.ts';
+
+// Anti-drift guard (task #28195): this harness constructs `new Sim(...)`
+// with no settings override, so it always inherits DEFAULT_MATCH_SETTINGS
+// -- the same object server/src/match.ts uses in production unless the
+// MATCH_SHRINK_FULLY_CLOSED_TICK test-only env var is set (never set by
+// the production systemd unit; see match.ts start()). Print the settings
+// this run actually used so a future silent change to either side is
+// visible in the log rather than misread as a game-behavior change, and
+// warn loudly if this file's own ceiling default no longer gives the
+// stalemate override (relax window, ~2min past shrinkFullyClosedTick) room
+// to resolve before CEIL -- that mismatch previously produced false
+// "high timeout rate" readings (see wiki: Bot Clustering, Vertical Bots,
+// Ring Pacing 2026-09-09, section 1).
+console.log('=== Harness settings vs production DEFAULT_MATCH_SETTINGS ===');
+console.log(JSON.stringify(DEFAULT_MATCH_SETTINGS));
+if (process.env.MATCH_SHRINK_FULLY_CLOSED_TICK) {
+  console.log(`WARNING: MATCH_SHRINK_FULLY_CLOSED_TICK=${process.env.MATCH_SHRINK_FULLY_CLOSED_TICK} is set in this shell -- this run's Sim.shrinkFullyClosedTick will NOT match production. Unset it to measure production-equivalent behavior.`);
+}
 
 const SEEDS = parseInt(process.argv[2] || '8', 10);
 const CEIL = parseInt(process.argv[3] || '42000', 10); // 700s @ 60hz default
+const MIN_SAFE_CEIL = DEFAULT_MATCH_SETTINGS.shrinkFullyClosedTick + 120 * 60; // shrink clock + 2min relax window + margin
+if (CEIL < MIN_SAFE_CEIL) {
+  console.log(`WARNING: ceilingTicks=${CEIL} is below ${MIN_SAFE_CEIL} (current shrinkFullyClosedTick + stalemate-override relax window). Timeout/no-survivor counts below may be a harness-ceiling artifact, not a real game defect -- raise the ceiling before trusting them.`);
+}
 const N = 20;
 const COMBAT_WINDOW_TICKS = 60;
 

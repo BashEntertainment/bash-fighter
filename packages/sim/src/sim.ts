@@ -182,6 +182,11 @@ const RING_DAMAGE_PER_TICK = fx.fromFloat(0.12);
  * drifts outward forever from surviving on chip damage alone, without making the soft boundary
  * itself an executioner. Kept generous so it is a rare last resort, not routine play. */
 const RING_HARD_MARGIN = fx.fromInt(90);
+/** The backstop margin starts closing at three quarters of the shrink schedule and reaches zero
+ * exactly at full closure, so a match that has run its whole schedule has a contact-lethal ring
+ * again and provably terminates. Real matches resolve in 30-80s, far inside the full-width phase. */
+const RING_HARD_MARGIN_DECAY_START_NUM = 3;
+const RING_HARD_MARGIN_DECAY_START_DEN = 4;
 /** Small constant inward nudge applied to velocity while taking ring damage -- what makes the
  * ring push fighters together rather than just hurt them in place. */
 const RING_INWARD_PUSH = fx.fromFloat(0.35);
@@ -1623,6 +1628,19 @@ export class Sim {
    * get their placement recorded; everyone else (timedKO, or a
    * stocks-mode fighter with lives left) goes to RESPAWN for a brief
    * invulnerable window instead. */
+  /** Current lethal-backstop margin beyond the soft boundary, in fixed-point units. Full width
+   * until three quarters of the shrink schedule, then linearly to zero at full closure,
+   * guaranteeing termination. */
+  private ringHardMargin(): number {
+    const closed = this.settings.shrinkFullyClosedTick;
+    if (closed <= 0) return RING_HARD_MARGIN;
+    const start = Math.floor((closed * RING_HARD_MARGIN_DECAY_START_NUM) / RING_HARD_MARGIN_DECAY_START_DEN);
+    if (this.tick <= start) return RING_HARD_MARGIN;
+    if (this.tick >= closed) return 0;
+    const t = fx.div(fx.fromInt(closed - this.tick), fx.fromInt(closed - start));
+    return fx.mul(RING_HARD_MARGIN, t);
+  }
+
   private checkBlastZone(index: number): void {
     const base = index * FighterField.FIELD_COUNT;
     const d = this.data;
@@ -1635,11 +1653,16 @@ export class Sim {
       posX < this.blastMinX || posX > this.blastMaxX || posY < this.blastMinY || posY > this.blastMaxY;
     if (!outsideSoft) return;
 
+    // The hard backstop closes in once the ordinary shrink schedule has fully run: over the
+    // stalemate-override window the margin decays to zero, so a late match can never sit
+    // forever on chip damage with nobody able to finish anyone (the sim-level guarantee that
+    // every match resolves). During normal play the margin is at full width and rarely reached.
+    const margin = this.ringHardMargin();
     const outsideHard =
-      posX < fx.sub(this.blastMinX, RING_HARD_MARGIN) ||
-      posX > fx.add(this.blastMaxX, RING_HARD_MARGIN) ||
-      posY < fx.sub(this.blastMinY, RING_HARD_MARGIN) ||
-      posY > fx.add(this.blastMaxY, RING_HARD_MARGIN);
+      posX < fx.sub(this.blastMinX, margin) ||
+      posX > fx.add(this.blastMaxX, margin) ||
+      posY < fx.sub(this.blastMinY, margin) ||
+      posY > fx.add(this.blastMaxY, margin);
 
     if (!outsideHard) {
       // Soft boundary: damaging pressure, not a kill. Accumulating percent both threatens the

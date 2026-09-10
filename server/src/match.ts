@@ -247,6 +247,12 @@ export class Match {
   findReclaimableSeat(token: string): Seat | undefined {
     const seat = this.seats.find((s) => s.resumeToken !== null && s.resumeToken === token && !s.connected);
     if (!seat) return undefined;
+    // An eliminated seat has no fighter left to hand control back to --
+    // but only while the match is still running. Once phase is 'ended'
+    // there is nothing to reclaim control of anyway (the caller reports
+    // the outcome instead, see handleResume), so an eliminated seat's
+    // token must keep working for that.
+    if (seat.eliminated && this.phase !== 'ended') return undefined;
     // The grace-window setTimeout in markDisconnected is the seat's primary
     // expiry mechanism, but a JS timer is only guaranteed to fire no
     // earlier than its delay -- under event-loop load it can fire
@@ -271,6 +277,7 @@ export class Match {
   findSeatByAnyToken(token: string): Seat | undefined {
     const seat = this.seats.find((s) => s.resumeToken !== null && s.resumeToken === token);
     if (!seat) return undefined;
+    if (seat.eliminated && this.phase !== 'ended') return undefined;
     if (!seat.connected && seat.disconnectedAt !== null && Date.now() - seat.disconnectedAt >= RECONNECT_GRACE_MS) {
       this.releaseSeat(seat.slot, true);
       return undefined;
@@ -439,9 +446,22 @@ export class Match {
       this.lastPercent[seat.slot] = pct;
       if (snap.eliminated) {
         seat.eliminated = true;
-        // Elimination ends reclaimability too (brief item 2): there is no
-        // fighter left to hand back control of.
-        this.releaseSeat(seat.slot);
+        // Deliberately NOT calling releaseSeat/nulling the token here.
+        // Elimination alone must not end reclaimability: a disconnected
+        // seat's fighter can be eliminated by the very same shrinking-ring
+        // tick that ends the whole match (a stationary, disconnected
+        // fighter is an entirely ordinary thing for a closing ring to
+        // catch first), and that must not race ahead of -- and defeat --
+        // the "reconnect after the match already ended reports the
+        // outcome instead of erroring" guarantee in handleResume/
+        // Match.stop(). Mid-match reclaim of an eliminated (but
+        // not-yet-ended) seat is still refused: see the eliminated-and-
+        // not-ended check in findReclaimableSeat/findSeatByAnyToken below
+        // -- there is genuinely no fighter to hand control back to while
+        // the match keeps running. Only once phase is 'ended' does the
+        // token stop mattering for seat control and start mattering only
+        // for reporting the outcome, which an eliminated seat is just as
+        // entitled to hear as a surviving one.
         this.events.onEliminated(seat.slot, snap.placement, this.tick);
         const cause = this.tick - this.lastDamageTick[seat.slot] <= Match.COMBAT_WINDOW_TICKS ? 'combat' : 'boundary_or_other';
         const matchAgeSec = ((this.tick - this.matchStartedAtTick) / 60).toFixed(1);

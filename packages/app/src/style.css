@@ -104,31 +104,49 @@ html, body {
   padding-bottom: 10px;
 }
 
-.roster-label {
-  font-size: 12px;
-  letter-spacing: 0.1em;
-  color: var(--ink-dim);
-  margin-top: -8px;
+/* The fighter-select section is a single deliberate block: a heading
+   that always has clear air above and below it (never flush against the
+   hero or the grid beneath it), then the grid+preview composed as one
+   unit rather than a grid with a preview panel floating separately. */
+.fighter-select {
+  width: min(760px, 92vw);
+  padding-top: 12px;
+  border-top: 1px solid #1c1f24;
+}
+
+.section-label {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--ink);
+  margin: 0 0 16px;
 }
 
 .roster-select {
   display: flex;
   gap: 20px;
-  align-items: flex-start;
-  flex-wrap: wrap;
+  align-items: stretch;
+  justify-content: center;
 }
 
 .roster-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 16px;
+  gap: 12px;
+  width: 464px;
+  flex: 0 0 auto;
+  align-content: flex-start;
 }
 
 /* Moveset preview beside character-select (issue #10) -- reuses the same
    row shape/typography as .move-reference-row so the two panels read as
-   one visual language instead of two competing ones. */
+   one visual language instead of two competing ones. Flexes to fill the
+   width left over next to the grid instead of a fixed narrow column, so
+   the composed block reads as one balanced unit rather than a grid with
+   a preview panel stranded in a corner and empty space beside it. */
 .roster-preview {
-  width: min(320px, 40vw);
+  flex: 1 1 260px;
+  min-width: 0;
   border: 1px solid #23262b;
   background: var(--panel);
   padding: 14px 16px;
@@ -1039,6 +1057,7 @@ html, body {
     flex-wrap: wrap;
     justify-content: center;
     max-width: 100%;
+    width: 100%;
     overflow-x: visible;
   }
 
@@ -1046,16 +1065,27 @@ html, body {
     flex-direction: column;
   }
 
+  .fighter-select {
+    width: 100%;
+  }
+
   .roster-preview {
     width: 100%;
+    flex: 1 1 auto;
   }
 
   .hero {
     padding: 16px 16px 12px;
+    gap: 12px;
+  }
+
+  .wordmark {
+    font-size: 36px;
   }
 
   .below-fold {
     padding: 0 16px 16px;
+    gap: 16px;
   }
 
   .win-headline {

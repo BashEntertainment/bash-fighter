@@ -33,9 +33,11 @@ export class StartScreen {
         <div id="primary-actions"></div>
       </div>
       <div class="below-fold">
-        <div class="roster-label">Choose your fighter</div>
-        <div id="roster-mount"></div>
-        <div class="hint">The arena shrinks as fighters are eliminated. Empty slots are filled by bots so a match always starts.</div>
+        <section class="fighter-select">
+          <h2 class="section-label">Choose your fighter</h2>
+          <div id="roster-mount"></div>
+          <p class="hint">The arena shrinks as fighters are eliminated. Empty slots are filled by bots so a match always starts.</p>
+        </section>
         <button class="btn btn-secondary" id="watch-replay-btn">Watch a replay</button>
         <details class="local-play">
           <summary>Play locally on one keyboard</summary>

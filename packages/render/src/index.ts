@@ -148,7 +148,7 @@ const FALL_HEADROOM_WORLD = 90;
  * tighter than. Intersected with the *live* (possibly shrunk) blast rect
  * so the floor honestly shrinks as the collapsing arena does, instead of
  * permanently reserving room for a blast zone that no longer exists. */
-function framingFloor(stage: StageBounds): ArenaBounds {
+function framingFloor(stage: StageBounds, viewWidth: number, viewHeight: number): ArenaBounds {
   let minX = Infinity;
   let maxX = -Infinity;
   let minY = Infinity;
@@ -166,6 +166,43 @@ function framingFloor(stage: StageBounds): ArenaBounds {
   }
   minY -= FALL_HEADROOM_WORLD;
   maxY += JUMP_HEADROOM_WORLD;
+
+  // The "fought-over space plus jump/fall headroom" box computed above
+  // has whatever aspect ratio the stage's own geometry happens to
+  // produce, which on every current stage does not match the viewport's
+  // (see wiki "Camera Framing and Start Screen Composition 2026-09-10"):
+  // battle-royale-20 and the-undercroft are wide relative to their
+  // headroom (viewport ends up X-bound, leaving a dead band above or
+  // below the action), while the-spire is comparatively tall (viewport
+  // ends up Y-bound, leaving dead bands left and right). Pad whichever
+  // axis is short so the box's aspect ratio matches the viewport's
+  // before it is ever handed to computeCamera — that is what actually
+  // fills the screen with the arena instead of leaving letterboxing,
+  // without ever changing what a fighter can reach (presentation only).
+  // Vertical padding keeps the existing fall:jump ratio (a hard landing
+  // needs less warning room than a rising jump); horizontal padding is
+  // split evenly since there's no equivalent asymmetry left-to-right.
+  const viewportAspect = viewWidth / viewHeight;
+  const spanX = maxX - minX;
+  const spanY = maxY - minY;
+  const naturalAspect = spanX / spanY;
+  if (naturalAspect > viewportAspect) {
+    // Wider than the viewport needs — the viewport will be X-bound;
+    // grow the vertical span to match so there's no dead band top/bottom.
+    const desiredSpanY = spanX / viewportAspect;
+    const extra = Math.max(0, desiredSpanY - spanY);
+    const fallShare = FALL_HEADROOM_WORLD / (FALL_HEADROOM_WORLD + JUMP_HEADROOM_WORLD);
+    minY -= extra * fallShare;
+    maxY += extra * (1 - fallShare);
+  } else if (naturalAspect < viewportAspect) {
+    // Taller than the viewport needs — the viewport will be Y-bound;
+    // grow the horizontal span to match so there's no dead band left/right.
+    const desiredSpanX = spanY * viewportAspect;
+    const extra = Math.max(0, desiredSpanX - spanX);
+    minX -= extra / 2;
+    maxX += extra / 2;
+  }
+
   // Never claim more than the live blast rect actually covers — this is
   // what makes the floor shrink correctly as the collapsing arena closes
   // in, rather than permanently framing the arena's original footprint.
@@ -189,7 +226,7 @@ function cameraConfig(stage: StageBounds, viewWidth: number, viewHeight: number)
     minScale: 1.6,
     maxScale: 5.5,
     paddingWorld: 20,
-    arena: framingFloor(stage),
+    arena: framingFloor(stage, viewWidth, viewHeight),
   };
 }
 

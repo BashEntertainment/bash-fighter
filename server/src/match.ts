@@ -146,6 +146,16 @@ export class Match {
   private accumulatorMs = 0;
   private ended = false;
   endedAt: number | null = null;
+  /** Per-slot elimination-cause tracking for production ground-truth
+   *  measurement (task: match-duration contradiction, 2026-09-09). Not
+   *  used by any gameplay logic -- observability only. lastDamageTick
+   *  mirrors the classification method already used by
+   *  scripts/arena-shrink-metrics.mjs (damage within COMBAT_WINDOW_TICKS
+   *  of elimination = combat; otherwise boundary/other). */
+  private lastPercent: number[] = [];
+  private lastDamageTick: number[] = [];
+  private matchStartedAtTick = 0;
+  private static readonly COMBAT_WINDOW_TICKS = 60;
   countdownTicksRemaining = -1;
   readonly events: MatchEvents;
   /** slot -> grace-window setTimeout that releases the seat (and its token)
@@ -310,6 +320,9 @@ export class Match {
     const shrinkOverride = process.env.MATCH_SHRINK_FULLY_CLOSED_TICK;
     if (shrinkOverride) settingsOverride.shrinkFullyClosedTick = Number(shrinkOverride);
     this.sim = createMatchSim(this.seed, this.seats.length, settingsOverride, characters, this.arenaId);
+    this.lastPercent = new Array(this.seats.length).fill(0);
+    this.lastDamageTick = new Array(this.seats.length).fill(-Match.COMBAT_WINDOW_TICKS - 1);
+    this.matchStartedAtTick = this.tick;
     const difficulty = botDifficultyFromEnv();
     // Human (non-bot) seats, passed to every bot so EASY's anti-dogpile
     // tuning (protectedTargetPenalty/protectedClusterMultiplier in
@@ -373,12 +386,29 @@ export class Match {
     for (const seat of this.seats) {
       if (seat.eliminated) continue;
       const snap = sim.getFighter(seat.slot);
+      const pct = snap.percent;
+      if (pct > this.lastPercent[seat.slot]) this.lastDamageTick[seat.slot] = this.tick;
+      this.lastPercent[seat.slot] = pct;
       if (snap.eliminated) {
         seat.eliminated = true;
         // Elimination ends reclaimability too (brief item 2): there is no
         // fighter left to hand back control of.
         this.releaseSeat(seat.slot);
         this.events.onEliminated(seat.slot, snap.placement, this.tick);
+        const cause = this.tick - this.lastDamageTick[seat.slot] <= Match.COMBAT_WINDOW_TICKS ? 'combat' : 'boundary_or_other';
+        const matchAgeSec = ((this.tick - this.matchStartedAtTick) / 60).toFixed(1);
+        console.log(JSON.stringify({
+          evt: 'elimination',
+          matchId: this.id,
+          slot: seat.slot,
+          isBot: seat.isBot,
+          placement: snap.placement,
+          tick: this.tick,
+          matchAgeSec,
+          percentAtDeath: pct,
+          cause,
+          aliveAfter: this.seats.filter((s) => !s.eliminated).length,
+        }));
       }
     }
 
@@ -391,6 +421,7 @@ export class Match {
     if (!this.ended && sim.isMatchOver()) {
       this.ended = true;
       this.phase = 'ended';
+      this.logMatchSummary('resolved');
       this.events.onMatchEnd(sim.getWinner(), sim.getLeaderboard(), this.tick, true);
       this.endedAt = Date.now();
       this.stop();
@@ -408,10 +439,31 @@ export class Match {
     if (!this.ended && this.isAbandonedByHumans()) {
       this.ended = true;
       this.phase = 'ended';
+      this.logMatchSummary('abandoned_by_humans');
       this.events.onMatchEnd(sim.getWinner(), sim.getLeaderboard(), this.tick, false);
       this.endedAt = Date.now();
       this.stop();
     }
+  }
+
+  /** Ground-truth summary line for the match-duration measurement task
+   *  (2026-09-09): one JSON line per match end, cheap (fires once),
+   *  observability only -- no effect on gameplay. */
+  private logMatchSummary(endReason: 'resolved' | 'abandoned_by_humans'): void {
+    const durationSec = ((this.tick - this.matchStartedAtTick) / 60).toFixed(1);
+    const humanSlots = this.seats.filter((s) => !s.isBot).map((s) => s.slot);
+    console.log(JSON.stringify({
+      evt: 'matchSummary',
+      matchId: this.id,
+      endReason,
+      durationSec,
+      finalTick: this.tick,
+      arenaId: this.arenaId,
+      totalSeats: this.seats.length,
+      humanSeats: humanSlots.length,
+      humanSlotsEliminated: humanSlots.filter((slot) => this.seats[slot].eliminated).length,
+      remainingAlive: this.seats.filter((s) => !s.eliminated).length,
+    }));
   }
 
   /** True once every human seat is unreachable: eliminated, or

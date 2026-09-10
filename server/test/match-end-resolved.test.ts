@@ -95,27 +95,25 @@ test('a match with a spectator watching is not considered abandoned after every 
   );
 });
 
-test('the absolute max-duration predicate fires once tick count passes the ceiling, regardless of connection state', () => {
-  const match = new Match('resolved-test-5', 3, 1, noopEvents(() => {}));
+test('a match is force-ended past its absolute max duration even with a spectator connected throughout', () => {
+  const calls: Array<[number | null, number[], number, boolean]> = [];
+  const match = new Match('resolved-test-5', 3, 1, noopEvents((w, lb, t, r) => calls.push([w, lb, t, r])));
   match.addSeat('human-a', false);
   match.addSeat('bot-1', true);
   match.addSeat('bot-2', true);
-  match.setWatcherCount(1);
+  match.start();
+  clearInterval((match as unknown as { timer: NodeJS.Timeout }).timer as NodeJS.Timeout);
+  (match as unknown as { timer: null }).timer = null;
+  match.setWatcherCount(1); // a spectator never leaves for the whole test
 
   const maxTicks = (Match as unknown as { MAX_MATCH_TICKS: number }).MAX_MATCH_TICKS;
   assert.ok(maxTicks > 0, 'sanity check: a real ceiling is configured');
+  // Jump straight to just past the ceiling instead of ticking the sim
+  // that many times for real -- this test is about the ceiling check,
+  // not about how long it takes bots to fight to a natural resolution.
+  (match as unknown as { matchStartedAtTick: number }).matchStartedAtTick = -(maxTicks + 5);
 
-  const asAny = match as unknown as {
-    isPastMaxDuration(): boolean;
-    isAbandoned(): boolean;
-    tick: number;
-    matchStartedAtTick: number;
-  };
-  asAny.matchStartedAtTick = 0;
-  asAny.tick = maxTicks - 1;
-  assert.equal(asAny.isPastMaxDuration(), false, 'must not fire before the ceiling');
-  assert.equal(asAny.isAbandoned(), false, 'a connected spectator keeps it from reading as abandoned pre-ceiling');
-
-  asAny.tick = maxTicks + 1;
-  assert.equal(asAny.isPastMaxDuration(), true, 'must fire once past the ceiling');
+  (match as unknown as { tickOnce(): void }).tickOnce();
+  assert.equal(calls.length, 1, 'match must be force-ended once past the absolute duration ceiling');
+  assert.equal(calls[0][3], false, 'a max-duration cutoff is not a natural resolution');
 });

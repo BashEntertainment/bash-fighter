@@ -240,25 +240,39 @@ async function beginOnlineMatch(): Promise<void> {
       inMatchMovesButton.classList.add('hidden');
       touchControls.hide();
       setNetStatus('match-complete');
-      matchOverlay.hide();
-      // `resolved` (2026-09-09 fix, see wiki "End-of-Match Screen Missing
-      // Entirely") tells us whether the sim itself decided this match --
-      // real winner, or a genuine simultaneous-KO draw -- versus the
-      // server tearing an unfinished bot-only fight down early because
-      // every human left (isAbandonedByHumans in server/src/match.ts). A
-      // player who was already eliminated already saw their honest
-      // placement from onEliminated; on top of that, an *abandoned*
-      // teardown of a fight that kept going without them is noise with
-      // nothing to do with their match, so we skip it (previous fix).
-      // But a *resolved* end is the natural continuation of the match
-      // they were actually part of -- they earned the right to be told
-      // who won and to get a "Play again" button, so it must always be
-      // shown regardless of eliminatedThisOnlineMatch. Skipping it too
-      // (the regression this fixes) left a finisher who watched the
-      // match out staring at a frozen frame with no way forward.
-      if (eliminatedThisOnlineMatch && !resolved) {
+      // 2026-09-09, round 3 (see wiki "Match-End Client Bugs and Session
+      // Wrap"): the player's own elimination is the ONLY source of truth
+      // for their own result, and nothing that happens to the match
+      // afterwards may take that screen away. onEliminated (below) shows
+      // it the instant the local seat is eliminated; this handler must
+      // never call matchOverlay.hide() on that path. The previous version
+      // hid matchOverlay unconditionally before checking `resolved`,
+      // which wiped the honest placement screen the instant the common
+      // solo-human-among-bots path hit the server's isAbandonedByHumans
+      // teardown (resolved: false) right after elimination -- leaving
+      // the player with nothing on screen at all.
+      if (eliminatedThisOnlineMatch) {
+        // Already eliminated: onEliminated's placement overlay (with its
+        // own Play again button) is already showing and stays exactly as
+        // it is. A resolved end has nothing to add that the player needs
+        // right now; an unresolved/abandoned one is noise about a match
+        // they're no longer part of. Either way, do nothing here.
         return;
       }
+      if (!resolved) {
+        // Not eliminated, but the match ended without resolving (e.g. an
+        // abandoned-teardown edge case reached before our own elimination
+        // event fired). No winner to announce, but the player must still
+        // get a way forward -- never leave a dead frame with no control.
+        matchOverlay.show({
+          title: 'Match ended',
+          message: 'This match ended before it finished. You can jump straight into a new one.',
+          actions: [{ label: 'Play again', onClick: () => void beginOnlineMatch() }],
+        });
+        return;
+      }
+      // Still alive and the match genuinely resolved: tell them who won.
+      matchOverlay.hide();
       audio.play('match_end');
       winScreen.show(winnerIndex, netMatch?.localSlot());
     },

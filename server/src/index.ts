@@ -228,6 +228,11 @@ function makeEventsFor(matchId: string) {
     },
     onMatchEnd(winner: number | null, leaderboard: number[], tick: number, resolved: boolean) {
       const msg: ServerControlMessage = { t: 'matchEnd', winner, leaderboard, tick, resolved };
+      // Send-time log (2026-09-09): lets a live cross-reference against
+      // this same log settle whether a client-observed match-end really
+      // came from the server, and exactly when/why -- see wiki "Match-End
+      // Client Bugs and Session Wrap".
+      console.log(`[matchEnd] ${JSON.stringify({ matchId, winner, tick, resolved, watchers: watcherSet(matchId).size })}`);
       for (const cid of watcherSet(matchId)) {
         const c = clients.get(cid);
         if (c) send(c, msg);
@@ -451,9 +456,11 @@ function handleResume(conn: ClientConn, token: string): void {
       resumed: true,
     });
     const sim = match.sim;
+    const resumeWinner = sim ? sim.getWinner() : null;
+    console.log(`[matchEnd] ${JSON.stringify({ matchId: match.id, winner: resumeWinner, tick: match.tick, resolved: true, path: 'resume-into-ended' })}`);
     send(conn, {
       t: 'matchEnd',
-      winner: sim ? sim.getWinner() : null,
+      winner: resumeWinner,
       leaderboard: sim ? sim.getLeaderboard() : [],
       tick: match.tick,
       // Rejoining a match that's already over: we don't know here whether

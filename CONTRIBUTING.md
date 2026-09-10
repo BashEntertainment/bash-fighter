@@ -167,6 +167,10 @@ existing roster at 20-fighter zoom (silhouette, proportions, not just
 color) — see `docs/ARCHITECTURE.md` for the readability constraints this
 places on new designs.
 
+For a full annotated walkthrough — data file, validator, render shape,
+and roster registration, with real file paths and commands — see
+[`docs/ADDING_A_CHARACTER.md`](./docs/ADDING_A_CHARACTER.md).
+
 ## Coding standards
 
 - TypeScript, strict mode (`tsconfig.base.json`: `strict`,

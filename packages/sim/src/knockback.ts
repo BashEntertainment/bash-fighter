@@ -57,6 +57,20 @@ export const MAX_HITSTUN_TICKS = 240;
 // exchanges are needed to build enough magnitude to launch a fighter off
 // -stage, which directly lengthens fights without changing the damage
 // percent a player sees per hit.
+// PACING REWORK 2026-09-10, LEVER 9 -- TRIED AND REJECTED: lowering again
+// 0.6 -> 0.5 was tested (production evidence post-Lever-7/8 deploy eaf24fa
+// still showed 44-73s matches against the 150-180s target). It broke the
+// non-negotiable match-resolution guarantee: `npm test`'s
+// arena-shrink.test.ts seed 1003 ("full 20-fighter bot matches resolve
+// decisively") timed out at the 36000-tick ceiling with no winner --
+// fights got weak enough that combat could no longer reliably finish a
+// stalemated pair before the ring's own stalemate override (itself tuned
+// against real match lengths of 110-207s, not against a deliberately
+// weakened knockback model) ran out of runway. Reverted to 0.6. See wiki
+// "Match Pacing Pass 2026-09-10: Toward a 2.5-3 Minute Arc" for the full
+// account. Do not lower this again without also re-deriving the
+// stalemate-override timing in arena-shrink.ts against the new, weaker
+// knockback model.
 export const KB_GROWTH_SCALE: Fixed = fx.fromFloat(0.6);
 
 // STRUCTURAL PACING LEVER (2026-09-10, see wiki "Match Pacing Rework

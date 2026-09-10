@@ -50,7 +50,10 @@ const DIFFS = [
 function runMatch(arenaEntry, seed, difficulty, chars) {
   const sim = new Sim(seed, N, chars, arenaEntry.arena);
   const bots = Array.from({ length: N }, (_, i) => new BotController(i, difficulty, deriveBotSeed(seed, i)));
-  const lastDamageTick = new Array(N).fill(-1);
+  const lastCombatHitTick = new Array(N).fill(-1); // real attack damage only (2026-09-10 rework:
+  // ring damage now also raises percent every tick a fighter is outside, so the old "any recent
+  // percent rise" heuristic would misclassify hard-backstop ring kills as combat. inRingDanger
+  // lets us tell the two damage sources apart directly instead of guessing from percent deltas.)
   const lastPercent = new Array(N).fill(0);
   const wasEliminated = new Array(N).fill(false);
   let boundaryElims = 0, combatElims = 0;
@@ -63,12 +66,18 @@ function runMatch(arenaEntry, seed, difficulty, chars) {
     for (let i = 0; i < N; i++) {
       const f = sim.getFighter(i);
       const pct = fx.toFloat(f.percent);
-      if (pct > lastPercent[i] + 0.01) { lastDamageTick[i] = t; totalDamage += pct - lastPercent[i]; }
+      if (pct > lastPercent[i] + 0.01) {
+        totalDamage += pct - lastPercent[i];
+        if (!f.inRingDanger) lastCombatHitTick[i] = t; // rose from an attack, not ring tick damage
+      }
       lastPercent[i] = pct;
       if (f.eliminated && !wasEliminated[i]) {
         wasEliminated[i] = true;
-        const recentlyHit = lastDamageTick[i] >= 0 && t - lastDamageTick[i] <= COMBAT_WINDOW_TICKS;
-        if (recentlyHit) combatElims++; else boundaryElims++;
+        // Combat KO = actually launched (in hitstun / airborne from an attack) recently, not just
+        // "has taken any damage ever". A fighter who dies to the hard ring backstop still counts
+        // as boundary even if they took a hit minutes ago.
+        const recentlyHit = lastCombatHitTick[i] >= 0 && t - lastCombatHitTick[i] <= COMBAT_WINDOW_TICKS;
+        if (recentlyHit && !f.inRingDanger) combatElims++; else boundaryElims++;
       }
     }
     if (sim.isMatchOver && sim.isMatchOver()) { endTick = t; matchEnded = true; break; }

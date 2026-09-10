@@ -47,7 +47,17 @@ export const MAX_HITSTUN_TICKS = 240;
 // just delaying when they start (see Lever 2, spawn spacing). Measured via
 // production journalctl, one lever at a time -- see wiki page for the
 // keep/revert decision and numbers.
-export const KB_GROWTH_SCALE: Fixed = fx.fromFloat(0.75);
+// PACING REWORK 2026-09-10, LEVER 7 (match-arc lengthening pass): lowered
+// again from 0.75 to 0.6. Live-play evidence this pass (see wiki "Match
+// Arc Lengthening Pass 2026-09-10") shows matches still resolving in
+// 44-70s against a 150-180s target even with the 8-minute ring clock and
+// the 0.75 scale/early dampener from prior passes -- the ring is not the
+// bottleneck, individual fights ending too fast is. Lowering the fraction
+// of damage/percent that converts into knockback growth means more
+// exchanges are needed to build enough magnitude to launch a fighter off
+// -stage, which directly lengthens fights without changing the damage
+// percent a player sees per hit.
+export const KB_GROWTH_SCALE: Fixed = fx.fromFloat(0.6);
 
 // STRUCTURAL PACING LEVER (2026-09-10, see wiki "Match Pacing Rework
 // 2026-09-10 Pass 3" and "Bot Difficulty Correction and Human-Survival
@@ -73,8 +83,15 @@ export const KB_GROWTH_SCALE: Fixed = fx.fromFloat(0.75);
 // blast-zone kills -- which is what was collapsing the match into a
 // single ~20-30s trade. As the window ends, full knockback returns and
 // the middle/endgame plays exactly as before.
-export const EARLY_MATCH_KB_DAMPENER_START = fx.fromFloat(0.45);
-export const EARLY_MATCH_RAMP_TICKS = 1800; // 30s @ 60Hz
+// PACING REWORK 2026-09-10, LEVER 8: widened the early-game dampener --
+// start lower (0.45 -> 0.35) and ramp back to full over a minute instead
+// of 30s (1800 -> 3600 ticks). The opening scrum was still converting
+// into the first eliminations well inside a minute; a longer, deeper
+// soft-start buys more of the "many fighters still alive, jockeying"
+// phase the owner's 150-180s target arc describes before the first kills
+// land, without touching damage percent at all.
+export const EARLY_MATCH_KB_DAMPENER_START = fx.fromFloat(0.35);
+export const EARLY_MATCH_RAMP_TICKS = 3600; // 60s @ 60Hz
 
 /** 0.45x at tick 0, ramping linearly to 1.0x at EARLY_MATCH_RAMP_TICKS and
  * beyond. Pure function of tick -- safe from both server and client sims,

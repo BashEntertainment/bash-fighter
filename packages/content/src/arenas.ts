@@ -8,6 +8,7 @@ import type { ArenaData } from '../../sim/src/arena/types.ts';
 import { BATTLE_ROYALE_20_ARENA } from './arenas/battle-royale-20/data.ts';
 import { THE_UNDERCROFT_ARENA } from './arenas/the-undercroft/data.ts';
 import { THE_SPIRE_ARENA } from './arenas/the-spire/data.ts';
+import { THE_FOUNDRY_ARENA } from './arenas/the-foundry/data.ts';
 
 export interface ArenaEntry {
   /** Stable wire/storage identifier -- never the display name. Sent to
@@ -25,6 +26,7 @@ export const ALL_ARENAS: readonly ArenaEntry[] = [
   { id: 'battle-royale-20', arena: BATTLE_ROYALE_20_ARENA },
   { id: 'the-undercroft', arena: THE_UNDERCROFT_ARENA },
   { id: 'the-spire', arena: THE_SPIRE_ARENA },
+  { id: 'the-foundry', arena: THE_FOUNDRY_ARENA },
 ];
 
 /** Resolves a wire-supplied arena id to its ArenaData, falling back to the

@@ -105,24 +105,7 @@ export function computeShrinkProgress(
 ): Fixed {
   if (!settings.arenaShrink) return 0;
   const tickDenom = settings.shrinkFullyClosedTick > 0 ? settings.shrinkFullyClosedTick : 1;
-  const linearTickT = fx.clamp(fx.div(fx.fromInt(Math.min(tick, tickDenom)), fx.fromInt(tickDenom)), 0, fx.ONE);
-  // Task #28195 (give a match a real arc): the clock term was linear in
-  // tick, so the ring closed at a constant rate from the first second --
-  // no distinguishable opening, no rising middle, just one steady squeeze
-  // for the whole match (see wiki Arena Collapse Cascade: one live match
-  // went 20 to 1 in ~55s). Squaring the linear fraction (same ease-in shape
-  // already used below for the alive-driven term, for consistency) keeps
-  // the same endpoints -- 0 at tick 0, exactly 1.0 at shrinkFullyClosedTick,
-  // so total match duration and the fully-closed-by-the-clock guarantee
-  // are unchanged -- but redistributes how much closing happens early vs
-  // late: at 1/3 of the clock only 1/9 of the closing has happened (an
-  // open, exploratory phase), by 2/3 of the clock 4/9 has happened (rising
-  // pressure), and the final third of the clock delivers 5/9 of the total
-  // closing (a tight, tense endgame). This only reshapes the tick-driven
-  // term; the population-aware safe-extents floor and the alive-driven
-  // term's own cap are untouched, so ground is still never swept while the
-  // field is full.
-  const tickT = fx.mul(linearTickT, linearTickT);
+  const tickT = fx.clamp(fx.div(fx.fromInt(Math.min(tick, tickDenom)), fx.fromInt(tickDenom)), 0, fx.ONE);
   const aliveDenom = fighterCount > 1 ? fighterCount - 1 : 1;
   const eliminated = fighterCount - aliveCount;
   const rawAliveT = fx.clamp(fx.div(fx.fromInt(Math.min(eliminated, aliveDenom)), fx.fromInt(aliveDenom)), 0, fx.ONE);

@@ -108,6 +108,15 @@ function watcherSet(matchId: string): Set<string> {
   return s;
 }
 
+/** Tell the match how many clients (playing or spectating) are currently
+ *  connected to it, so Match.isAbandoned() can end it the instant that
+ *  hits zero rather than the instant the last human seat is eliminated
+ *  (2026-09-09, see wiki 'Match Duration Contradiction: The Spire Firing
+ *  Squad'). Call after every watcherSet add/delete. */
+function syncWatcherCount(match: { id: string; setWatcherCount: (n: number) => void }): void {
+  match.setWatcherCount(watcherSet(match.id).size);
+}
+
 // A connection counts as a live player only while it holds an un-eliminated
 // seat and never opted into pure spectating. Everyone else -- pre-join
 // sockets (slot -1), explicit spectators, and eliminated fighters whose
@@ -321,7 +330,10 @@ const wss = new WebSocketServer({ server, path: '/socket' });
     } else {
       logConn(conn, 'closed', { hadSeat: false, ...closeInfo });
     }
-    if (conn.match) watcherSet(conn.match.id).delete(conn.id);
+    if (conn.match) {
+      watcherSet(conn.match.id).delete(conn.id);
+      syncWatcherCount(conn.match);
+    }
     clients.delete(conn.id);
   });
 
@@ -446,6 +458,7 @@ function handleResume(conn: ClientConn, token: string): void {
     conn.match = match;
     conn.slot = slot;
     watcherSet(match.id).add(conn.id);
+    syncWatcherCount(match);
     send(conn, {
       t: 'welcome',
       protocolVersion: PROTOCOL_VERSION,
@@ -485,6 +498,7 @@ function handleResume(conn: ClientConn, token: string): void {
   conn.match = match;
   conn.slot = slot;
   watcherSet(match.id).add(conn.id);
+  syncWatcherCount(match);
   logConn(conn, 'resume_succeeded');
   send(conn, {
     t: 'welcome',
@@ -541,6 +555,7 @@ function handleText(conn: ClientConn, text: string): void {
       conn.match = match;
       conn.slot = slot;
       watcherSet(match.id).add(conn.id);
+      syncWatcherCount(match);
       logConn(conn, 'joined_lobby', { name });
       send(conn, {
         t: 'welcome',

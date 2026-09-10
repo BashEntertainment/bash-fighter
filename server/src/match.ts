@@ -108,12 +108,14 @@ export interface MatchEvents {
   onMatchEnd: (winner: number | null, leaderboard: number[], tick: number, resolved: boolean) => void;
   //          ^ resolved=true means sim.isMatchOver() decided this naturally
   //          (a real winner, or a genuine simultaneous-KO draw); false
-  //          means the match was torn down early because every human seat
-  //          left (isAbandonedByHumans) -- the sim result exists but it's
-  //          an artefact of stopping the clock, not a fair verdict. The
-  //          client uses this to decide whether an already-eliminated
-  //          player should still be shown a final result screen (added
-  //          2026-09-09, see wiki 'End-of-Match Screen Missing Entirely').
+  //          means the match was torn down early because it was abandoned
+  //          (no client, playing or spectating, left connected -- see
+  //          isAbandoned()) or hit the absolute duration cap -- the sim
+  //          result exists but it's an artefact of stopping the clock,
+  //          not a fair verdict. The client uses this to decide whether
+  //          an already-eliminated player should still be shown a final
+  //          result screen (added 2026-09-09, see wiki 'End-of-Match
+  //          Screen Missing Entirely').
 }
 
 /** Deterministic seed derived from the match id so every client can be
@@ -159,6 +161,26 @@ export class Match {
   private static readonly COMBAT_WINDOW_TICKS = 60;
   countdownTicksRemaining = -1;
   readonly events: MatchEvents;
+  /** How many clients (playing seats or spectators) the transport layer
+   *  currently has connected to this match. Set by the transport layer
+   *  (server/src/index.ts) whenever its watcher-set for this match id
+   *  changes size; defaults to -1 ("unknown / not wired") so unit tests
+   *  that construct a Match directly, with no transport layer at all,
+   *  keep the simpler human-seat-only abandonment check -- see
+   *  isAbandoned(). Once set to a real count (>= 0), that count -- not
+   *  human-seat occupancy -- decides abandonment: a match with zero
+   *  human seats but one spectator watching (e.g. "Keep spectating"
+   *  after elimination) stays alive (2026-09-09, see wiki 'Match
+   *  Duration Contradiction: The Spire Firing Squad'). */
+  private watcherCount = -1;
+  /** Absolute upper bound on match ticks regardless of watcherCount, so a
+   *  stuck client, a bot stalemate, or a bug that never lets
+   *  sim.isMatchOver() return true can't tie up a Match/CPU slot forever
+   *  now that matches may run as long as anyone is watching. 20 minutes
+   *  (72000 ticks @ 60Hz) is generously above every observed real match
+   *  duration (measured 4.7-10.2 min at the current 6-min shrink clock,
+   *  see wiki 'Task #28195'). Overridable for tests. */
+  private static readonly MAX_MATCH_TICKS = Number(process.env.MATCH_MAX_DURATION_TICKS ?? 72_000);
   /** slot -> grace-window setTimeout that releases the seat (and its token)
    *  if it fires before a reconnect cancels it. Cleared on reconnect,
    *  elimination, match end, or stop(). */
@@ -429,28 +451,61 @@ export class Match {
       return;
     }
 
-    // A match every human left behind (all disconnected past their grace
-    // window, or eliminated) has nobody who could ever come back to it --
-    // only bots are left steering it, if anyone. Left running, it keeps
-    // ticking a full sim (CPU, memory, one entry in matchCount) for as
-    // long as the bots take to fight it out, which is the multi-minute
-    // real match length -- not a leak exactly, but a real waste and a
-    // false read on server capacity while it lasts. End it now instead of
-    // waiting that out.
-    if (!this.ended && this.isAbandonedByHumans()) {
+    // A genuinely abandoned match -- nobody playing it, and nobody
+    // watching it either -- has no one who could ever see its result.
+    // Left running, it keeps ticking a full sim (CPU, memory, one entry
+    // in matchCount) for as long as the bots take to fight it out, which
+    // is the multi-minute real match length -- not a leak exactly, but a
+    // real waste and a false read on server capacity while it lasts. End
+    // it now instead of waiting that out. Deliberately NOT triggered by
+    // the last human seat merely being eliminated any more: the
+    // "Keep spectating" button only means something if the match keeps
+    // running while someone is using it (2026-09-09, see wiki 'Match
+    // Duration Contradiction: The Spire Firing Squad').
+    if (!this.ended && this.isAbandoned()) {
       this.ended = true;
       this.phase = 'ended';
       this.logMatchSummary('abandoned_by_humans');
       this.events.onMatchEnd(sim.getWinner(), sim.getLeaderboard(), this.tick, false);
       this.endedAt = Date.now();
       this.stop();
+      return;
     }
+
+    // Absolute failsafe: no match may run forever even if someone is
+    // (or a bug thinks someone is) still watching it.
+    if (!this.ended && this.tick - this.matchStartedAtTick >= Match.MAX_MATCH_TICKS) {
+      this.ended = true;
+      this.phase = 'ended';
+      this.logMatchSummary('max_duration');
+      this.events.onMatchEnd(sim.getWinner(), sim.getLeaderboard(), this.tick, false);
+      this.endedAt = Date.now();
+      this.stop();
+    }
+  }
+
+  /** Called by the transport layer whenever the number of clients (playing
+   *  or spectating) connected to this match changes. -1 means "never told
+   *  me", which keeps the old human-seat-only rule for tests that build a
+   *  Match with no transport layer at all. */
+  setWatcherCount(count: number): void {
+    this.watcherCount = count;
+  }
+
+  /** A match is abandoned once nobody -- playing or spectating -- is left
+   *  connected to it. When the transport layer has told us a real
+   *  watcher count (watcherCount >= 0), that decides it outright. Only
+   *  when it hasn't (unit tests with no transport layer) do we fall back
+   *  to the older, narrower isAbandonedByHumans() check. */
+  private isAbandoned(): boolean {
+    if (this.watcherCount >= 0) return this.watcherCount === 0;
+    return this.isAbandonedByHumans();
   }
 
   /** Ground-truth summary line for the match-duration measurement task
    *  (2026-09-09): one JSON line per match end, cheap (fires once),
    *  observability only -- no effect on gameplay. */
-  private logMatchSummary(endReason: 'resolved' | 'abandoned_by_humans'): void {
+  private logMatchSummary(endReason: 'resolved' | 'abandoned_by_humans' | 'max_duration'): void {
     const durationSec = ((this.tick - this.matchStartedAtTick) / 60).toFixed(1);
     const humanSlots = this.seats.filter((s) => !s.isBot).map((s) => s.slot);
     console.log(JSON.stringify({

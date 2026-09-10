@@ -146,14 +146,56 @@ export function computeGroundHalfExtents(arena: ArenaData): BlastRect {
   };
 }
 
+/** Finds the single platform (any kind) that a fully-closed endgame ring
+ * should converge on: the one whose x-range actually contains the
+ * arena's geometric centre, or -- if none does, e.g. a stage with a gap
+ * or a wall straddling the centre line -- the platform whose centre is
+ * closest to it. `computeGroundHalfExtents`'s bounding box treats every
+ * platform as one contiguous span, which is wrong for stages with a
+ * chasm (The Undercroft) or dividing walls (The Foundry): the final ring
+ * must never be wider than the one platform survivors can actually stand
+ * on together, or two survivors on opposite sides of an unwalkable gap
+ * both read as "safe" without ever being forced to fight. */
+function findConvergencePlatform(arena: ArenaData): { minX: Fixed; maxX: Fixed } {
+  const centerX = fx.div(fx.add(arena.blastMaxX, arena.blastMinX), fx.fromInt(2));
+  const platforms = arena.platforms;
+  if (platforms.length === 0) return { minX: arena.blastMinX, maxX: arena.blastMaxX };
+  const cx = centerX as number;
+  for (const p of platforms) {
+    if ((p.minX as number) <= cx && cx <= (p.maxX as number)) return { minX: p.minX, maxX: p.maxX };
+  }
+  let best = platforms[0]!;
+  let bestDist = Infinity;
+  for (const p of platforms) {
+    const mid = ((p.minX as number) + (p.maxX as number)) / 2;
+    const dist = Math.abs(mid - cx);
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = p;
+    }
+  }
+  return { minX: best.minX, maxX: best.maxX };
+}
+
 /** The floor the boundary must never cross once the field is down to
  * FINAL_RING_FIGHTERS or fewer: enough width for that many fighters to
- * stand side by side, centred on the arena's own centre. Vertical extent
- * is left at the full ground box -- height was never the reported
- * defect and squeezing it risks stranding fighters off every platform. */
+ * stand side by side, centred on the arena's own centre -- but never
+ * wider than the single platform that centre sits on (see
+ * findConvergencePlatform), so the ring can never span a chasm or a
+ * dividing wall and give survivors on both sides false safety without
+ * ever sharing standable ground. Vertical extent is left at the full
+ * ground box -- height was never the reported defect and squeezing it
+ * risks stranding fighters off every platform. */
 function computeMinFinalHalfExtents(arena: ArenaData, ground: BlastRect, ringFighters: number): BlastRect {
   const centerX = fx.div(fx.add(arena.blastMaxX, arena.blastMinX), fx.fromInt(2));
-  const minHalfW = fx.div(fx.mul(fx.fromInt(ringFighters), SPACE_PER_FIGHTER), fx.fromInt(2));
+  const desiredHalfW = fx.div(fx.mul(fx.fromInt(ringFighters), SPACE_PER_FIGHTER), fx.fromInt(2));
+  const platform = findConvergencePlatform(arena);
+  // Half-width of the convergence platform itself (no STANDING_MARGIN --
+  // that margin is for keeping the boundary clear of ground while the
+  // whole field is alive; here the ring is deliberately meant to close
+  // down onto exactly what a platform offers, not slightly beyond it).
+  const platformHalfW = fx.div(fx.sub(platform.maxX, platform.minX), fx.fromInt(2));
+  const minHalfW = fxMinNum(desiredHalfW, platformHalfW);
   return {
     minX: fx.sub(centerX, minHalfW),
     maxX: fx.add(centerX, minHalfW),

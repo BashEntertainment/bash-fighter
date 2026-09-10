@@ -57,6 +57,8 @@ export interface SettingsPanelHost {
    * so the caller can push the new binding into whichever InputManager
    * instances are currently active. slot 0 is P1, slot 1 is P2. */
   onBindingChange: (slot: 0 | 1, binding: KeyBinding) => void;
+  /** Called when the reduced-motion toggle changes. */
+  onReducedMotionChange: (reduced: boolean) => void;
 }
 
 export class SettingsPanel {
@@ -66,12 +68,15 @@ export class SettingsPanel {
   private capturing: { slot: 0 | 1; field: BindingField } | null = null;
   private readonly keydownHandler = (e: KeyboardEvent) => this.handleCapture(e);
 
+  private reducedMotion: boolean;
+
   constructor(
     parent: HTMLElement,
-    initial: { p1: KeyBinding; p2: KeyBinding },
+    initial: { p1: KeyBinding; p2: KeyBinding; reducedMotion: boolean },
     private readonly host: SettingsPanelHost,
   ) {
     this.bindings = [cloneBinding(initial.p1), cloneBinding(initial.p2)];
+    this.reducedMotion = initial.reducedMotion;
     this.root = document.createElement('div');
     this.root.id = 'settings-panel';
     this.root.className = 'settings-panel move-reference-panel hidden';
@@ -84,6 +89,13 @@ export class SettingsPanel {
         <div class="settings-hint">Click a key, then press the new key you want. Esc cancels.</div>
         <div class="settings-list"></div>
         <button type="button" class="btn btn-plain settings-reset-btn">Reset to defaults</button>
+        <div class="settings-group settings-accessibility-group">
+          <div class="settings-group-title">Accessibility</div>
+          <label class="settings-row settings-checkbox-row">
+            <span class="settings-row-label">Reduce screen shake</span>
+            <input type="checkbox" class="settings-reduced-motion-checkbox" aria-label="Reduce screen shake">
+          </label>
+        </div>
       </div>
     `;
     this.listEl = this.root.querySelector('.settings-list') as HTMLDivElement;
@@ -96,6 +108,12 @@ export class SettingsPanel {
     (this.root.querySelector('.settings-reset-btn') as HTMLButtonElement).addEventListener('click', () =>
       this.resetToDefaults(),
     );
+    const reducedMotionCheckbox = this.root.querySelector('.settings-reduced-motion-checkbox') as HTMLInputElement;
+    reducedMotionCheckbox.checked = this.reducedMotion;
+    reducedMotionCheckbox.addEventListener('change', () => {
+      this.reducedMotion = reducedMotionCheckbox.checked;
+      this.host.onReducedMotionChange(this.reducedMotion);
+    });
     parent.appendChild(this.root);
     this.render();
   }

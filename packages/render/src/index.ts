@@ -15,7 +15,7 @@ import { EffectsLayer } from './effects.ts';
 import { resolveAnimation } from '@bash-fighter/content';
 
 export { RenderItemTypeId } from './item-sprite.ts';
-export { EffectsLayer, type HitEffectInput } from './effects.ts';
+export { EffectsLayer, type HitEffectInput, setReducedMotion, isReducedMotion } from './effects.ts';
 
 export type { StageBounds, StagePlatform } from './stage.ts';
 export { arenaDataToStageBounds } from './arena-adapter.ts';

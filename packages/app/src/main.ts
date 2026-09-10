@@ -21,7 +21,7 @@ import {
   DEFAULT_P2_BINDING,
 } from '@bash-fighter/input';
 import { PLACEHOLDER_CHARACTER, resolveCharacterId, ALL_CHARACTERS } from '@bash-fighter/content';
-import type { ArenaBounds } from '@bash-fighter/render';
+import { setReducedMotion, type ArenaBounds } from '@bash-fighter/render';
 import { AudioManager } from '@bash-fighter/audio';
 
 // This local build has no networking, so "the local player" is just
@@ -182,18 +182,43 @@ const currentBindings = {
   p2: persisted ? persisted.p2 : DEFAULT_P2_BINDING,
 };
 
-const settingsPanel = new SettingsPanel(appRoot, currentBindings, {
-  onBindingChange: (slot, binding) => {
-    if (slot === 0) currentBindings.p1 = binding;
-    else currentBindings.p2 = binding;
-    savePersistedBindings(currentBindings.p1, currentBindings.p2);
-    // Apply immediately to whichever match is currently in progress, so
-    // a rebind takes effect without needing to restart the match.
-    match?.input.setBinding(slot, binding);
-    netMatch?.input.setBinding(slot, binding);
-    startScreen.updateBindings(currentBindings.p1, currentBindings.p2);
+// Reduced motion (accessibility, repo issue-shaped gap): persisted
+// explicitly so a choice survives reload, but defaults to the OS-level
+// `prefers-reduced-motion` media query the first time a player visits
+// with nothing saved yet -- someone who has already told their system
+// they get motion sickness from UI animation shouldn't have to also
+// find and flip an in-game toggle before their first match.
+const REDUCED_MOTION_KEY = 'bash-fighter-reduced-motion';
+function loadReducedMotionPref(): boolean {
+  const stored = localStorage.getItem(REDUCED_MOTION_KEY);
+  if (stored === 'true') return true;
+  if (stored === 'false') return false;
+  return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+}
+let reducedMotionPref = loadReducedMotionPref();
+setReducedMotion(reducedMotionPref);
+
+const settingsPanel = new SettingsPanel(
+  appRoot,
+  { ...currentBindings, reducedMotion: reducedMotionPref },
+  {
+    onBindingChange: (slot, binding) => {
+      if (slot === 0) currentBindings.p1 = binding;
+      else currentBindings.p2 = binding;
+      savePersistedBindings(currentBindings.p1, currentBindings.p2);
+      // Apply immediately to whichever match is currently in progress, so
+      // a rebind takes effect without needing to restart the match.
+      match?.input.setBinding(slot, binding);
+      netMatch?.input.setBinding(slot, binding);
+      startScreen.updateBindings(currentBindings.p1, currentBindings.p2);
+    },
+    onReducedMotionChange: (reduced) => {
+      reducedMotionPref = reduced;
+      localStorage.setItem(REDUCED_MOTION_KEY, String(reduced));
+      setReducedMotion(reduced);
+    },
   },
-});
+);
 startScreen.updateBindings(currentBindings.p1, currentBindings.p2);
 
 const settingsButton = document.createElement('button');

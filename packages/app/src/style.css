@@ -589,6 +589,23 @@ html, body {
   margin-top: 8px;
 }
 
+.settings-accessibility-group {
+  margin-top: 16px;
+  border-top: 1px solid #23262b;
+  padding-top: 12px;
+}
+
+.settings-checkbox-row {
+  cursor: pointer;
+}
+
+.settings-checkbox-row input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
 
 /* Single flex row anchored top-right that owns every overlay control
    (sound, and the in-match Controls/Moves buttons below) -- see the

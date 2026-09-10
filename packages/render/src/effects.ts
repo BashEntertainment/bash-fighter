@@ -37,6 +37,28 @@ interface Pop {
 const SPARK_COLOR = PALETTE.danger;
 const POP_COLOR = PALETTE.hud;
 
+// Reduced-motion accessibility switch. Screen shake is the one effect
+// here with a real vestibular-discomfort/motion-sickness risk (the
+// camera itself moving, not just something on screen), so it's what
+// this toggle targets -- hit flashes, sparks and pops are untouched
+// since they don't move the camera and carry the actual hit-feedback
+// information a player needs. Module-level (not per-EffectsLayer)
+// because the app can hold more than one Renderer/EffectsLayer (local
+// + online) and a single settings toggle must affect all of them
+// without threading the flag through every constructor.
+let shakeScale = 1;
+
+/** Scale (or fully silence) screen shake app-wide. Called once from
+ * main.ts at startup (from the persisted/OS `prefers-reduced-motion`
+ * default) and again whenever the player flips the Settings toggle. */
+export function setReducedMotion(reduced: boolean): void {
+  shakeScale = reduced ? 0 : 1;
+}
+
+export function isReducedMotion(): boolean {
+  return shakeScale === 0;
+}
+
 /** How long (ms) and how strongly a fighter's body should stay tinted
  * after taking a hit -- read by the app/renderer per fighter index. */
 const FLASH_BASE_MS = 90;
@@ -148,7 +170,8 @@ export class EffectsLayer {
   /** Quadrature-ish combine so simultaneous hits (common with 20
    * fighters) approach a cap instead of summing linearly into nausea. */
   private addShake(strength: number, boost = 1): void {
-    const add = (3 + strength * 10) * boost;
+    if (shakeScale === 0) return;
+    const add = (3 + strength * 10) * boost * shakeScale;
     this.shakeMagnitude = Math.min(22, Math.sqrt(this.shakeMagnitude * this.shakeMagnitude + add * add));
   }
 

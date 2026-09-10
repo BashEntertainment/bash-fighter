@@ -10,10 +10,15 @@ import type { ArenaData } from '../../../../sim/src/arena/types.ts';
 
 export const THE_SPIRE_ARENA: ArenaData = {
   name: 'The Spire',
-  // Warm ember accent -- distinct from the Colosseum's neutral grey and
-  // the Undercroft's cold blue, reads as "tower/height" rather than
-  // danger or warning (kept clear of the reserved red/amber hues).
-  accentColor: 0xb0703a,
+  // Cool violet-grey stone accent -- distinct from the Colosseum's
+  // neutral warm grey and the Undercroft's cold blue, reads as
+  // "ancient tower" without straying into amber. Changed 2026-09-09: the
+  // previous value (0xb0703a) was a warm brown-orange that read as our
+  // reserved warning/danger amber on the platforms and walls it colours,
+  // despite the comment here claiming otherwise -- amber is reserved for
+  // hazard/danger cues (see PALETTE in packages/render/src/palette.ts)
+  // and stage geometry must not compete with it.
+  accentColor: 0x8a7d9e,
   platforms: [
     // Ground floor -- wide enough on its own to hold all 20 spawns, so
     // the fully-shrunk endgame rectangle always keeps solid footing

@@ -98,6 +98,16 @@ interface DifficultyTuning {
    * 0 = no lead (aim at current position). Only HARD leads by default --
    * MEDIUM still pursues but aims at where the target actually is. */
   pursuitLeadTicks: number;
+  /** Whether this difficulty will deliberately drop through a
+   * 'pass-through' platform (down+jump) to chase a target that is below
+   * it, and will treat a target on a platform above as worth a genuine
+   * climb rather than only the pre-existing "jump toward someone above"
+   * nudge. False at EASY: a beginner should never be hunted across
+   * platform tiers -- if a human ducks onto a platform, EASY simply
+   * loses interest rather than dropping down on them. Added 2026-09-09;
+   * see the dated wiki page for the diagnosis (bots never issued
+   * down+jump, so drop-through platforms on 3 stages went unused). */
+  verticalPursuit: boolean;
 }
 
 const TUNING: Record<BotDifficultyValue, DifficultyTuning> = {
@@ -122,6 +132,7 @@ const TUNING: Record<BotDifficultyValue, DifficultyTuning> = {
     pursuitEnabled: false,
     pursuitHesitationPerMille: 550,
     pursuitLeadTicks: 0,
+    verticalPursuit: false,
   },
   [BotDifficulty.MEDIUM]: {
     reactionTicks: 14, // ~230ms
@@ -136,6 +147,7 @@ const TUNING: Record<BotDifficultyValue, DifficultyTuning> = {
     pursuitEnabled: true,
     pursuitHesitationPerMille: 60,
     pursuitLeadTicks: 0,
+    verticalPursuit: true,
   },
   [BotDifficulty.HARD]: {
     reactionTicks: 6, // 100ms
@@ -150,6 +162,7 @@ const TUNING: Record<BotDifficultyValue, DifficultyTuning> = {
     pursuitEnabled: true,
     pursuitHesitationPerMille: 10,
     pursuitLeadTicks: 10,
+    verticalPursuit: true,
   },
 };
 
@@ -176,16 +189,31 @@ const ITEM_SEEK_RANGE_X: Fixed = fx.fromFloat(60.0);
 const EDGE_SAFETY_MARGIN: Fixed = fx.fromFloat(18.0);
 /** Anti-clumping: fighters within this radius of a candidate target count
  * toward its "crowded" score (see BotController.pickTarget). Squared
- * float units to avoid a sqrt per candidate pair. */
-const CLUSTER_RADIUS_SQ = 12.0 * 12.0;
+ * float units to avoid a sqrt per candidate pair.
+ *
+ * REVISED 2026-09-09 (clustering diagnosis, see wiki "Bot Pursuit and
+ * Finishing 2026-09-09" follow-up): measured mean pairwise fighter
+ * spacing is 150-450 world units and this radius was 12 -- smaller than
+ * a fighter's own hurtbox neighbourhood, so density() almost never
+ * counted anything and the anti-clump term was inert until fighters
+ * were already stacked on top of each other, too late to prevent the
+ * observed 8-of-20 pile-up. Widened to a radius comparable to real
+ * early-match spacing so it can actually steer target choice apart
+ * before a cluster forms, not just after. */
+const CLUSTER_RADIUS_SQ = 90.0 * 90.0;
 /** Score penalty in squared-distance units (scoring uses squared
  * distance throughout to avoid a sqrt/transcendental call, which
  * packages/sim's lint rule forbids for determinism) added per other
- * fighter already near a candidate target. ~150 is equivalent to that
- * target being roughly 12 world units farther away per crowder, enough
- * that a target already flanked by 1-2 others loses out to a lone
- * opponent noticeably farther off. */
-const CLUSTER_PENALTY = 150.0;
+ * fighter already near a candidate target.
+ *
+ * REVISED 2026-09-09: raised alongside the radius widening above so the
+ * penalty is still meaningful at the new radius scale -- ~600 is
+ * equivalent to that target being roughly 24-25 world units farther
+ * away per crowder (sqrt(600) ~ 24.5), enough to redirect a bot toward
+ * an uncrowded opponent noticeably closer instead of piling onto one
+ * that already has company, without being so large it overrides a
+ * genuinely much closer target. */
+const CLUSTER_PENALTY = 600.0;
 /** Score bonus (squared-distance units) for keeping the current target,
  * so equally-good candidates don't cause flicker between decisions. */
 const STICKINESS_BONUS = 400.0;
@@ -429,8 +457,32 @@ export class BotController {
     // Also spend a banked double jump to close distance faster when a
     // target is nearby but not yet in range — keeps engagements moving
     // instead of a long ground walk-up every time.
-    if (unsafe === 0 && self.grounded) {
-      if (target && target.posY > fx.add(self.posY, fx.fromFloat(4.0)) && fx.abs(fx.sub(target.posX, self.posX)) < fx.fromFloat(20.0)) {
+    // Deliberate drop-through: a verticalPursuit-capable bot standing on
+    // a 'pass-through' platform with its target clearly below drops down
+    // to it (down+jump, see sim.ts's droppingThrough handling) instead of
+    // walking to an edge and falling off passively. Checked before the
+    // ordinary jump-to-chase block below so it takes priority over
+    // anything that would otherwise also want the jump button this tick.
+    if (
+      unsafe === 0 &&
+      self.grounded &&
+      target &&
+      tuning.verticalPursuit &&
+      target.posY < fx.sub(self.posY, fx.fromFloat(4.0)) &&
+      fx.abs(fx.sub(target.posX, self.posX)) < fx.fromFloat(45.0) &&
+      sim.isStandingOnPassThroughPlatform(this.fighterIndex)
+    ) {
+      stickY = fx.neg(ONE);
+      if (this.requestJump()) buttons |= BUTTON_JUMP;
+    } else if (unsafe === 0 && self.grounded) {
+      // Chase a target on a higher platform. verticalPursuit bots
+      // consider a wider horizontal window and will bank a double jump
+      // mid-air (see the airborne branch below) to actually reach it,
+      // not just hop in place; non-pursuit (EASY) bots keep the original
+      // tight window -- a small hop toward someone barely above, not a
+      // real climb.
+      const climbRangeX = tuning.verticalPursuit ? fx.fromFloat(45.0) : fx.fromFloat(20.0);
+      if (target && target.posY > fx.add(self.posY, fx.fromFloat(4.0)) && fx.abs(fx.sub(target.posX, self.posX)) < climbRangeX) {
         buttons |= BUTTON_JUMP;
       }
       if (this.nearOverheadHazard(sim, self)) {

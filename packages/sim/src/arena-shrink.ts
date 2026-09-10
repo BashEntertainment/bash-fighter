@@ -214,20 +214,51 @@ export function computeSafeExtents(
   // the ordinary shrink schedule has already been fully closed for a
   // long while with no resolution.
   //
-  // REVISED 2026-09-09 (bot pursuit/finish pass): was 3x, then 2x. Both
-  // put the point where relaxation *finishes* (staleTick +
-  // shrinkFullyClosedTick, since the relax itself ramps over one more
-  // full schedule length) beyond this project's own 10-minute regression
+  // REVISED 2026-09-09 (bot pursuit/finish pass): was 3x, then 2x,
+  // *relative to shrinkFullyClosedTick*. Both put the point where
+  // relaxation *finishes* beyond this project's own 10-minute regression
   // ceiling (packages/sim/test/arena-shrink.test.ts) -- seed 1003
   // legitimately needed the override and didn't get it in time, failing
-  // `npm test`, twice. 1.25x finishes relaxing at 0.9x the ceiling,
-  // leaving real margin for the actual eliminations to occur once the
-  // ring is fully tight, and is still generous next to real observed
-  // match durations (110-207s).
-  if (settings && settings.shrinkFullyClosedTick > 0) {
-    const staleTick = settings.shrinkFullyClosedTick * 1.25;
+  // `npm test`, twice.
+  //
+  // REVISED AGAIN 2026-09-09 (ring-pacing attribution pass): tying the
+  // override's timing to shrinkFullyClosedTick was itself the bug --
+  // when the ring-pacing experiment raised shrinkFullyClosedTick from 4
+  // to 6 minutes to buy fighters more time to actually fight (see
+  // match-settings.ts), the override's 1.25x/2.25x multipliers scaled
+  // right along with it and pushed relax-finish out to 13.5 minutes,
+  // blowing through the 10-minute test ceiling again (arena-shrink.test
+  // seed 1003 hung). The override exists to bound *wall-clock* stalemate
+  // time, which has nothing to do with how fast the ordinary ring
+  // schedule runs, so it must not scale with shrinkFullyClosedTick at
+  // all. Now two absolute tick constants: override starts at 5 minutes
+  // (generous next to real observed match durations of 110-207s) and
+  // finishes relaxing 4 minutes later, at 9 minutes absolute -- fixed
+  // regardless of shrinkFullyClosedTick, comfortably inside the
+  // 10-minute test ceiling with a full minute of margin for eliminations
+  // to actually occur once the ring is tight.
+  //
+  // REVISED AGAIN 2026-09-09 (ring-pacing follow-up): a fixed 5-minute
+  // start still overlapped the *ordinary* schedule once the ring-pacing
+  // experiment raised shrinkFullyClosedTick to 6 minutes -- the override
+  // began relaxing ground protection at full alive count a full minute
+  // before the normal schedule had even finished closing, breaking the
+  // "ground is never swept while the field is full" invariant during
+  // completely ordinary play (caught by arena-shrink.test.ts's
+  // full-alive-count sweep, which checks every tick up to
+  // shrinkFullyClosedTick). The override's job is only to catch a
+  // genuine stalemate *after* the ordinary schedule has already run its
+  // course, so its start must never be earlier than shrinkFullyClosedTick
+  // itself -- start the same instant the ordinary schedule reaches full
+  // closure (or 5 minutes, whichever is later), then relax over the next
+  // 2 minutes. This tracks shrinkFullyClosedTick additively (a max, not a
+  // multiplier), so it can't blow up the way the old 1.25x/2.25x
+  // multipliers did.
+  const STALEMATE_OVERRIDE_RELAX_TICKS = 60 * 60 * 2; // 2 minutes to fully relax
+  if (settings) {
+    const staleTick = Math.max(60 * 60 * 5, settings.shrinkFullyClosedTick);
     const timeT = fx.clamp(
-      fx.sub(fx.ONE, fx.div(fx.fromInt(Math.max(0, tick - staleTick)), fx.fromInt(settings.shrinkFullyClosedTick))),
+      fx.sub(fx.ONE, fx.div(fx.fromInt(Math.max(0, tick - staleTick)), fx.fromInt(STALEMATE_OVERRIDE_RELAX_TICKS))),
       0,
       fx.ONE,
     );

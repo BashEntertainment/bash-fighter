@@ -186,7 +186,18 @@ export class NetMatch {
   private pendingHitEffects: PendingHitEffect[] = [];
   private pendingEliminationEffects: PendingEliminationEffect[] = [];
 
-  constructor(private readonly url: string, private readonly events: NetMatchEvents = {}, audio: AudioManager = new AudioManager()) {
+  private readonly url: string;
+  private readonly events: NetMatchEvents;
+
+  // Not a TS parameter-property constructor: this class is imported
+  // directly (not through vite) by a plain `node --test` regression test
+  // (net-match-stale-socket.test.ts) for the stale-socket-message guard,
+  // and Node's built-in type-stripping loader does not support parameter
+  // properties (ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX) -- vite/tsc handle them
+  // fine, but that test file needs to run outside that build pipeline.
+  constructor(url: string, events: NetMatchEvents = {}, audio: AudioManager = new AudioManager()) {
+    this.url = url;
+    this.events = events;
     this.renderer = new Renderer(STAGE_BOUNDS);
     this.audio = audio;
     this.effectsBridge = new EffectsAudioBridge(audio);
@@ -225,6 +236,22 @@ export class NetMatch {
       ws.send(JSON.stringify(hello));
     });
     ws.addEventListener('message', (ev) => {
+      // Guard against a message arriving on a socket we've already
+      // superseded. openSocket() replaces this.ws with a new WebSocket on
+      // every (re)connect attempt, but the *old* socket object's own
+      // listeners stay registered until its close event actually fires --
+      // browsers do not guarantee that happens before the new socket's
+      // open/message events do, especially through a flaky or
+      // rapid-reconnect-cycling connection (see wiki "Off-Box Load Test
+      // Re-run 2026-09-09"). Without this check, a late reply meant for an
+      // abandoned connection attempt -- e.g. a resume_after_match_ended
+      // matchEnd for whichever match that stale attempt happened to
+      // resolve to -- gets applied on top of a perfectly healthy newer
+      // connection that is mid-match in a *different* match, which is
+      // exactly what froze the client on a "Match complete" chip while the
+      // server's own logs showed the real match still running (2026-09-09,
+      // see wiki "End-of-Match Screen Missing Entirely" and its follow-up).
+      if (this.ws !== ws) return;
       if (typeof ev.data === 'string') {
         this.handleControl(JSON.parse(ev.data) as ServerControlMessage);
       } else {

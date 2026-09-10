@@ -665,6 +665,24 @@ export class Sim {
     return null;
   }
 
+  /** Public, read-only: is this fighter (by index) currently standing on
+   * a 'pass-through' platform, i.e. could legally drop through it with
+   * down+jump right now? Added 2026-09-09 so BotController (which only
+   * ever reads through public snapshot accessors -- see the file header
+   * of ai/bot.ts on why that matters for determinism) can decide to
+   * drop-through without packages/sim exposing any bot-specific state.
+   * O(platform count) per call, same cost class as findStandingPlatform
+   * itself, and platform counts per arena are single digits. */
+  isStandingOnPassThroughPlatform(index: number): boolean {
+    const base = index * FighterField.FIELD_COUNT;
+    const grounded = this.data[base + FighterField.GROUNDED] === 1;
+    if (!grounded) return false;
+    const posX = this.data[base + FighterField.POS_X] as Fixed;
+    const posY = this.data[base + FighterField.POS_Y] as Fixed;
+    const p = this.findStandingPlatform(posX, posY);
+    return p !== null && p.kind === 'pass-through';
+  }
+
   /** Clamp a horizontal move from prevX to candidateX against any wall
    * whose y-range covers this fighter's current feet position (posY).
    * Walls block crossing from either side; a fighter already embedded

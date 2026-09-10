@@ -1,6 +1,7 @@
 import './style.css';
 import { Match, STAGE_BOUNDS } from './match.ts';
 import { StartScreen } from './ui/start-screen.ts';
+import { ReplayScreen } from './ui/replay-screen.ts';
 import { WinScreen } from './ui/win-screen.ts';
 import { Hud } from './ui/hud.ts';
 import { SpectatorBanner } from './ui/spectator-banner.ts';
@@ -105,8 +106,19 @@ if (new URLSearchParams(window.location.search).get('bashTest') === '1') {
   (window as unknown as { __bashTestTouch?: () => TouchControls }).__bashTestTouch = () => touchControls;
 }
 
-const startScreen = new StartScreen(appRoot, () => {
-  void beginMatch();
+const startScreen = new StartScreen(
+  appRoot,
+  () => {
+    void beginMatch();
+  },
+  () => {
+    startScreen.hide();
+    replayScreen.show();
+  },
+);
+
+const replayScreen = new ReplayScreen(appRoot, () => {
+  startScreen.show();
 });
 
 // Online mode is additive: a second button on the same start screen, and a

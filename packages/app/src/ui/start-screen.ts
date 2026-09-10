@@ -22,7 +22,7 @@ export class StartScreen {
   private readonly p1BindingsEl: HTMLPreElement;
   private readonly p2BindingsEl: HTMLPreElement;
 
-  constructor(parent: HTMLElement, onStart: () => void) {
+  constructor(parent: HTMLElement, onStart: () => void, onWatchReplay?: () => void) {
     this.root = document.createElement('div');
     this.root.className = 'screen';
     this.root.id = 'start-screen';
@@ -33,6 +33,7 @@ export class StartScreen {
       <div id="roster-mount"></div>
       <div id="primary-actions"></div>
       <div class="hint">The arena shrinks as fighters are eliminated. Empty slots are filled by bots so a match always starts.</div>
+      <button class="btn btn-secondary" id="watch-replay-btn">Watch a replay</button>
       <details class="local-play">
         <summary>Play locally on one keyboard</summary>
         <div class="select-row">
@@ -58,6 +59,9 @@ export class StartScreen {
     this.characterSelect = new CharacterSelect(rosterMount, DEFAULT_CHARACTER_ID, () => {});
 
     (this.root.querySelector('#start-btn') as HTMLButtonElement).addEventListener('click', onStart);
+    if (onWatchReplay) {
+      (this.root.querySelector('#watch-replay-btn') as HTMLButtonElement).addEventListener('click', onWatchReplay);
+    }
   }
 
   /** Player 1's chosen character id, from @bash-fighter/content's roster.

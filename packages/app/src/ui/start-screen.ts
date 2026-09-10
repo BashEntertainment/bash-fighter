@@ -19,6 +19,8 @@ function bindingLines(b: KeyBinding): string {
 export class StartScreen {
   readonly root: HTMLDivElement;
   private readonly characterSelect: CharacterSelect;
+  private readonly p1BindingsEl: HTMLPreElement;
+  private readonly p2BindingsEl: HTMLPreElement;
 
   constructor(parent: HTMLElement, onStart: () => void) {
     this.root = document.createElement('div');
@@ -36,11 +38,11 @@ export class StartScreen {
         <div class="select-row">
           <div class="select-card p1">
             <h3>Player 1</h3>
-            <pre class="bindings">${bindingLines(DEFAULT_P1_BINDING)}</pre>
+            <pre class="bindings p1-bindings">${bindingLines(DEFAULT_P1_BINDING)}</pre>
           </div>
           <div class="select-card p2">
             <h3>Player 2</h3>
-            <pre class="bindings">${bindingLines(DEFAULT_P2_BINDING)}</pre>
+            <pre class="bindings p2-bindings">${bindingLines(DEFAULT_P2_BINDING)}</pre>
           </div>
         </div>
         <button class="btn btn-secondary" id="start-btn">Start local match</button>
@@ -48,6 +50,9 @@ export class StartScreen {
       </details>
     `;
     parent.appendChild(this.root);
+
+    this.p1BindingsEl = this.root.querySelector('.p1-bindings') as HTMLPreElement;
+    this.p2BindingsEl = this.root.querySelector('.p2-bindings') as HTMLPreElement;
 
     const rosterMount = this.root.querySelector('#roster-mount') as HTMLDivElement;
     this.characterSelect = new CharacterSelect(rosterMount, DEFAULT_CHARACTER_ID, () => {});
@@ -61,6 +66,14 @@ export class StartScreen {
    *  choice for this local 2-player test harness. */
   get selectedCharacterId(): string {
     return this.characterSelect.value;
+  }
+
+  /** Called by main.ts whenever the player's remapped bindings change, so
+   * the "Play locally" hint text stays in sync with reality instead of
+   * always showing the hardcoded defaults after a rebind. */
+  updateBindings(p1: KeyBinding, p2: KeyBinding): void {
+    this.p1BindingsEl.textContent = bindingLines(p1);
+    this.p2BindingsEl.textContent = bindingLines(p2);
   }
 
   show(): void {

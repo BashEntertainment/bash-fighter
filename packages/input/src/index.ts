@@ -10,7 +10,18 @@ import { pollGamepad, listConnectedGamepads } from './gamepad.ts';
 import { TouchSource } from './touch.ts';
 
 export type { KeyBinding } from './bindings.ts';
-export { DEFAULT_P1_BINDING, DEFAULT_P2_BINDING, cloneBinding } from './bindings.ts';
+export {
+  DEFAULT_P1_BINDING,
+  DEFAULT_P2_BINDING,
+  cloneBinding,
+  BINDING_FIELDS,
+  BINDING_FIELD_LABELS,
+  loadPersistedBindings,
+  savePersistedBindings,
+  clearPersistedBindings,
+  type BindingField,
+  type PersistedBindings,
+} from './bindings.ts';
 export { listConnectedGamepads } from './gamepad.ts';
 export { isTouchCapable, TouchSource, type TouchButton } from './touch.ts';
 

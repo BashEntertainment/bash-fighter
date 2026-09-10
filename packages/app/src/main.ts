@@ -10,8 +10,15 @@ import { NetMatch, type ConnectionState } from './net-match.ts';
 import { MatchOverlay } from './ui/match-overlay.ts';
 import { ControlsHint } from './ui/controls-hint.ts';
 import { MoveReferencePanel } from './ui/move-reference-panel.ts';
+import { SettingsPanel } from './ui/settings-panel.ts';
 import { TouchControls } from './ui/touch-controls.ts';
-import { isTouchCapable } from '@bash-fighter/input';
+import {
+  isTouchCapable,
+  loadPersistedBindings,
+  savePersistedBindings,
+  DEFAULT_P1_BINDING,
+  DEFAULT_P2_BINDING,
+} from '@bash-fighter/input';
 import { PLACEHOLDER_CHARACTER, resolveCharacterId, ALL_CHARACTERS } from '@bash-fighter/content';
 import type { ArenaBounds } from '@bash-fighter/render';
 import { AudioManager } from '@bash-fighter/audio';
@@ -140,6 +147,52 @@ onlineButton.textContent = 'Play online';
 // Move reference (repo issue #5): reachable from the start screen at any
 // time, and from inside a match (bound below) without ending it.
 const movesPanel = new MoveReferencePanel(appRoot);
+
+// Key-remapping settings (repo issue #9). Bindings live here at module
+// scope -- one source of truth applied to whichever InputManager(s) are
+// currently live (local Match, online NetMatch, or both if a player
+// somehow has one of each queued up) -- rather than each match owning
+// its own copy that would silently diverge from what the panel shows.
+const persisted = loadPersistedBindings();
+const currentBindings = {
+  p1: persisted ? persisted.p1 : DEFAULT_P1_BINDING,
+  p2: persisted ? persisted.p2 : DEFAULT_P2_BINDING,
+};
+
+const settingsPanel = new SettingsPanel(appRoot, currentBindings, {
+  onBindingChange: (slot, binding) => {
+    if (slot === 0) currentBindings.p1 = binding;
+    else currentBindings.p2 = binding;
+    savePersistedBindings(currentBindings.p1, currentBindings.p2);
+    // Apply immediately to whichever match is currently in progress, so
+    // a rebind takes effect without needing to restart the match.
+    match?.input.setBinding(slot, binding);
+    netMatch?.input.setBinding(slot, binding);
+    startScreen.updateBindings(currentBindings.p1, currentBindings.p2);
+  },
+});
+startScreen.updateBindings(currentBindings.p1, currentBindings.p2);
+
+const settingsButton = document.createElement('button');
+settingsButton.className = 'btn btn-plain';
+settingsButton.id = 'settings-btn';
+settingsButton.textContent = 'Controls';
+settingsButton.addEventListener('click', () => settingsPanel.show());
+(startScreen.root.querySelector('#primary-actions') ?? startScreen.root).appendChild(settingsButton);
+
+const inMatchSettingsButton = document.createElement('button');
+inMatchSettingsButton.id = 'in-match-settings-btn';
+inMatchSettingsButton.className = 'in-match-moves-btn hidden';
+inMatchSettingsButton.textContent = 'Controls (C)';
+inMatchSettingsButton.addEventListener('click', () => settingsPanel.show());
+appRoot.appendChild(inMatchSettingsButton);
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'c' || e.key === 'C') {
+    if (settingsPanel.isOpen) settingsPanel.hide();
+    else settingsPanel.show();
+  }
+});
+
 const movesButton = document.createElement('button');
 movesButton.className = 'btn btn-plain';
 movesButton.id = 'moves-btn';
@@ -193,6 +246,7 @@ async function beginOnlineMatch(): Promise<void> {
   matchOverlay.hide();
   hud.hide();
       inMatchMovesButton.classList.add('hidden');
+      inMatchSettingsButton.classList.add('hidden');
   touchControls.hide();
   const generation = ++matchGeneration;
 
@@ -238,6 +292,7 @@ async function beginOnlineMatch(): Promise<void> {
     onMatchOver: (winnerIndex, resolved) => {
       hud.hide();
       inMatchMovesButton.classList.add('hidden');
+      inMatchSettingsButton.classList.add('hidden');
       touchControls.hide();
       setNetStatus('match-complete');
       // 2026-09-09, round 3 (see wiki "Match-End Client Bugs and Session
@@ -304,6 +359,8 @@ async function beginOnlineMatch(): Promise<void> {
     },
   }, audio);
   netMatch = net;
+  net.input.setBinding(0, currentBindings.p1);
+  net.input.setBinding(1, currentBindings.p2);
   await net.init(canvasRoot);
   net.connect(name, characterId);
   if (touchCapable) net.input.setTouchSource(LOCAL_SLOT, touchControls.source);
@@ -324,11 +381,13 @@ async function beginOnlineMatch(): Promise<void> {
       }
       hud.show();
       inMatchMovesButton.classList.remove('hidden');
+      inMatchSettingsButton.classList.remove('hidden');
       if (touchCapable) touchControls.show();
       hud.update(netMatch.currentSnapshots(), undefined, netMatch.localSlot());
     } else {
       hud.hide();
       inMatchMovesButton.classList.add('hidden');
+      inMatchSettingsButton.classList.add('hidden');
       touchControls.hide();
     }
     requestAnimationFrame(onlineHudTick);
@@ -356,6 +415,7 @@ async function beginMatch(): Promise<void> {
   matchOverlay.hide();
   hud.show();
       inMatchMovesButton.classList.remove('hidden');
+      inMatchSettingsButton.classList.remove('hidden');
   if (touchCapable) touchControls.show();
   controlsHint.maybeShow();
   const generation = ++matchGeneration;
@@ -384,6 +444,7 @@ async function beginMatch(): Promise<void> {
     onMatchOver: (winnerIndex) => {
       hud.hide();
       inMatchMovesButton.classList.add('hidden');
+      inMatchSettingsButton.classList.add('hidden');
       touchControls.hide();
       audio.play('match_end');
       winScreen.show(winnerIndex, 0);
@@ -425,6 +486,8 @@ async function beginMatch(): Promise<void> {
     },
   }, undefined, audio);
   match = localMatch;
+  localMatch.input.setBinding(0, currentBindings.p1);
+  localMatch.input.setBinding(1, currentBindings.p2);
   adapter = new SimMatchAdapter(localMatch);
   spectator = new SpectatorController(adapter, LOCAL_SLOT, {
     centerX: (STATIC_ARENA.minX + STATIC_ARENA.maxX) / 2,

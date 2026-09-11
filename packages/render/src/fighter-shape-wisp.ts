@@ -1,32 +1,42 @@
-// Wisp's silhouette: a thin, wavering, ghost-like sliver body with a
-// long thread-like limb -- the narrowest body in the cast, reading as
-// something that drifts rather than stands. Additive, new file, same
-// signature as the other fighter-shape-* files.
+// Wisp's silhouette: a small floating orb -- round on every side, no
+// taper, no point -- rather than the thin vertical sliver this used to
+// be. Additive, new file, same signature as the other fighter-shape-*
+// files.
+//
+// 2026-09-11 silhouette-differentiation pass: at true 20-fighter zoom in
+// grayscale, the old lens shape (a tall pointed sliver, HALF_W=4,
+// HEIGHT=18) and Reed's tall tapered stalk (HALF_W=4, HEIGHT=34) both
+// collapsed into the same family -- "thin vertical shape with a pointed
+// top and a small round node" -- and were confirmed confusable live (see
+// "Local Crowd Testing Tool 2026-09-11", fighters #5/#20 in a real
+// crowd). Height alone (18 vs 34) is not a strong enough cue once a
+// fighter is 10-15px tall on screen and partly occluded.
+//
+// Fix: change Wisp's shape *family*, not just its size. Wisp is now
+// round where Reed is a straight taper, and wide-relative-to-height
+// (HALF_W=7, HEIGHT=11 -- roughly the aspect ratio of Ballast's circle,
+// just much smaller) where Reed is the narrowest, tallest shape in the
+// cast. The float gap is kept (unique to Wisp) as a second, independent
+// cue. This also keeps Wisp clear of Zephyr's teardrop-plus-fin: a
+// symmetric round orb with no fin reads differently from a leaning
+// asymmetric teardrop even with all colour and the fin's curve detail
+// gone.
 import { Graphics } from 'pixi.js';
 import { PALETTE } from './palette.ts';
 import type { Pose } from './fighter-pose.ts';
 
-// Narrower than every other character (matches its 11x30 hurtbox) but
-// not as tall as Reed -- a small, slight, drifting shape. Shortened from
-// 24 to 18 so its aspect ratio doesn't converge with Reed's tall stalk,
-// and hovers FLOAT_GAP above the ground (feet position) instead of
-// standing on it -- a gap of visible background beneath the body reads
-// as "floating" even as a single flat silhouette, which no other
-// character does, so it can't be confused with anyone on proportion
-// alone even if the body shape itself were similar.
-const HALF_W = 4;
-const HEIGHT = 18;
-const FLOAT_GAP = 5;
+const HALF_W = 7;
+const HEIGHT = 11;
+const FLOAT_GAP = 6;
 
 export function drawWispSilhouette(g: Graphics, tint: number, facing: 1 | -1, pose: Pose): void {
-  // Body: a wavering vertical sliver -- a soft lens shape rather than
-  // any straight-sided silhouette used elsewhere, with a lower alpha
-  // stroke so it reads as light/insubstantial next to the cast's solid
-  // bodies.
+  // Body: a simple rounded orb (ellipse), the only fully round-on-every-
+  // side body in the cast besides Ballast's much bigger circle -- no
+  // taper, no point, so it can't be mistaken for Reed's stalk, Voltling's
+  // diamond, or Zephyr's teardrop even as a flat grey blob.
   const topY = -HEIGHT - FLOAT_GAP;
-  const botY = -FLOAT_GAP;
-  const midY = (topY + botY) / 2;
-  g.poly([0, topY, HALF_W, midY, HALF_W * 0.55, botY, -HALF_W * 0.55, botY, -HALF_W, midY]);
+  const midY = topY + HEIGHT / 2;
+  g.ellipse(0, midY, HALF_W, HEIGHT / 2);
   g.fill({ color: tint, alpha: 0.92 });
   g.stroke({ color: PALETTE.fighterOutline, width: 1.5 });
 

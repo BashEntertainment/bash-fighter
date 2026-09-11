@@ -255,3 +255,27 @@ test('Reset all settings restores reduced motion and volume, not just key bindin
     assert.equal(volumeSlider.value, '100', 'slider UI should reflect the reset');
   });
 });
+
+test('Escape closes an open panel, but cancels a rebind capture instead when one is in flight', async () => {
+  await withPanel(({ panel, clickKeyButton, fireKeydown }) => {
+    panel.show();
+    assert.equal(panel.isOpen, true, 'show() should open the panel');
+
+    // With a capture in flight Escape means "cancel this rebind" -- the
+    // panel must stay open so the player can pick a different key.
+    clickKeyButton(0, 1);
+    fireKeydown('Escape');
+    assert.equal(panel.isOpen, true, 'Escape during a capture should not close the panel');
+    assert.equal(panel.current().p1.right, 'KeyD', 'the cancelled rebind should leave the binding alone');
+
+    // With no capture, Escape dismisses. Before this existed, a player who
+    // scrolled down inside the panel had no reachable way out of it.
+    fireKeydown('Escape');
+    assert.equal(panel.isOpen, false, 'Escape with no capture in flight should close the panel');
+
+    // Closed panels must not keep listening, or Escape elsewhere in the
+    // app would keep re-running hide().
+    fireKeydown('Escape');
+    assert.equal(panel.isOpen, false);
+  });
+});

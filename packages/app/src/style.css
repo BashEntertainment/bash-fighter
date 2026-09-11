@@ -492,6 +492,16 @@ html, body {
   align-items: baseline;
   justify-content: space-between;
   margin-bottom: 18px;
+  /* Both modals scroll internally and can be taller than the viewport.
+     Pinning the header keeps the Close button reachable at any scroll
+     position -- without this, a player who scrolled to the bottom of the
+     Controls panel had no visible way out of it. */
+  position: sticky;
+  top: -28px;
+  padding: 28px 0 12px;
+  margin-top: -28px;
+  background: var(--panel);
+  z-index: 1;
 }
 
 .move-reference-title {

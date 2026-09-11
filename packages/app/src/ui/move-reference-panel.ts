@@ -50,14 +50,22 @@ export class MoveReferencePanel {
   /** Open focused on a specific character -- used from character select,
    * where the player already has one highlighted and the panel should
    * answer "what does *this* one do" without extra clicks. */
+  private readonly dismissHandler = (e: KeyboardEvent) => {
+    if (e.code !== 'Escape') return;
+    e.preventDefault();
+    this.hide();
+  };
+
   show(characterId?: string): void {
     const idx = characterId ? ALL_CHARACTERS.findIndex((c) => c.id === characterId) : -1;
     this.select(idx >= 0 ? idx : this.selectedIndex);
     this.root.classList.remove('hidden');
+    window.addEventListener('keydown', this.dismissHandler);
   }
 
   hide(): void {
     this.root.classList.add('hidden');
+    window.removeEventListener('keydown', this.dismissHandler);
   }
 
   get isOpen(): boolean {

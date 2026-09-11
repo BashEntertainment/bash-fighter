@@ -76,6 +76,14 @@ export class SettingsPanel {
   private readonly bindings: [KeyBinding, KeyBinding];
   private capturing: { slot: 0 | 1; field: BindingField } | null = null;
   private readonly keydownHandler = (e: KeyboardEvent) => this.handleCapture(e);
+  /** Escape closes the panel, but only when no rebind capture is in
+   * flight -- during a capture Escape means "cancel this rebind", which
+   * handleCapture owns. Registered only while the panel is open. */
+  private readonly dismissHandler = (e: KeyboardEvent) => {
+    if (e.code !== 'Escape' || this.capturing) return;
+    e.preventDefault();
+    this.hide();
+  };
   // Rebinding a key already used by another action on the same slot
   // silently steals it (see handleCapture), which used to leave that
   // other action's button reading "--" with no explanation -- a player
@@ -166,11 +174,13 @@ export class SettingsPanel {
   show(): void {
     this.render();
     this.root.classList.remove('hidden');
+    window.addEventListener('keydown', this.dismissHandler);
   }
 
   hide(): void {
     this.cancelCapture();
     this.root.classList.add('hidden');
+    window.removeEventListener('keydown', this.dismissHandler);
   }
 
   get isOpen(): boolean {

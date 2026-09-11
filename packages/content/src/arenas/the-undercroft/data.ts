@@ -44,10 +44,17 @@ export const THE_UNDERCROFT_ARENA: ArenaData = {
   // HUMAN-SURVIVAL FIX (2026-09-10): same fix as battle-royale-20 -- see
   // that file's comment. Reversed so low fighter indices (always human
   // seats) land at the outer edge of the spread, not the centre.
+  // SPAWN-CLEARANCE FIX 2026-09-11 (see wiki "Spawn Clearance Audit: All
+  // Stages 2026-09-11"): 38-unit-per-slot spacing put the outermost spawn
+  // (x=522) only 82.8 units from the live tick-0 boundary (maxX=604.8),
+  // less than the ~108-unit worst-case early-hit arc. Compressed per-slot
+  // spacing from 38 to 32 (outermost spawn moves to x=468, chasm-edge
+  // clearance for the innermost spawn is unchanged at 100 units): gives
+  // 136.8 units of boundary clearance, a 1.26x safety factor.
   spawnPoints: Array.from({ length: 20 }, (_, i) => {
     const slot = 9 - Math.floor(i / 2);
     const side = i % 2 === 0 ? 1 : -1;
-    const x = side * fx.fromInt(180 + slot * 38);
+    const x = side * fx.fromInt(180 + slot * 32);
     return { x, y: fx.fromInt(0) };
   }),
 };

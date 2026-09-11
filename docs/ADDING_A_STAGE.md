@@ -44,6 +44,33 @@ Edit `my-stage/data.ts`:
   `the-foundry/data.ts` for the reasoning — and remember human seats
   always get the lowest fighter indices (`server/src/rooms.ts`), so index
   0 should not be stuck in an isolated pocket.
+- **Spawn-clearance invariant (2026-09-11):** no spawn point may sit
+  close enough to the live tick-0 boundary that a fresh (0% damage)
+  fighter can be knocked out of bounds by an ordinary early hit before
+  the ring even starts shrinking. This is a real defect class that hit
+  three of the five shipped stages (see wiki "Spawn Clearance Audit: All
+  Stages 2026-09-11") — a fighter genuinely eliminated at 4-22% in the
+  opening seconds, not a balance complaint. The rule, enforced by
+  `packages/content/test/spawn-clearance.test.ts` on every stage
+  automatically:
+  - Horizontal clearance from each spawn to the ground-derived safe
+    extent (`computeSafeExtents` in `packages/sim/src/arena-shrink.ts`,
+    evaluated at tick 0 with the full 20-fighter field alive — the
+    tightest the boundary ever is) must be **>= 1.15x** the worst-case
+    horizontal arc a 0%-damage, lightest-weight fighter can be launched
+    by the single hardest-hitting hitbox in the roster (computed from
+    `packages/sim/src/knockback.ts`).
+  - Vertical (ceiling) clearance must be **>= 1.0x** the equivalent
+    worst-case upward arc.
+  - Prefer fixing shortfalls by **compressing spawn spacing** (move
+    spawns inward), not by widening the stage's own blast rect or
+    softening knockback — a wider boundary makes that stage's own ring
+    take longer to close and can time out `server/test/reconnect.test.ts`
+    under load (rejected once already on battle-royale-20).
+  - Run `node scripts/spawn-clearance-audit.mjs` for the full printable
+    per-stage, per-slot table while iterating; it uses the exact same
+    computation as the test, so there is no drift between "the audit
+    passed" and "the test passed".
 
 ## 2. Validate it
 

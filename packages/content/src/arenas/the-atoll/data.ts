@@ -48,9 +48,18 @@ export const THE_ATOLL_ARENA: ArenaData = {
   // human-survival fix applied to every other stage (see "Bot Difficulty
   // Correction and Human-Survival Fix 2026-09-10").
   spawnPoints: [
-    // Left island (7 spawns), x roughly -480..-240, outer edge first.
+    // Left island (7 spawns). SPAWN-CLEARANCE FIX 2026-09-11 (see wiki
+    // "Spawn Clearance Audit: All Stages 2026-09-11"): the outermost slot
+    // (i=6, nearest the stage edge/blast zone) was only 81.6 units from
+    // the live tick-0 boundary (maxX=561.6) against a ~108-unit
+    // worst-case early-hit arc -- production evidence from 2026-09-11
+    // showed two bots knocked out at 3.3s at 4% and 11%, on exactly this
+    // spawn pattern. Compressed per-slot spacing from 40 to 28 units,
+    // anchored at the same inner (i=0) position: outer slot moves from
+    // x=-480 to x=-408, giving 153.6 units of clearance (1.42x safety
+    // factor).
     ...Array.from({ length: 7 }, (_, i) => ({
-      x: fx.fromInt(-480 + (6 - i) * 40),
+      x: fx.fromInt(-240 - i * 28),
       y: fx.fromInt(0),
     })),
     // Centre island (6 spawns), x roughly -90..90.
@@ -58,9 +67,11 @@ export const THE_ATOLL_ARENA: ArenaData = {
       x: fx.fromInt(-90 + i * 36),
       y: fx.fromInt(0),
     })),
-    // Right island (7 spawns), x roughly 240..480.
+    // Right island (7 spawns). SPAWN-CLEARANCE FIX 2026-09-11: mirror of
+    // the left island's fix above -- outer slot moves from x=480 to
+    // x=408 (clearance 153.6, factor 1.42).
     ...Array.from({ length: 7 }, (_, i) => ({
-      x: fx.fromInt(240 + i * 40),
+      x: fx.fromInt(240 + i * 28),
       y: fx.fromInt(0),
     })),
   ],

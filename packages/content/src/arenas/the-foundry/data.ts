@@ -80,8 +80,16 @@ export const THE_FOUNDRY_ARENA: ArenaData = {
     // Left chamber (7 spawns), x in roughly -420..-160, low indices inner
     // (near the -140 dividing wall) rather than outer (near the -440
     // stage edge / blast zone).
+    // SPAWN-CLEARANCE FIX 2026-09-11 (see wiki "Spawn Clearance Audit:
+    // All Stages 2026-09-11"): the outermost slot in each side chamber
+    // (i=6, nearest the stage edge/blast zone, always a bot seat) was
+    // only 55.2 units from the live tick-0 boundary (maxX=475.2) against
+    // a ~108-unit worst-case early-hit arc. Compressed the chamber's own
+    // spacing from 40 to 27 units/slot (anchored at the inner wall-side
+    // slot, unchanged) so the outer slot moves from x=-420 to x=-342,
+    // giving 133.2 units of clearance (1.23x safety factor).
     ...Array.from({ length: 7 }, (_, i) => ({
-      x: fx.fromInt(-420 + (6 - i) * 40),
+      x: fx.fromInt(-180 - i * 27),
       y: fx.fromInt(0),
     })),
     // Centre chamber (6 spawns), x in roughly -110..110 -- unaffected,
@@ -94,8 +102,11 @@ export const THE_FOUNDRY_ARENA: ArenaData = {
     // here was already the inner slot (near the 140 dividing wall, x=160)
     // before this fix, so it never exhibited the bug -- only the left
     // chamber's index-0-at-the-stage-edge mapping did.
+    // SPAWN-CLEARANCE FIX 2026-09-11: mirror of the left chamber's fix
+    // above -- outer slot moves from x=400 to x=322 (clearance 153.2,
+    // factor 1.41).
     ...Array.from({ length: 7 }, (_, i) => ({
-      x: fx.fromInt(160 + i * 40),
+      x: fx.fromInt(160 + i * 27),
       y: fx.fromInt(0),
     })),
   ],

@@ -78,10 +78,20 @@ export const THE_SPIRE_ARENA: ArenaData = {
   // the most crowded point at tick 0. Reversed so low indices land at the
   // outer edge instead. See wiki "Bot Difficulty Correction and
   // Human-Survival Fix 2026-09-10".
+  // SPAWN-CLEARANCE FIX 2026-09-11 (see wiki "Spawn Clearance Audit: All
+  // Stages 2026-09-11"): 40-unit-per-slot spacing put the outermost spawn
+  // (x=384) only 48 units from the live tick-0 boundary (maxX=432,
+  // ground box -400..400 plus the proportional STANDING_MARGIN) -- a
+  // fresh Wisp hit by Anchor's forward tilt at tick 0 can be launched
+  // ~108 horizontal units, more than double that clearance. Compressed
+  // per-slot spacing from 40 to 30 (same technique as battle-royale-20's
+  // 45->37 fix, commit 7addb52): outermost spawn moves to x=294, giving
+  // 138 units of clearance against the ~108-unit worst-case arc (1.27x
+  // safety factor). See scripts/spawn-clearance-audit.mjs.
   spawnPoints: Array.from({ length: 20 }, (_, i) => {
     const slot = 9 - Math.floor(i / 2);
     const side = i % 2 === 0 ? 1 : -1;
-    const x = side * fx.fromInt(24 + slot * 40);
+    const x = side * fx.fromInt(24 + slot * 30);
     return { x, y: fx.fromInt(0) };
   }),
 };

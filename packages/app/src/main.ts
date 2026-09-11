@@ -43,10 +43,15 @@ const canvasRoot = document.createElement('div');
 canvasRoot.id = 'canvas-root';
 appRoot.appendChild(canvasRoot);
 
-const debugHint = document.createElement('div');
-debugHint.className = 'debug-hint';
-debugHint.textContent = 'F3 debug · TAB cycle survivors · O overview';
-appRoot.appendChild(debugHint);
+// Keyboard-only shortcuts (F3/TAB/O) are meaningless on touch devices, and
+// this hint's bottom-right position collides with the touch attack/special
+// button cluster (also bottom-right) on phones. Skip it on touch devices.
+if (!isTouchCapable()) {
+  const debugHint = document.createElement('div');
+  debugHint.className = 'debug-hint';
+  debugHint.textContent = 'F3 debug · TAB cycle survivors · O overview';
+  appRoot.appendChild(debugHint);
+}
 
 let match: Match | null = null;
 let adapter: SimMatchAdapter | null = null;

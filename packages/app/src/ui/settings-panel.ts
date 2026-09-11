@@ -21,6 +21,13 @@ import {
   type BindingField,
   type KeyBinding,
 } from '@bash-fighter/input';
+// Reduced-motion camera damping (issue #24): the existing "Reduce screen
+// shake" toggle only reached packages/render's shake effect; extend the
+// same toggle to also dampen the camera's own pan/zoom rate. Imported
+// directly from the camera module (not the package's index barrel)
+// since this settings panel is the only file this task touches that
+// wires the setting through.
+import { setCameraReducedMotion } from '@bash-fighter/render/src/camera.ts';
 
 // Browser KeyboardEvent.code values are things like "KeyW", "ArrowLeft",
 // "Space", "ShiftLeft". Most are already readable; a few common ones get
@@ -92,6 +99,7 @@ export class SettingsPanel {
     this.host = host;
     this.bindings = [cloneBinding(initial.p1), cloneBinding(initial.p2)];
     this.reducedMotion = initial.reducedMotion;
+    setCameraReducedMotion(this.reducedMotion);
     this.volume = Math.max(0, Math.min(1, initial.volume));
     this.root = document.createElement('div');
     this.root.id = 'settings-panel';
@@ -138,6 +146,7 @@ export class SettingsPanel {
     this.reducedMotionCheckbox.checked = this.reducedMotion;
     this.reducedMotionCheckbox.addEventListener('change', () => {
       this.reducedMotion = this.reducedMotionCheckbox.checked;
+      setCameraReducedMotion(this.reducedMotion);
       this.host.onReducedMotionChange(this.reducedMotion);
     });
     this.volumeSlider = this.root.querySelector('.settings-volume-slider') as HTMLInputElement;
@@ -195,6 +204,7 @@ export class SettingsPanel {
 
     this.reducedMotion = false;
     this.reducedMotionCheckbox.checked = false;
+    setCameraReducedMotion(this.reducedMotion);
     this.host.onReducedMotionChange(this.reducedMotion);
 
     this.volume = 1;

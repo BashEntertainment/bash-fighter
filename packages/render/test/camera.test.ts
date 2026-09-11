@@ -3,7 +3,14 @@
 // matches the node:test + node:assert style of palette.test.ts.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { computeCamera, type ArenaBounds, type CameraConfig } from '../src/camera.ts';
+import {
+  computeCamera,
+  computeRawCamera,
+  setCameraReducedMotion,
+  isCameraReducedMotion,
+  type ArenaBounds,
+  type CameraConfig,
+} from '../src/camera.ts';
 
 const EPS = 1e-6;
 
@@ -108,4 +115,70 @@ test('center clamps to stay within arena bounds when a fighter sits near the edg
   const halfViewWorldX = c.viewWidth / 2 / cam.scale;
   assert.ok(cam.centerX <= c.arena.maxX - halfViewWorldX + EPS);
   assert.ok(cam.centerX >= c.arena.minX + halfViewWorldX - EPS);
+});
+
+// Reduced-motion camera damping (issue #24): the "Reduce screen shake"
+// setting is extended to also clamp the camera's own rate of pan/zoom
+// change, since computeCamera() by itself just jumps straight to a
+// fresh target every call with no memory of the previous frame.
+test('reduced motion off (default): computeCamera jumps straight to the raw target, unchanged from before', () => {
+  assert.equal(isCameraReducedMotion(), false);
+  const c = cfg();
+  const raw = computeRawCamera([{ x: 100, y: 50 }], c);
+  const cam = computeCamera([{ x: 100, y: 50 }], c);
+  assert.equal(cam.centerX, raw.centerX);
+  assert.equal(cam.centerY, raw.centerY);
+  assert.equal(cam.scale, raw.scale);
+});
+
+test('reduced motion on: a big jump in the framing target is damped, not applied all at once', () => {
+  // The camera frames the arena, so its motion comes from the arena box
+  // changing (the collapsing ring), not from fighters moving inside a
+  // fixed box -- so that is what this drives.
+  const wide = cfg({ arena: { minX: -2000, maxX: 2000, minY: 0, maxY: 800 } });
+  const shrunk = cfg({ arena: { minX: 1000, maxX: 1400, minY: 0, maxY: 800 } });
+  try {
+    setCameraReducedMotion(true);
+    assert.equal(isCameraReducedMotion(), true);
+    const start = computeCamera([{ x: 0, y: 50 }], wide);
+    const rawTarget = computeRawCamera([{ x: 1200, y: 50 }], shrunk);
+    const damped = computeCamera([{ x: 1200, y: 50 }], shrunk);
+    assert.ok(
+      Math.abs(rawTarget.centerX - start.centerX) > 1,
+      'test setup: the two arena boxes must frame to different centres',
+    );
+    const startDist = Math.abs(rawTarget.centerX - start.centerX);
+    const dampedDist = Math.abs(rawTarget.centerX - damped.centerX);
+    assert.ok(dampedDist > EPS, 'damped camera should not have snapped exactly to the raw target');
+    assert.ok(dampedDist < startDist, 'damped camera should have moved partway toward the raw target');
+  } finally {
+    setCameraReducedMotion(false);
+  }
+});
+
+test('reduced motion on: repeatedly calling computeCamera with a fixed target converges to it', () => {
+  const c = cfg();
+  try {
+    setCameraReducedMotion(true);
+    computeCamera([{ x: 0, y: 50 }], c); // seed the initial smoothed state
+    let last = computeCamera([{ x: 500, y: 50 }], c);
+    for (let i = 0; i < 200; i++) {
+      last = computeCamera([{ x: 500, y: 50 }], c);
+    }
+    const raw = computeRawCamera([{ x: 500, y: 50 }], c);
+    assert.ok(Math.abs(last.centerX - raw.centerX) < 1e-3, `did not converge: last=${last.centerX} raw=${raw.centerX}`);
+  } finally {
+    setCameraReducedMotion(false);
+  }
+});
+
+test('turning reduced motion off resumes jumping straight to target (no leftover damping state)', () => {
+  const c = cfg();
+  setCameraReducedMotion(true);
+  computeCamera([{ x: 0, y: 50 }], c);
+  computeCamera([{ x: 900, y: 50 }], c); // mid-damping, far from target
+  setCameraReducedMotion(false);
+  const raw = computeRawCamera([{ x: 900, y: 50 }], c);
+  const cam = computeCamera([{ x: 900, y: 50 }], c);
+  assert.equal(cam.centerX, raw.centerX);
 });

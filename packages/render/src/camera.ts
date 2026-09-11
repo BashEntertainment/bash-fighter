@@ -31,7 +31,72 @@ export interface CameraConfig {
   arena: ArenaBounds;
 }
 
+// Reduced-motion camera damping (issue #24). The existing "Reduce screen
+// shake" setting (packages/render/src/effects.ts) only suppressed hit
+// shake; it never touched the camera's own pan/zoom motion as the
+// collapsing arena shrinks or the framing box grows/shrinks with the
+// fighter spread, which can still be a fast, disorienting move for
+// motion-sensitive players. computeCamera() is called fresh every
+// render frame with no memory of the previous frame's view (it is a
+// pure function of the current positions/bounds), so damping has to
+// live here as module state: when enabled, each call is blended toward
+// the freshly computed "raw" target by a fixed fraction instead of
+// jumping straight to it, clamping the *rate* of pan/zoom change rather
+// than the value itself. This is a client-side rendering/easing change
+// only -- it never reads or writes any Sim state, so it cannot affect
+// determinism.
+let cameraReducedMotion = false;
+let smoothedView: CameraView | null = null;
+
+/** How much of the remaining distance to the freshly computed camera
+ * target is closed per render call while reduced motion is on. Lower =
+ * calmer/slower to follow the arena shrink or fighter spread, higher =
+ * snappier. 1 (or reduced motion off) means "jump straight to target",
+ * matching the previous, undamped behaviour exactly. */
+const REDUCED_MOTION_SMOOTHING = 0.12;
+
+export function setCameraReducedMotion(reduced: boolean): void {
+  cameraReducedMotion = reduced;
+  // Drop any in-progress smoothing state so re-enabling later starts
+  // fresh from wherever the camera actually is, rather than blending
+  // from a stale, possibly far-away point.
+  smoothedView = null;
+}
+
+export function isCameraReducedMotion(): boolean {
+  return cameraReducedMotion;
+}
+
+function lerp(a: number, b: number, t: number): number {
+  return a + (b - a) * t;
+}
+
 export function computeCamera(
+  positions: readonly { x: number; y: number }[],
+  cfg: CameraConfig,
+): CameraView {
+  const raw = computeRawCamera(positions, cfg);
+  if (!cameraReducedMotion) {
+    smoothedView = null;
+    return raw;
+  }
+  if (smoothedView === null) {
+    smoothedView = raw;
+    return raw;
+  }
+  smoothedView = {
+    centerX: lerp(smoothedView.centerX, raw.centerX, REDUCED_MOTION_SMOOTHING),
+    centerY: lerp(smoothedView.centerY, raw.centerY, REDUCED_MOTION_SMOOTHING),
+    scale: lerp(smoothedView.scale, raw.scale, REDUCED_MOTION_SMOOTHING),
+  };
+  return smoothedView;
+}
+
+/** The un-damped camera computation (previous `computeCamera` body,
+ * unchanged). Always call through `computeCamera` in render code so
+ * reduced-motion damping applies; this is exported only so tests can
+ * assert the raw target camera separately from the damped output. */
+export function computeRawCamera(
   positions: readonly { x: number; y: number }[],
   cfg: CameraConfig,
 ): CameraView {

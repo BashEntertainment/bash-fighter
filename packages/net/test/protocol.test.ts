@@ -10,6 +10,14 @@ import {
   dedupeName,
   PROTOCOL_VERSION,
   INPUT_FRAME_BYTES,
+  type WelcomeMessage,
+  type LobbyMessage,
+  type MatchStartMessage,
+  type EliminatedMessage,
+  type MatchEndMessage,
+  type ErrorMessage,
+  type PingMessage,
+  type ServerControlMessage,
 } from '../src/protocol.ts';
 
 describe('input frame encode/decode', () => {
@@ -80,6 +88,169 @@ describe('parseClientControl', () => {
   test('parses spectate and pong', () => {
     assert.deepEqual(parseClientControl(JSON.stringify({ t: 'spectate' })), { t: 'spectate' });
     assert.deepEqual(parseClientControl(JSON.stringify({ t: 'pong', id: 7 })), { t: 'pong', id: 7 });
+  });
+});
+
+// Server -> client control messages (issue #21): protocol.test.ts previously
+// only exercised the client->server text-frame decode path
+// (parseClientControl) plus the two binary shapes. It never exercised the
+// server->client JSON control messages at all (welcome/lobby/matchStart/
+// eliminated/matchEnd/error/ping, see docs/PROTOCOL.md's "server -> client"
+// table), even though those are also part of the wire protocol and just as
+// capable of drifting silently.
+//
+// protocol.ts does not define a dedicated encode/decode pair for these --
+// the real production code (server/src/index.ts's `send()`, and
+// packages/app/src/net-match.ts's message handler) transmits them exactly
+// as `JSON.stringify(msg)` / `JSON.parse(text) as ServerControlMessage`.
+// So "encode it, decode it back" for this half of the protocol means
+// exercising that same JSON round trip against the real `*Message`
+// interfaces from protocol.ts, fully typed -- which both (a) proves the
+// JSON round trip is lossless for every field on every message shape, and
+// (b) means a field rename/removal on any of these interfaces breaks the
+// typecheck here immediately, the same way a binary layout change would
+// break `encodeSnapshot`'s round-trip test.
+function encodeServerControl(msg: ServerControlMessage): string {
+  return JSON.stringify(msg);
+}
+
+function decodeServerControl(text: string): ServerControlMessage {
+  return JSON.parse(text) as ServerControlMessage;
+}
+
+describe('server->client control message encode/decode', () => {
+  test('welcome: round-trips every field, including a null resumeToken (pure spectator)', () => {
+    const msg: WelcomeMessage = {
+      t: 'welcome',
+      protocolVersion: PROTOCOL_VERSION,
+      clientId: 'client-abc123',
+      slot: -1,
+      matchId: 'match-1',
+      resumeToken: null,
+      resumed: false,
+    };
+    const decoded = decodeServerControl(encodeServerControl(msg));
+    assert.deepEqual(decoded, msg);
+  });
+
+  test('welcome: round-trips a real seat with a resume token, resumed=true', () => {
+    const msg: WelcomeMessage = {
+      t: 'welcome',
+      protocolVersion: PROTOCOL_VERSION,
+      clientId: 'client-def456',
+      slot: 3,
+      matchId: 'match-2',
+      resumeToken: 'tok_9f8e7d',
+      resumed: true,
+    };
+    const decoded = decodeServerControl(encodeServerControl(msg));
+    assert.deepEqual(decoded, msg);
+  });
+
+  test('lobby: round-trips a filling lobby, including a live countdown and the names array', () => {
+    const msg: LobbyMessage = {
+      t: 'lobby',
+      players: 5,
+      capacity: 20,
+      minimum: 4,
+      countdownTicks: 180,
+      names: ['Rook', '', 'Anchor', 'Zephyr (2)', ''],
+    };
+    const decoded = decodeServerControl(encodeServerControl(msg));
+    assert.deepEqual(decoded, msg);
+  });
+
+  test('lobby: round-trips the not-counting-down sentinel (-1) and an empty names array', () => {
+    const msg: LobbyMessage = { t: 'lobby', players: 0, capacity: 20, minimum: 4, countdownTicks: -1, names: [] };
+    const decoded = decodeServerControl(encodeServerControl(msg));
+    assert.deepEqual(decoded, msg);
+  });
+
+  test('matchStart: round-trips settings (opaque unknown payload), arenaId, names and characterIds together', () => {
+    const msg: MatchStartMessage = {
+      t: 'matchStart',
+      matchId: 'match-3',
+      seed: 123456789,
+      numFighters: 3,
+      slot: 1,
+      settings: { winCondition: 'stocks', stocks: 3, timeLimitTicks: null },
+      arenaId: 'the-foundry',
+      names: ['Rook', '', 'Anchor'],
+      characterIds: ['placeholder', 'ballast', 'placeholder'],
+    };
+    const decoded = decodeServerControl(encodeServerControl(msg));
+    assert.deepEqual(decoded, msg);
+  });
+
+  test('eliminated: round-trips slot/placement/tick', () => {
+    const msg: EliminatedMessage = { t: 'eliminated', slot: 7, placement: 12, tick: 4321 };
+    const decoded = decodeServerControl(encodeServerControl(msg));
+    assert.deepEqual(decoded, msg);
+  });
+
+  test('matchEnd: round-trips a real winner and a full leaderboard', () => {
+    const msg: MatchEndMessage = { t: 'matchEnd', winner: 2, leaderboard: [2, 0, 1, 3], tick: 9001, resolved: true };
+    const decoded = decodeServerControl(encodeServerControl(msg));
+    assert.deepEqual(decoded, msg);
+  });
+
+  test('matchEnd: round-trips a null winner (simultaneous-KO draw) and resolved=false (abandoned teardown)', () => {
+    const msg: MatchEndMessage = { t: 'matchEnd', winner: null, leaderboard: [0, 1], tick: 500, resolved: false };
+    const decoded = decodeServerControl(encodeServerControl(msg));
+    assert.deepEqual(decoded, msg);
+  });
+
+  test('error: round-trips every documented error code', () => {
+    const codes: ErrorMessage['code'][] = [
+      'protocol_mismatch',
+      'bad_message',
+      'match_full',
+      'server_error',
+      'resume_invalid',
+      'resume_expired',
+      'resume_seat_taken',
+    ];
+    for (const code of codes) {
+      const msg: ErrorMessage = { t: 'error', code, message: `human-readable: ${code}` };
+      const decoded = decodeServerControl(encodeServerControl(msg));
+      assert.deepEqual(decoded, msg);
+    }
+  });
+
+  test('ping: round-trips its id', () => {
+    const msg: PingMessage = { t: 'ping', id: 42 };
+    const decoded = decodeServerControl(encodeServerControl(msg));
+    assert.deepEqual(decoded, msg);
+  });
+
+  test('every ServerControlMessage variant survives the JSON round trip with its \'t\' discriminant intact', () => {
+    // Guards against a category of bug distinct from the per-field checks
+    // above: something upstream (a proxy, a logger that mutates before
+    // send, a future migration) silently dropping the whole message.
+    const messages: ServerControlMessage[] = [
+      { t: 'welcome', protocolVersion: PROTOCOL_VERSION, clientId: 'c1', slot: 0, matchId: 'm1', resumeToken: 'tok', resumed: false },
+      { t: 'lobby', players: 1, capacity: 20, minimum: 4, countdownTicks: -1, names: ['Rook'] },
+      {
+        t: 'matchStart',
+        matchId: 'm1',
+        seed: 1,
+        numFighters: 1,
+        slot: 0,
+        settings: {},
+        arenaId: 'battle-royale-20',
+        names: ['Rook'],
+        characterIds: ['placeholder'],
+      },
+      { t: 'eliminated', slot: 0, placement: 1, tick: 1 },
+      { t: 'matchEnd', winner: 0, leaderboard: [0], tick: 1, resolved: true },
+      { t: 'error', code: 'bad_message', message: 'nope' },
+      { t: 'ping', id: 1 },
+    ];
+    for (const msg of messages) {
+      const decoded = decodeServerControl(encodeServerControl(msg));
+      assert.equal(decoded.t, msg.t);
+      assert.deepEqual(decoded, msg);
+    }
   });
 });
 

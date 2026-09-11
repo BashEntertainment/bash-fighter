@@ -35,6 +35,11 @@ To run the app and server locally, see the "Running it locally" section
 of `README.md`. Work inside a single package where possible and run that
 package's tests before opening a PR.
 
+To reproduce a full 20-fighter crowd (for legibility/perf/HUD QA) without
+spinning up the server or joining a live production lobby, see
+[`docs/LOCAL_CROWD_TESTING.md`](./docs/LOCAL_CROWD_TESTING.md) —
+`?crowd20=1` on the local Vite dev server.
+
 ### Running the tests
 
 `npm test` runs every test in `packages/*/test/**/*.test.ts` — 431 tests as of 2026-09-10 (this number grows regularly; don't be alarmed if `npm test`'s own summary reports more than what's written here — the summary is the source of truth, not this doc)

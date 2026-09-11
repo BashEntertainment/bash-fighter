@@ -16,6 +16,7 @@ import {
   type InputFrame,
   DEFAULT_ARENA,
 } from '@bash-fighter/sim';
+import { buildLocalBots, buildTickInputs, type BotController } from './local-crowd-bots.ts';
 import { PLACEHOLDER_CHARACTER, createMatchSim, pickArenaId } from '@bash-fighter/content';
 import { InputManager } from '@bash-fighter/input';
 import {
@@ -95,6 +96,7 @@ export class Match {
   private readonly numFighters: number;
   readonly audio: AudioManager;
   private readonly effectsBridge: EffectsAudioBridge;
+  private readonly bots: Map<number, BotController>;
 
   constructor(
     parent: HTMLElement,
@@ -103,6 +105,24 @@ export class Match {
     private readonly events: MatchEvents = {},
     sim?: Sim,
     audio: AudioManager = new AudioManager(),
+    // Local play (the 2-keyboard harness and the ?crowd20=1 debug/QA
+    // harness alike) never had bot input sources: InputManager.poll()
+    // always returns exactly 2 InputFrames (one per local slot), so any
+    // extra fighter slots got no InputFrame at all and Sim.advance()
+    // threw "expected N inputs, got 2" the moment a match had more than
+    // 2 fighters -- this is exactly what made ?crowd20=1 throw every
+    // tick. humanSlotCount says how many of the leading fighter slots
+    // are driven by InputManager (2 for local play); every slot at or
+    // beyond it gets a BotController, deterministically seeded from the
+    // match seed exactly like the server does (see server/src/match.ts),
+    // so a crowd match is reproducible for a given seed.
+    humanSlotCount: number = 2,
+    // Dev/QA override only (see ?arena=<id> in main.ts and issue #19):
+    // pins this local match's stage instead of deriving it from the seed.
+    // Ignored (stays seed-derived) when omitted/null, so this changes
+    // nothing about ordinary local play or online play (which threads its
+    // own server-assigned arenaId through a different path entirely).
+    arenaIdOverride?: string | null,
   ) {
     this.characters = characters;
     this.audio = audio;
@@ -118,8 +138,14 @@ export class Match {
     // deterministically from the seed via the same pickArenaId helper the
     // server uses for its own random-arena selection, keeping local play
     // varied but reproducible for a given seed.
-    this.sim = sim ?? createMatchSim(seed, characters.length, undefined, characters, pickArenaId(seed));
+    this.sim = sim ?? createMatchSim(seed, characters.length, undefined, characters, arenaIdOverride ?? pickArenaId(seed));
     this.numFighters = this.sim.numFighters;
+    // Bot-fill every slot InputManager doesn't drive. Same construction
+    // the server uses per-seat (BotDifficulty.EASY, matching production's
+    // actual difficulty -- see "Bot Difficulty Correction" -- and
+    // deriveBotSeed(seed, slot) for determinism), just decided locally by
+    // slot index instead of a per-seat isBot flag.
+    this.bots = buildLocalBots(seed, this.numFighters, humanSlotCount);
     this.renderer = new Renderer(arenaDataToStageBounds(this.sim.getArena()));
     this.prevSnapshots = this.snapshotAll();
     this.currSnapshots = this.snapshotAll();
@@ -178,7 +204,8 @@ export class Match {
 
   private tick(): void {
     if (this.over) return;
-    const inputs: InputFrame[] = this.input.poll();
+    const polled: InputFrame[] = this.input.poll();
+    const inputs: InputFrame[] = buildTickInputs(this.sim, polled, this.bots, this.numFighters);
     this.sim.advance(inputs);
 
     this.prevSnapshots = this.currSnapshots;

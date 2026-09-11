@@ -20,7 +20,7 @@ import {
   DEFAULT_P1_BINDING,
   DEFAULT_P2_BINDING,
 } from '@bash-fighter/input';
-import { PLACEHOLDER_CHARACTER, resolveCharacterId, ALL_CHARACTERS } from '@bash-fighter/content';
+import { PLACEHOLDER_CHARACTER, resolveCharacterId, ALL_CHARACTERS, isKnownArenaId } from '@bash-fighter/content';
 import { setReducedMotion, type ArenaBounds } from '@bash-fighter/render';
 import { AudioManager } from '@bash-fighter/audio';
 
@@ -518,7 +518,21 @@ async function beginMatch(): Promise<void> {
   const localCharacters = __DEBUG_CROWD
     ? Array.from({ length: 20 }, (_, i) => (ALL_CHARACTERS[i % ALL_CHARACTERS.length] as (typeof ALL_CHARACTERS)[number]).character)
     : [resolveCharacterId(startScreen.selectedCharacterId), PLACEHOLDER_CHARACTER];
-  const localMatch: Match = new Match(canvasRoot, localCharacters, Date.now() & 0xffffffff, {
+  // Dev/QA helper: ?seed=<n> makes a crowd20 (or ordinary local) match
+  // reproducible run to run -- default falls back to the wall clock like
+  // before. ?arena=<id> pins the stage instead of deriving it from the
+  // seed (see issue #19); an unknown/absent id leaves arena selection
+  // exactly as before (seed-derived), so this is invisible to a normal
+  // player who never sets these params. See docs/LOCAL_CROWD_TESTING.md.
+  const __DEBUG_PARAMS = new URLSearchParams(location.search);
+  const __DEBUG_SEED_PARAM = __DEBUG_PARAMS.get('seed');
+  const localSeed = __DEBUG_SEED_PARAM !== null && Number.isFinite(Number(__DEBUG_SEED_PARAM))
+    ? Number(__DEBUG_SEED_PARAM) & 0xffffffff
+    : Date.now() & 0xffffffff;
+  const __DEBUG_ARENA_PARAM = __DEBUG_PARAMS.get('arena');
+  const localArenaOverride = isKnownArenaId(__DEBUG_ARENA_PARAM) ? __DEBUG_ARENA_PARAM : null;
+  const localHumanSlotCount = __DEBUG_CROWD ? 2 : 2;
+  const localMatch: Match = new Match(canvasRoot, localCharacters, localSeed, {
     onMatchOver: (winnerIndex) => {
       hud.hide();
       inMatchMovesButton.classList.add('hidden');
@@ -562,7 +576,7 @@ async function beginMatch(): Promise<void> {
 
       return { ...frame, fighters, liveArenaBounds: arena, cameraOverride, localPlayerIndex: LOCAL_SLOT };
     },
-  }, undefined, audio);
+  }, undefined, audio, localHumanSlotCount, localArenaOverride);
   match = localMatch;
   localMatch.input.setBinding(0, currentBindings.p1);
   localMatch.input.setBinding(1, currentBindings.p2);

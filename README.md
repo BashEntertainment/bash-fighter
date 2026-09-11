@@ -98,6 +98,10 @@ The live production deployment is at http://135.181.45.254/ and runs the
 match server described above; the "PLAY ONLINE" flow works the same way
 against it as against a local `server` dev instance.
 
+To reproduce a full 20-fighter crowd locally without a server or a live
+lobby (`?crowd20=1`, reproducible via `&seed=`/`&arena=`), see
+[`docs/LOCAL_CROWD_TESTING.md`](./docs/LOCAL_CROWD_TESTING.md).
+
 ## Determinism
 
 `packages/sim` is a pure function of previous state plus input: Q16.16

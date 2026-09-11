@@ -309,6 +309,27 @@ let eliminatedThisOnlineMatch = false;
 // them if they dismissed it and nothing else ever will.
 let lastEliminationContent: MatchOverlayContent | null = null;
 
+// Safety net for the spectator-stall dead end (2026-09-11, see wiki
+// "Client Gaps Closed 2026-09-11"): if our own seat is eliminated and we
+// choose to keep watching, the ONLY thing that ever brings a control back
+// is a later 'matchEnd' arriving through onMatchOver. If the match never
+// resolves server-side (or the message is lost to a superseded socket --
+// see the comment in net-match.ts's message listener), no such message
+// ever comes and the player is left on a frozen last frame forever with
+// nothing to click, even though lastEliminationContent already exists.
+// This timer guarantees an escape hatch regardless of the root cause on
+// the server side: if no matchEnd shows up within SPECTATE_STALL_MS of
+// our own elimination, we force the player's own placement overlay back
+// up so 'Play again' is always reachable.
+const SPECTATE_STALL_MS = 25_000;
+let spectateStallTimer: ReturnType<typeof setInterval> | null = null;
+function clearSpectateStallTimer(): void {
+  if (spectateStallTimer !== null) {
+    clearInterval(spectateStallTimer);
+    spectateStallTimer = null;
+  }
+}
+
 function serverUrl(): string {
   const params = new URLSearchParams(location.search);
   if (params.get('server')) return params.get('server') as string;
@@ -324,6 +345,7 @@ async function beginOnlineMatch(): Promise<void> {
   lastMatchWasOnline = true;
   eliminatedThisOnlineMatch = false;
   lastEliminationContent = null;
+  clearSpectateStallTimer();
   startScreen.hide();
   winScreen.hide();
   spectatorBanner.hide();
@@ -374,6 +396,7 @@ async function beginOnlineMatch(): Promise<void> {
       setNetStatus('waiting', `${players}/${capacity} players${countdown}`);
     },
     onMatchOver: (winnerIndex, resolved) => {
+      clearSpectateStallTimer();
       hud.hide();
       inMatchMovesButton.classList.add('hidden');
       inMatchSettingsButton.classList.add('hidden');
@@ -448,6 +471,16 @@ async function beginOnlineMatch(): Promise<void> {
         ],
       };
       matchOverlay.show(lastEliminationContent);
+      clearSpectateStallTimer();
+      // Recurring, not one-shot: the player may dismiss this re-shown
+      // overlay again ("Keep spectating") and the match may still never
+      // resolve, so keep checking every SPECTATE_STALL_MS rather than
+      // giving up the escape hatch after a single check.
+      spectateStallTimer = setInterval(() => {
+        if (eliminatedThisOnlineMatch && lastEliminationContent && !matchOverlay.isVisible) {
+          matchOverlay.show(lastEliminationContent);
+        }
+      }, SPECTATE_STALL_MS);
     },
   }, audio);
   netMatch = net;

@@ -189,6 +189,18 @@ export class AudioManager {
   // instead of allocating a new Float32Array per event -- built once on
   // init, never touched on the hot path.
   private noiseBuffer: AudioBuffer | null = null;
+  // Per-cue event log for __bashTestAudio (2026-09-11, see wiki "Client
+  // Gaps Closed 2026-09-11"): the only way this game's audio will ever
+  // be checked is a script asserting that the *right* cue fired for a
+  // given sim event, since nobody here can listen. Every public play*
+  // method below records its own name and the AudioContext time it
+  // fired (or performance.now() before ctx exists) into this bounded
+  // ring buffer. Recorded even while muted -- muting zeroes gain, it
+  // does not skip cue dispatch -- so a test can assert both "the cue
+  // fired" and "it was inaudible" (masterGain.gain.value === 0)
+  // independently, matching how mute is actually implemented.
+  private cueLog: { name: string; t: number }[] = [];
+  private static readonly CUE_LOG_CAP = 200;
 
   constructor(assetBase: string = defaultAssetBase()) {
     this.assetBase = assetBase;
@@ -225,6 +237,22 @@ export class AudioManager {
   get activeVoiceCount(): number {
     this.pruneFinishedVoices();
     return this.activeVoices.length;
+  }
+
+  /** Test-only (see __bashTestAudio hook in packages/app/src/main.ts):
+   * every cue fired so far, oldest first. */
+  getCueLog(): { name: string; t: number }[] {
+    return this.cueLog.slice();
+  }
+
+  /** Test-only: reset the log between assertions/scenarios. */
+  clearCueLog(): void {
+    this.cueLog = [];
+  }
+
+  private logCue(name: string): void {
+    this.cueLog.push({ name, t: this.ctx ? this.ctx.currentTime : performance.now() / 1000 });
+    if (this.cueLog.length > AudioManager.CUE_LOG_CAP) this.cueLog.shift();
   }
 
   setMuted(muted: boolean): void {
@@ -342,6 +370,7 @@ export class AudioManager {
   /** A hit that sounds like what it was: weight, damage, and shield-vs-
    * body all audible, with small deterministic variation. */
   playHit(input: HitSoundInput): void {
+    this.logCue('playHit');
     if (!this.ctx || !this.masterGain || !this.hasVoiceRoom()) return;
     const p = computeHitSoundParams(input);
     const gainMul = this.ownGain(input.isOwn);
@@ -458,6 +487,7 @@ export class AudioManager {
    * a shorter, quieter one -- the player still learns "a fighter just
    * went out" without it fighting for attention against their own game. */
   playElimination(isOwn: boolean): void {
+    this.logCue('playElimination');
     if (isOwn) this.playChirp(220, false, 0.5, 0.65);
     else this.playChirp(300, false, 0.28, 0.3, false);
   }
@@ -465,21 +495,25 @@ export class AudioManager {
   /** Arena boundary shrinking -- a slow, ominous rising drone. Played
    * once per shrink-warning crossing (caller debounces), not continuously. */
   playArenaShrink(): void {
+    this.logCue('playArenaShrink');
     this.playTone(90, 0.9, 0.35, undefined, 'sawtooth');
   }
 
   /** An item has appeared on stage. */
   playItemSpawn(): void {
+    this.logCue('playItemSpawn');
     this.playChirp(500, true, 0.18, 0.35);
   }
 
   /** An item was picked up (distinct from spawn: quicker, higher). */
   playItemPickup(isOwn?: boolean): void {
+    this.logCue('playItemPickup');
     this.playChirp(700, true, 0.12, 0.4, isOwn);
   }
 
   /** An item was used/detonated. */
   playItemUse(isOwn?: boolean): void {
+    this.logCue('playItemUse');
     this.playHit({ damage: 12, strength: 0.8, weight: 100, isOwn });
   }
 
@@ -489,6 +523,7 @@ export class AudioManager {
    * attenuation still applies to *other* fighters' warnings so the
    * player's own incoming danger is never buried by everyone else's. */
   playHazardWarning(isOwn: boolean): void {
+    this.logCue('playHazardWarning');
     this.playChirp(650, false, 0.15, isOwn ? 0.55 : 0.2, isOwn);
   }
 
@@ -497,17 +532,20 @@ export class AudioManager {
    * throttles how often this fires (roughly once per 0.3s while inRingDanger stays true) so it
    * reads as a damage-over-time alarm, not a continuous drone. */
   playRingDamage(isOwn: boolean): void {
+    this.logCue('playRingDamage');
     this.playTone(140, 0.12, isOwn ? 0.5 : 0.15, isOwn, 'sawtooth');
   }
 
   /** Down to the final two fighters -- a distinct rising two-note cue,
    * played once. */
   playFinalTwo(): void {
+    this.logCue('playFinalTwo');
     this.playChirp(440, true, 0.35, 0.5);
   }
 
   /** Victory -- a bright ascending flourish (three quick tones). */
   playVictory(): void {
+    this.logCue('playVictory');
     if (!this.ctx) return;
     const ctx = this.ctx;
     const now = ctx.currentTime;
@@ -530,10 +568,12 @@ export class AudioManager {
   }
 
   playJump(isOwn?: boolean): void {
+    this.logCue('playJump');
     this.playChirp(380, true, 0.08, 0.3, isOwn);
   }
 
   playBlock(isOwn?: boolean): void {
+    this.logCue('playBlock');
     this.playHit({ damage: 0, strength: 0.5, isShield: true, isOwn });
   }
 
@@ -542,6 +582,7 @@ export class AudioManager {
   /** Play a one-shot decoded WAV (match_start/match_end only -- see the
    * file header for why these two stay pre-baked). */
   play(name: SoundName, opts: PlayOptions = {}): void {
+    this.logCue(name);
     if (!this.ctx || !this.masterGain || !this.hasVoiceRoom()) return;
     const buf = this.buffers.get(name);
     if (!buf) {

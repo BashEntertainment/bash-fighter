@@ -1055,8 +1055,8 @@ html, body {
   position: absolute;
   right: max(16px, env(safe-area-inset-right));
   bottom: max(16px, env(safe-area-inset-bottom));
-  width: 176px;
-  height: 176px;
+  width: 204px;
+  height: 204px;
   pointer-events: none;
 }
 
@@ -1089,10 +1089,18 @@ html, body {
    closest to the outer edge (most reflexive, largest target already
    covered by muscle memory from other genres), attack innermost since
    it fires most often, special/shield to the sides. */
-.touch-btn-jump { right: 0; bottom: 54px; }
-.touch-btn-attack { right: 54px; bottom: 0; }
+/* 2026-09-11 (see wiki "Client Gaps Closed 2026-09-11"): spacing used
+   to be 54px between adjacent 68px-diameter circular buttons -- since
+   68 > 54, every adjacent pair's circular hit areas geometrically
+   overlapped by 14px, a real dead zone where a tap could land on
+   whichever button happened to be later in paint order instead of the
+   one the player was aiming for. Spacing must be >= the button
+   diameter for two same-size circles to never overlap; 68px spacing
+   makes adjacent circles exactly tangent (touching, not overlapping). */
+.touch-btn-jump { right: 0; bottom: 68px; }
+.touch-btn-attack { right: 68px; bottom: 0; }
 .touch-btn-special { right: 0; bottom: 0; }
-.touch-btn-shield { right: 108px; bottom: 0; }
+.touch-btn-shield { right: 136px; bottom: 0; }
 
 /* ---- Small-screen layout ------------------------------------------
    Everything below this line is unchanged on desktop; these queries
@@ -1195,8 +1203,8 @@ html, body {
   }
 
   .touch-buttons {
-    width: 150px;
-    height: 150px;
+    width: 174px;
+    height: 174px;
   }
 
   .touch-btn {
@@ -1205,10 +1213,13 @@ html, body {
     font-size: 10px;
   }
 
-  .touch-btn-jump { right: 0; bottom: 46px; }
-  .touch-btn-attack { right: 46px; bottom: 0; }
+  /* Same fix as the main layout above, scaled to the 58px small-screen
+     button size: spacing must be >= 58px so adjacent circles are
+     tangent rather than overlapping. */
+  .touch-btn-jump { right: 0; bottom: 58px; }
+  .touch-btn-attack { right: 58px; bottom: 0; }
   .touch-btn-special { right: 0; bottom: 0; }
-  .touch-btn-shield { right: 92px; bottom: 0; }
+  .touch-btn-shield { right: 116px; bottom: 0; }
 
   .match-overlay, .win-panel {
     width: min(92vw, 420px);

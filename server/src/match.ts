@@ -174,6 +174,20 @@ export class Match {
   get winCondition(): string | null {
     return this.sim?.getMatchSettings().winCondition ?? null;
   }
+
+  /** Client-facing match settings for the matchStart message (2026-09-11,
+   * Timed Brawl): the protocol's `settings: unknown` field has always been
+   * documented as carrying "win condition, stocks, time limit" but every
+   * send site left it as an empty object stub. A plain client needs at
+   * least winCondition and timeLimitTicks to know whether to render a
+   * clock/score HUD instead of an alive count; expose the full resolved
+   * MatchSettings so the client can pick whatever else it needs later
+   * without another server round trip. null before start() has ever run. */
+  getClientSettings(): Record<string, unknown> | null {
+    const s = this.sim?.getMatchSettings();
+    if (!s) return null;
+    return { ...s };
+  }
   private bots = new Map<number, BotController>();
   private timer: NodeJS.Timeout | null = null;
   private lastTickAt = 0;

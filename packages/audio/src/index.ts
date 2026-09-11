@@ -33,6 +33,11 @@ const SOUND_FILES: Record<SoundName, string> = {
 const AMBIENT_FILE = 'ambient_loop.wav';
 
 const MUTE_STORAGE_KEY = 'bashfighter.audio.muted';
+// Independent from MUTE_STORAGE_KEY on purpose (issue #14): volume at 0
+// sounds identical to muted, but the two are separately persisted so
+// muting and un-muting never clobbers a player's chosen volume level.
+const VOLUME_STORAGE_KEY = 'bashfighter.audio.volume';
+const DEFAULT_VOLUME = 1;
 // Hard cap across *all* voices (synth + buffer-backed): a 20-fighter FFA
 // must never sound like a wall of noise. Bursty arrival (many hits in
 // one tick) drops the newest-over-cap voices rather than stealing older
@@ -151,6 +156,16 @@ export function computeHitSoundParams(input: HitSoundInput): HitSoundParams {
   };
 }
 
+/** Pure function: the actual gain applied to the master gain node given
+ * the current mute/volume state. Muted always wins (0), independent of
+ * whatever volume is set to, matching "setting volume to 0 has the same
+ * audible effect as muting, but is a separate control" (issue #14). No
+ * AudioContext needed, so this is directly unit-testable. */
+export function computeEffectiveGain(muted: boolean, volume: number): number {
+  if (muted) return 0;
+  return Math.max(0, Math.min(1, volume));
+}
+
 // ---------------------------------------------------------------------
 // AudioManager: owns the AudioContext and plays both synth and
 // buffer-backed sounds through the same voice cap and mute control.
@@ -165,6 +180,7 @@ export class AudioManager {
   private loadPromises = new Map<string, Promise<AudioBuffer | null>>();
   private activeVoices: ActiveVoice[] = [];
   private muted: boolean;
+  private volume: number;
   private ambientSource: AudioBufferSourceNode | null = null;
   private ambientGain: GainNode | null = null;
   private readonly assetBase: string;
@@ -183,10 +199,25 @@ export class AudioManager {
       // localStorage unavailable (e.g. privacy mode) -- default unmuted.
     }
     this.muted = storedMuted;
+    let storedVolume = DEFAULT_VOLUME;
+    try {
+      const raw = localStorage.getItem(VOLUME_STORAGE_KEY);
+      if (raw !== null) {
+        const parsed = Number(raw);
+        if (Number.isFinite(parsed)) storedVolume = Math.max(0, Math.min(1, parsed));
+      }
+    } catch {
+      // localStorage unavailable (e.g. privacy mode) -- default full volume.
+    }
+    this.volume = storedVolume;
   }
 
   get isMuted(): boolean {
     return this.muted;
+  }
+
+  get volumeLevel(): number {
+    return this.volume;
   }
 
   /** Number of voices currently sounding -- exposed for tests/dev
@@ -198,7 +229,7 @@ export class AudioManager {
 
   setMuted(muted: boolean): void {
     this.muted = muted;
-    if (this.masterGain) this.masterGain.gain.value = muted ? 0 : 1;
+    if (this.masterGain) this.masterGain.gain.value = computeEffectiveGain(this.muted, this.volume);
     try {
       localStorage.setItem(MUTE_STORAGE_KEY, muted ? '1' : '0');
     } catch {
@@ -209,6 +240,18 @@ export class AudioManager {
   toggleMuted(): boolean {
     this.setMuted(!this.muted);
     return this.muted;
+  }
+
+  /** 0..1, default 1. Scales all synthesized and buffer-backed playback
+   * gain, persisted independently of `muted` (issue #14). */
+  setVolume(volume: number): void {
+    this.volume = Math.max(0, Math.min(1, volume));
+    if (this.masterGain) this.masterGain.gain.value = computeEffectiveGain(this.muted, this.volume);
+    try {
+      localStorage.setItem(VOLUME_STORAGE_KEY, String(this.volume));
+    } catch {
+      // ignore
+    }
   }
 
   /** Must be called from within a user-gesture event handler (click/
@@ -225,7 +268,7 @@ export class AudioManager {
     const ctx = new Ctor();
     this.ctx = ctx;
     const gain = ctx.createGain();
-    gain.gain.value = this.muted ? 0 : 1;
+    gain.gain.value = computeEffectiveGain(this.muted, this.volume);
     gain.connect(ctx.destination);
     this.masterGain = gain;
     this.noiseBuffer = this.buildNoiseBuffer(ctx);

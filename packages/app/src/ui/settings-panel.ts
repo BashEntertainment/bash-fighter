@@ -59,6 +59,8 @@ export interface SettingsPanelHost {
   onBindingChange: (slot: 0 | 1, binding: KeyBinding) => void;
   /** Called when the reduced-motion toggle changes. */
   onReducedMotionChange: (reduced: boolean) => void;
+  /** Called when the volume slider changes, 0..1 (issue #14). */
+  onVolumeChange: (volume: number) => void;
 }
 
 export class SettingsPanel {
@@ -69,14 +71,18 @@ export class SettingsPanel {
   private readonly keydownHandler = (e: KeyboardEvent) => this.handleCapture(e);
 
   private reducedMotion: boolean;
+  private volume: number;
+  private readonly host: SettingsPanelHost;
 
   constructor(
     parent: HTMLElement,
-    initial: { p1: KeyBinding; p2: KeyBinding; reducedMotion: boolean },
-    private readonly host: SettingsPanelHost,
+    initial: { p1: KeyBinding; p2: KeyBinding; reducedMotion: boolean; volume: number },
+    host: SettingsPanelHost,
   ) {
+    this.host = host;
     this.bindings = [cloneBinding(initial.p1), cloneBinding(initial.p2)];
     this.reducedMotion = initial.reducedMotion;
+    this.volume = Math.max(0, Math.min(1, initial.volume));
     this.root = document.createElement('div');
     this.root.id = 'settings-panel';
     this.root.className = 'settings-panel move-reference-panel hidden';
@@ -96,6 +102,14 @@ export class SettingsPanel {
             <input type="checkbox" class="settings-reduced-motion-checkbox" aria-label="Reduce screen shake">
           </label>
         </div>
+        <div class="settings-group settings-audio-group">
+          <div class="settings-group-title">Audio</div>
+          <label class="settings-row settings-volume-row">
+            <span class="settings-row-label">Volume</span>
+            <input type="range" class="settings-volume-slider" min="0" max="100" step="1" aria-label="Volume">
+            <span class="settings-volume-value"></span>
+          </label>
+        </div>
       </div>
     `;
     this.listEl = this.root.querySelector('.settings-list') as HTMLDivElement;
@@ -113,6 +127,16 @@ export class SettingsPanel {
     reducedMotionCheckbox.addEventListener('change', () => {
       this.reducedMotion = reducedMotionCheckbox.checked;
       this.host.onReducedMotionChange(this.reducedMotion);
+    });
+    const volumeSlider = this.root.querySelector('.settings-volume-slider') as HTMLInputElement;
+    const volumeValue = this.root.querySelector('.settings-volume-value') as HTMLSpanElement;
+    const volumePercent = () => Math.round(this.volume * 100);
+    volumeSlider.value = String(volumePercent());
+    volumeValue.textContent = `${volumePercent()}%`;
+    volumeSlider.addEventListener('input', () => {
+      this.volume = Math.max(0, Math.min(1, Number(volumeSlider.value) / 100));
+      volumeValue.textContent = `${volumePercent()}%`;
+      this.host.onVolumeChange(this.volume);
     });
     parent.appendChild(this.root);
     this.render();

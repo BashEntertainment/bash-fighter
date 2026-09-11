@@ -222,10 +222,17 @@ do not open a public issue — see [`SECURITY.md`](./SECURITY.md).
 
 ## Discussions vs. issues
 
-Issues are for concrete, actionable work: a specific bug with repro
-steps, or a feature request scoped enough to become a PR. Everything
-more open-ended goes in [Discussions](https://github.com/BashEntertainment/bash-fighter/discussions)
-instead:
+**GitHub Discussions is not enabled on this repository yet** (it's a
+repo-admin setting current maintainer tooling can't flip; tracked
+internally). The `/discussions` link 404s today. Until it's turned on,
+open an issue instead (use the "Question / open-ended" option in the
+issue form if your topic isn't a concrete bug or scoped feature) and it
+will be triaged manually.
+
+Once enabled, the intended split is: issues are for concrete, actionable
+work (a specific bug with repro steps, or a feature request scoped
+enough to become a PR), and everything more open-ended goes in
+Discussions:
 
 - **Playtest feedback** — you played a match and want to say how it felt
   (pacing, whether the collapsing ring made sense, whether you understood

@@ -169,13 +169,16 @@ changes before any custom art/animation pass.
 - `packages/render`, `packages/input`: implemented — WebGL2 (PixiJS)
   renderer with per-character shapes and a shared pose/animation system,
   keyboard/gamepad input, items and stage hazards drawn on screen (not
-  just simulated invisibly). Known gap: `packages/render` has almost no
-  automated test coverage (one regression test, `test/palette.test.ts`)
-  — most render changes are still verified by eyeballing local/production
-  screenshots rather than an assertion. Contributions adding tests for
-  pure-logic render modules (e.g. `camera.ts`'s aspect-ratio framing math,
-  `fighter-pose.ts`'s pose interpolation) are welcome and don't need a
-  DOM/WebGL context to run — see the good-first-issues on GitHub.
+  just simulated invisibly). Known gap: `packages/render` still has thin
+  automated test coverage — as of 2026-09-11 there are three pure-logic
+  regression files (`test/palette.test.ts`, `test/camera.test.ts`,
+  `test/fighter-pose.test.ts`); nothing yet exercises the actual PIXI
+  sprite/badge layer (`src/index.ts`'s `layoutBadges`, `FighterSprite`),
+  so most sprite/layout changes are still verified by eyeballing
+  local/production screenshots rather than an assertion. Contributions
+  adding tests for other pure-logic render modules, or a way to unit-test
+  the layout math without a live WebGL context, are welcome — see the
+  good-first-issues on GitHub.
 - **Live deployment.** The match server and web client run in production
   at http://135.181.45.254/ (plain HTTP/WS — no TLS yet, pending a domain
   purchase), serving real 20-player matches over the public internet.

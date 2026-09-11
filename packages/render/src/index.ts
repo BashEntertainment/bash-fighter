@@ -8,6 +8,7 @@ import { PALETTE, FONT_FAMILY } from './palette.ts';
 import { computeCamera, worldToScreen, type ArenaBounds, type CameraConfig, type CameraView } from './camera.ts';
 import { drawStage, type StageBounds } from './stage.ts';
 import { FighterSprite } from './fighter-sprite.ts';
+import { BODY_WIDTH, BODY_HEIGHT, HEAD_RADIUS } from './fighter-shape-placeholder.ts';
 import { ItemSprite } from './item-sprite.ts';
 import { HazardSprite } from './hazard-sprite.ts';
 import { drawDebugBoxes, makeDebugText, formatDebugText, type DebugFighterInput } from './debug-overlay.ts';
@@ -278,6 +279,21 @@ interface BadgeCandidate {
   headY: number;
 }
 
+/** Screen-space box a fighter's own body+head occupies, used so a name
+ * badge dropped above one fighter can be checked against every *other*
+ * fighter's actual silhouette too, not just against other badges. A
+ * bunched-up crowd routinely has fighters standing closer together than
+ * a name label is wide, so a label placed with no other badge nearby
+ * could still visually sit on top of a neighbour's sprite -- the
+ * badge-vs-badge check alone never saw that collision. */
+interface BodyBox {
+  slot: number;
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
+
 interface BadgeBox {
   left: number;
   right: number;
@@ -496,7 +512,7 @@ export class Renderer {
    * exactly the fighters this player is about to fight or be hit by. */
   private names: readonly string[] | undefined;
 
-  private layoutBadges(candidates: BadgeCandidate[]): void {
+  private layoutBadges(candidates: BadgeCandidate[], bodyBoxes: BodyBox[]): void {
     this.ensureBadgePool(candidates.length);
 
     const local = candidates.find((c) => c.isLocalPlayer);
@@ -507,28 +523,39 @@ export class Renderer {
       return da - db;
     });
 
+    // Checked against every other fighter's actual body box (see BodyBox
+    // above), not just previously-placed badges -- a crowd can stand
+    // close enough that a wide name label collides with a neighbour's
+    // silhouette even when that neighbour never got a badge of its own.
     const placedBoxes: BadgeBox[] = [];
     let textIndex = 0;
     for (const c of ordered) {
       const numberLabel = String(c.slot + 1);
+      const otherBodies = bodyBoxes.filter((b) => b.slot !== c.slot);
       // Prefer the chosen name over the bare slot number -- it's what
       // makes a fighter "Rook" instead of "#7" at a glance -- but a name
       // is longer and more likely to collide with a neighbour at
       // 20-fighter density. Try the name's box first; if it would
-      // overlap, retry with the shorter numeric label before giving up
-      // on this badge entirely, so a name that merely doesn't fit still
-      // degrades to the number rather than vanishing. The local player's
-      // own badge is exempt from being dropped either way (see the
-      // isLocalPlayer check below), matching the existing rule.
+      // overlap another badge OR another fighter's own sprite, retry
+      // with the shorter numeric label before giving up on this badge
+      // entirely, so a name that merely doesn't fit still degrades to
+      // the number rather than vanishing or drawing over someone else.
+      // The local player's own badge is exempt from being dropped either
+      // way (see the isLocalPlayer check below), matching the existing
+      // rule.
       const name = this.names?.[c.slot];
       const nameLabel = name && name.length > 0 ? name : undefined;
       let label = nameLabel ?? numberLabel;
       let box = badgeBox(c.headX, c.headY, label.length, c.isLocalPlayer);
-      let overlaps = !c.isLocalPlayer && placedBoxes.some((p) => boxesOverlap(p, box));
+      let overlaps =
+        !c.isLocalPlayer &&
+        (placedBoxes.some((p) => boxesOverlap(p, box)) || otherBodies.some((b) => boxesOverlap(b, box)));
       if (overlaps && nameLabel) {
         label = numberLabel;
         box = badgeBox(c.headX, c.headY, label.length, c.isLocalPlayer);
-        overlaps = !c.isLocalPlayer && placedBoxes.some((p) => boxesOverlap(p, box));
+        overlaps =
+          !c.isLocalPlayer &&
+          (placedBoxes.some((p) => boxesOverlap(p, box)) || otherBodies.some((b) => boxesOverlap(b, box)));
       }
       if (overlaps) continue;
       placedBoxes.push(box);
@@ -622,6 +649,7 @@ export class Renderer {
     drawStage(this.stageLayer, stageForDraw, cam, vw, vh, frame.previewArenaBounds);
 
     const badgeCandidates: BadgeCandidate[] = [];
+    const bodyBoxes: BodyBox[] = [];
     for (let i = 0; i < frame.fighters.length; i++) {
       const f = frame.fighters[i] as RenderFighterState;
       const sprite = this.sprites[i] as FighterSprite;
@@ -657,9 +685,22 @@ export class Renderer {
         headX: screen.x,
         headY: screen.y - clampHeadOffsetPx(FighterSprite.HEAD_TOP_OFFSET_WORLD * cam.scale),
       });
+      // A generous half-width (BODY_WIDTH alone is the torso; fighters'
+      // limbs/hitboxes read wider than that on screen) so a name label
+      // is treated as colliding slightly before it visually touches a
+      // neighbour, not only once pixels already overlap.
+      const bodyHalfWidth = BODY_WIDTH * 1.3 * cam.scale;
+      const bodyTopWorld = BODY_HEIGHT + HEAD_RADIUS * 2;
+      bodyBoxes.push({
+        slot: i,
+        left: screen.x - bodyHalfWidth,
+        right: screen.x + bodyHalfWidth,
+        top: screen.y - bodyTopWorld * cam.scale,
+        bottom: screen.y,
+      });
     }
     this.names = frame.names;
-    this.layoutBadges(badgeCandidates);
+    this.layoutBadges(badgeCandidates, bodyBoxes);
 
     const hazards = frame.hazards ?? [];
     this.ensureHazardPool(hazards.length);

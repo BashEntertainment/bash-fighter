@@ -847,30 +847,62 @@ html, body {
   overflow-y: auto;
   gap: 4px;
   align-content: start;
+  /* The bottom-left connection chip (#net-status) is a fixed overlay
+     sitting on top of this sidebar (see #net-status in this file) --
+     without this the last row or two of a full 20-fighter list render
+     right underneath it and become unreadable. Reserving real bottom
+     padding here means those rows scroll clear of the chip instead of
+     just being covered by it. */
+  padding-bottom: 44px;
 }
 
+/* Name-and-percent-on-one-line dense card (Player Names 2026-09-11
+   follow-up): the four fields used to stack name/pct/stocks as three
+   separate text lines under the slot number, which made each card tall
+   enough that a full 20-entry, 2-column list no longer fit a 720px-tall
+   viewport -- entry #19/#20 were cut off or covered by the net-status
+   chip. A 2-row grid (slot+name+pct on row 1, stocks on row 2) is far
+   shorter per card, and font sizes below are picked to fit that single
+   line at the sidebar's narrowest real width (128px, see the 700px
+   media query) as well as the 200px desktop width. */
 .hud-list.dense .hud-card {
   min-width: 0;
   width: 100%;
-  padding: 4px 7px;
+  padding: 3px 6px;
   border-left-width: 2px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  grid-template-rows: auto auto;
+  column-gap: 4px;
+  align-items: baseline;
 }
 
 .hud-list.dense .hud-card .slot-num {
-  font-size: 9px;
+  grid-column: 1;
+  grid-row: 1;
+  font-size: 8px;
 }
 
 .hud-list.dense .hud-card .fighter-name {
-  font-size: 9px;
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+  font-size: 8px;
 }
 
 .hud-list.dense .hud-card .pct {
-  font-size: 15px;
+  grid-column: 3;
+  grid-row: 1;
+  font-size: 11px;
+  text-align: right;
+  white-space: nowrap;
 }
 
 .hud-list.dense .hud-card .stocks {
-  margin-top: 2px;
-  font-size: 9px;
+  grid-column: 1 / 4;
+  grid-row: 2;
+  margin-top: 1px;
+  font-size: 8px;
 }
 
 .hud-card {
@@ -1232,8 +1264,21 @@ html, body {
     font-size: 18px;
   }
 
+  /* At 128px sidebar width, two columns leave ~55px per card -- not
+     enough room for "#20 CPU Kestrel 100%" on one line. Drop to a
+     single column so the full row width is available for name+percent;
+     the list still scrolls (overflow-y: auto, unchanged) if 20 single
+     rows exceed the viewport height. */
+  .hud-list.dense {
+    grid-template-columns: 1fr;
+  }
+
   .hud-list.dense .hud-card {
-    padding: 3px 5px;
+    padding: 3px 6px;
+  }
+
+  .hud-list.dense .hud-card .fighter-name {
+    font-size: 10px;
   }
 
   .hud-list.dense .hud-card .pct {

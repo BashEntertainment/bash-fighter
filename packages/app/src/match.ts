@@ -8,6 +8,7 @@ import {
   hashStateBuffer,
   MAX_ITEMS,
   MAX_HAZARDS,
+  botName,
   type StateBuffer,
   type CharacterData,
   type FighterSnapshot,
@@ -97,6 +98,16 @@ export class Match {
   readonly audio: AudioManager;
   private readonly effectsBridge: EffectsAudioBridge;
   private readonly bots: Map<number, BotController>;
+  // Local-play equivalent of NetMatch's server-broadcast names[] (see
+  // packages/app/src/net-match.ts and the Player Names 2026-09-11 wiki
+  // page): a local/?crowd20=1 match has no server to hand out names, so
+  // bot slots get the same botName(slot) the server itself uses
+  // (packages/sim/src/ai/bot.ts) and human slots are left unnamed --
+  // matching how the local HUD/badges already read for a human ("#1",
+  // no name line) before this feature existed. This is what makes
+  // ?crowd20=1 a genuine stand-in for a crowded online match when
+  // checking name-label legibility, rather than a silent no-op.
+  private readonly names: string[];
 
   constructor(
     parent: HTMLElement,
@@ -146,6 +157,7 @@ export class Match {
     // deriveBotSeed(seed, slot) for determinism), just decided locally by
     // slot index instead of a per-seat isBot flag.
     this.bots = buildLocalBots(seed, this.numFighters, humanSlotCount);
+    this.names = Array.from({ length: this.numFighters }, (_, slot) => (this.bots.has(slot) ? botName(slot) : ''));
     this.renderer = new Renderer(arenaDataToStageBounds(this.sim.getArena()));
     this.prevSnapshots = this.snapshotAll();
     this.currSnapshots = this.snapshotAll();
@@ -364,6 +376,7 @@ export class Match {
         this.numFighters,
         this.sim.getMatchSettings(),
       ),
+      names: this.names,
     };
     this.renderer.render(this.events.transformFrame ? this.events.transformFrame(frame) : frame);
   }

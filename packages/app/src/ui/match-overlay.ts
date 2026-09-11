@@ -101,14 +101,20 @@ export class MatchOverlay {
    * they clicked "Keep spectating" and dismissed the overlay. Appends the
    * winner line to whatever message is already showing (or re-shows the
    * overlay with just the winner line if it had been dismissed) without
-   * touching the actions -- their own "Play again" / "Keep spectating"
-   * buttons stay exactly as they were. Safe to call multiple times. */
+   * keeping their "Play again" action and dropping "Keep spectating",
+   * which is meaningless once the match is over. Safe to call multiple times. */
   announceWinner(winnerSlot: number | null, localSlot: number | null | undefined): void {
     const already = this.messageEl.dataset.winnerAnnounced === String(winnerSlot);
     if (already) return;
     const line = winnerAnnouncementLine(winnerSlot, localSlot);
     this.messageEl.textContent = `${this.messageEl.textContent} ${line}`.trim();
     this.messageEl.dataset.winnerAnnounced = String(winnerSlot);
+    // Once the match has genuinely ended there is nothing left to spectate,
+    // so a "Keep spectating" action would dismiss the overlay into a frozen
+    // final frame with no way back. Drop it and leave "Play again" alone.
+    for (const btn of Array.from(this.actionsEl.querySelectorAll('button'))) {
+      if (btn.textContent === 'Keep spectating') btn.remove();
+    }
     this.root.classList.remove('hidden');
   }
 

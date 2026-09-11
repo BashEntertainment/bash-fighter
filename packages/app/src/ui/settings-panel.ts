@@ -69,6 +69,12 @@ export class SettingsPanel {
   private readonly bindings: [KeyBinding, KeyBinding];
   private capturing: { slot: 0 | 1; field: BindingField } | null = null;
   private readonly keydownHandler = (e: KeyboardEvent) => this.handleCapture(e);
+  // Rebinding a key already used by another action on the same slot
+  // silently steals it (see handleCapture), which used to leave that
+  // other action's button reading "--" with no explanation -- a player
+  // could lose e.g. Move right and not notice until mid-match. Surface
+  // it as a one-line notice under the list instead.
+  private unboundNotice: string | null = null;
 
   private reducedMotion: boolean;
   private volume: number;
@@ -76,6 +82,7 @@ export class SettingsPanel {
   private readonly reducedMotionCheckbox: HTMLInputElement;
   private readonly volumeSlider: HTMLInputElement;
   private readonly volumeValueEl: HTMLSpanElement;
+  private readonly noticeEl: HTMLDivElement;
 
   constructor(
     parent: HTMLElement,
@@ -96,6 +103,7 @@ export class SettingsPanel {
           <button type="button" class="move-reference-close" aria-label="Close">Close</button>
         </div>
         <div class="settings-hint">Click a key, then press the new key you want. Esc cancels.</div>
+        <div class="settings-unbound-notice hidden"></div>
         <div class="settings-list"></div>
         <button type="button" class="btn btn-plain settings-reset-btn">Reset all settings</button>
         <div class="settings-group settings-accessibility-group">
@@ -116,6 +124,7 @@ export class SettingsPanel {
       </div>
     `;
     this.listEl = this.root.querySelector('.settings-list') as HTMLDivElement;
+    this.noticeEl = this.root.querySelector('.settings-unbound-notice') as HTMLDivElement;
     (this.root.querySelector('.move-reference-close') as HTMLButtonElement).addEventListener('click', () =>
       this.hide(),
     );
@@ -178,6 +187,7 @@ export class SettingsPanel {
    * means back to the game's own defaults, not back to autodetection). */
   private resetToDefaults(): void {
     this.cancelCapture();
+    this.unboundNotice = null;
     this.bindings[0] = cloneBinding(DEFAULT_P1_BINDING);
     this.bindings[1] = cloneBinding(DEFAULT_P2_BINDING);
     this.host.onBindingChange(0, this.bindings[0]);
@@ -197,6 +207,7 @@ export class SettingsPanel {
 
   private beginCapture(slot: 0 | 1, field: BindingField): void {
     this.cancelCapture();
+    this.unboundNotice = null;
     this.capturing = { slot, field };
     window.addEventListener('keydown', this.keydownHandler, true);
     this.render();
@@ -221,10 +232,16 @@ export class SettingsPanel {
     const binding = this.bindings[capture.slot];
     // Same key can't map to two different actions for the same player --
     // silently swap it off whichever other field currently holds it so
-    // rebinding never leaves a slot with an ambiguous duplicate key.
+    // rebinding never leaves a slot with an ambiguous duplicate key. The
+    // swapped-off action is now genuinely unbound (no key fires it), so
+    // tell the player which one, instead of leaving them to discover it
+    // mid-match.
+    this.unboundNotice = null;
     for (const f of BINDING_FIELDS) {
       if (f !== capture.field && binding[f] === e.code) {
         (binding as Record<BindingField, string>)[f] = '';
+        const slotLabel = capture.slot === 0 ? 'Player 1' : 'Player 2';
+        this.unboundNotice = `${slotLabel}: ${BINDING_FIELD_LABELS[f]} is now unbound -- pick a new key for it.`;
       }
     }
     (binding as Record<BindingField, string>)[capture.field] = e.code;
@@ -235,6 +252,12 @@ export class SettingsPanel {
   }
 
   private render(): void {
+    if (this.unboundNotice) {
+      this.noticeEl.textContent = this.unboundNotice;
+      this.noticeEl.classList.remove('hidden');
+    } else {
+      this.noticeEl.classList.add('hidden');
+    }
     this.listEl.innerHTML = '';
     ([0, 1] as const).forEach((slot) => {
       const group = document.createElement('div');

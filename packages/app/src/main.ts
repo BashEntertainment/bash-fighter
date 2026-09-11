@@ -122,6 +122,15 @@ if (new URLSearchParams(window.location.search).get('bashTest') === '1') {
   (window as unknown as { __bashTestTouch?: () => TouchControls }).__bashTestTouch = () => touchControls;
 }
 
+// Test-only hook: exposes the AudioManager so an automated audit can
+// assert on the Web Audio graph (context state, active voice count,
+// mute/volume) without a human ever listening -- see
+// packages/audio/src/index.ts for what's exposed. Same bashTest=1 gate
+// as the touch hook above.
+if (new URLSearchParams(window.location.search).get('bashTest') === '1') {
+  (window as unknown as { __bashTestAudio?: () => AudioManager }).__bashTestAudio = () => audio;
+}
+
 const startScreen = new StartScreen(
   appRoot,
   () => {

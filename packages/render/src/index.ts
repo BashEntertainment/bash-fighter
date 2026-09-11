@@ -14,6 +14,12 @@ import { HazardSprite } from './hazard-sprite.ts';
 import { drawDebugBoxes, makeDebugText, formatDebugText, type DebugFighterInput } from './debug-overlay.ts';
 import { EffectsLayer } from './effects.ts';
 import { resolveAnimation } from '@bash-fighter/content';
+import {
+  computeBadgePlacements,
+  BADGE_FONT_SIZE,
+  type BadgeCandidate,
+  type BodyBox,
+} from './badge-layout.ts';
 
 export { RenderItemTypeId } from './item-sprite.ts';
 export { EffectsLayer, type HitEffectInput, setReducedMotion, isReducedMotion } from './effects.ts';
@@ -272,69 +278,6 @@ function clampHeadOffsetPx(px: number): number {
   return Math.min(BADGE_OFFSET_MAX_PX, Math.max(BADGE_OFFSET_MIN_PX, px));
 }
 
-interface BadgeCandidate {
-  slot: number;
-  isLocalPlayer: boolean;
-  headX: number;
-  headY: number;
-}
-
-/** Screen-space box a fighter's own body+head occupies, used so a name
- * badge dropped above one fighter can be checked against every *other*
- * fighter's actual silhouette too, not just against other badges. A
- * bunched-up crowd routinely has fighters standing closer together than
- * a name label is wide, so a label placed with no other badge nearby
- * could still visually sit on top of a neighbour's sprite -- the
- * badge-vs-badge check alone never saw that collision. */
-interface BodyBox {
-  slot: number;
-  left: number;
-  right: number;
-  top: number;
-  bottom: number;
-}
-
-interface BadgeBox {
-  left: number;
-  right: number;
-  top: number;
-  bottom: number;
-}
-
-function boxesOverlap(a: BadgeBox, b: BadgeBox): boolean {
-  return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
-}
-
-const BADGE_FONT_SIZE = 13;
-// Rough monospace glyph width at BADGE_FONT_SIZE, used only to build an
-// approximate collision box -- no need for exact text metrics here.
-const BADGE_CHAR_WIDTH_PX = 8;
-const BADGE_BOX_HEIGHT_PX = 16;
-const BADGE_BOX_MARGIN_PX = 3;
-
-function badgeBox(x: number, y: number, digits: number, isLocalPlayer = false): BadgeBox {
-  // The local player's badge renders BADGE_FONT_SIZE + 3px larger (see
-  // layoutBadges) so it's the one badge a player can find at a glance --
-  // but this box used to always assume the default font size, so the
-  // space it reserved for the local badge was smaller than what actually
-  // got drawn. A neighbouring badge could then be placed just outside
-  // the (too-small) reserved box and still visually collide with the
-  // bigger local badge actually on screen -- the local player's own
-  // badge, exempt from ever being dropped, was the one most likely to
-  // still show an illegible overlap in a tight cluster. Scale the
-  // reserved box by the same ratio the font grows by so it actually
-  // matches what gets drawn.
-  const sizeScale = isLocalPlayer ? (BADGE_FONT_SIZE + 3) / BADGE_FONT_SIZE : 1;
-  const halfWidth = (digits * BADGE_CHAR_WIDTH_PX * sizeScale) / 2 + BADGE_BOX_MARGIN_PX;
-  const boxHeight = BADGE_BOX_HEIGHT_PX * sizeScale;
-  return {
-    left: x - halfWidth,
-    right: x + halfWidth,
-    top: y - boxHeight - BADGE_BOX_MARGIN_PX,
-    bottom: y + BADGE_BOX_MARGIN_PX,
-  };
-}
-
 const PLAYER_COLOR_COUNT = PALETTE.playerColors.length;
 
 // How far inside the current blast-zone boundary the local player's own
@@ -514,60 +457,18 @@ export class Renderer {
 
   private layoutBadges(candidates: BadgeCandidate[], bodyBoxes: BodyBox[]): void {
     this.ensureBadgePool(candidates.length);
-
-    const local = candidates.find((c) => c.isLocalPlayer);
-    const ordered = [...candidates].sort((a, b) => {
-      if (a.isLocalPlayer !== b.isLocalPlayer) return a.isLocalPlayer ? -1 : 1;
-      const da = local ? Math.hypot(a.headX - local.headX, a.headY - local.headY) : 0;
-      const db = local ? Math.hypot(b.headX - local.headX, b.headY - local.headY) : 0;
-      return da - db;
-    });
-
-    // Checked against every other fighter's actual body box (see BodyBox
-    // above), not just previously-placed badges -- a crowd can stand
-    // close enough that a wide name label collides with a neighbour's
-    // silhouette even when that neighbour never got a badge of its own.
-    const placedBoxes: BadgeBox[] = [];
+    const placements = computeBadgePlacements(candidates, bodyBoxes, this.names);
     let textIndex = 0;
-    for (const c of ordered) {
-      const numberLabel = String(c.slot + 1);
-      const otherBodies = bodyBoxes.filter((b) => b.slot !== c.slot);
-      // Prefer the chosen name over the bare slot number -- it's what
-      // makes a fighter "Rook" instead of "#7" at a glance -- but a name
-      // is longer and more likely to collide with a neighbour at
-      // 20-fighter density. Try the name's box first; if it would
-      // overlap another badge OR another fighter's own sprite, retry
-      // with the shorter numeric label before giving up on this badge
-      // entirely, so a name that merely doesn't fit still degrades to
-      // the number rather than vanishing or drawing over someone else.
-      // The local player's own badge is exempt from being dropped either
-      // way (see the isLocalPlayer check below), matching the existing
-      // rule.
-      const name = this.names?.[c.slot];
-      const nameLabel = name && name.length > 0 ? name : undefined;
-      let label = nameLabel ?? numberLabel;
-      let box = badgeBox(c.headX, c.headY, label.length, c.isLocalPlayer);
-      let overlaps =
-        !c.isLocalPlayer &&
-        (placedBoxes.some((p) => boxesOverlap(p, box)) || otherBodies.some((b) => boxesOverlap(b, box)));
-      if (overlaps && nameLabel) {
-        label = numberLabel;
-        box = badgeBox(c.headX, c.headY, label.length, c.isLocalPlayer);
-        overlaps =
-          !c.isLocalPlayer &&
-          (placedBoxes.some((p) => boxesOverlap(p, box)) || otherBodies.some((b) => boxesOverlap(b, box)));
-      }
-      if (overlaps) continue;
-      placedBoxes.push(box);
+    for (const p of placements) {
       const text = this.badgeTexts[textIndex] as Text;
       textIndex += 1;
-      text.text = label;
-      text.position.set(c.headX, c.headY);
+      text.text = p.label;
+      text.position.set(p.candidate.headX, p.candidate.headY);
       text.visible = true;
       // The local player's own badge gets the same bright fill as the
       // rest for consistency, but a slightly larger size so it is the
       // one badge a player can find at a glance without reading digits.
-      text.style.fontSize = c.isLocalPlayer ? BADGE_FONT_SIZE + 3 : BADGE_FONT_SIZE;
+      text.style.fontSize = p.candidate.isLocalPlayer ? BADGE_FONT_SIZE + 3 : BADGE_FONT_SIZE;
     }
     for (let i = textIndex; i < this.badgeTexts.length; i++) {
       (this.badgeTexts[i] as Text).visible = false;

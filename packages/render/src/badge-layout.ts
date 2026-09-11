@@ -1,0 +1,142 @@
+// Pure fighter name/slot badge placement geometry, kept dependency-free
+// (no Pixi, no DOM) so it can be unit-tested directly -- see
+// test/badge-layout.test.ts (issue #29: badges overlapping in-world).
+// index.ts's Renderer.layoutBadges is a thin wrapper around
+// computeBadgePlacements() below that hands the result to its pooled
+// Pixi Text objects.
+
+export interface BadgeCandidate {
+  slot: number;
+  isLocalPlayer: boolean;
+  headX: number;
+  headY: number;
+}
+
+/** Screen-space box a fighter's own body+head occupies, used so a name
+ * badge dropped above one fighter can be checked against every *other*
+ * fighter's actual silhouette too, not just against other badges. A
+ * bunched-up crowd routinely has fighters standing closer together than
+ * a name label is wide, so a label placed with no other badge nearby
+ * could still visually sit on top of a neighbour's sprite -- the
+ * badge-vs-badge check alone never saw that collision. */
+export interface BodyBox {
+  slot: number;
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
+
+export interface BadgeBox {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
+
+function boxesOverlap(a: BadgeBox, b: BadgeBox): boolean {
+  return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+}
+
+export interface BadgePlacement {
+  candidate: BadgeCandidate;
+  label: string;
+  box: BadgeBox;
+  isNameLabel: boolean;
+}
+
+/** Pure placement algorithm, extracted from Renderer.layoutBadges so it
+ * can be exercised without Pixi/DOM (issue #29): given this frame's
+ * badge candidates and every fighter's body box, decide which badges get
+ * placed, in what order, with which label (name vs numeric fallback),
+ * and where -- without touching any Pixi Text object. Renderer.layoutBadges
+ * is now a thin wrapper that hands the result to the Text pool. See the
+ * doc comment on layoutBadges (and on BodyBox above) for *why* this
+ * exists: a name label must never visually collide with another
+ * fighter's badge OR body sprite, and degrades to the shorter slot
+ * number, then to nothing, rather than overlap. */
+export function computeBadgePlacements(
+  candidates: readonly BadgeCandidate[],
+  bodyBoxes: readonly BodyBox[],
+  names: readonly string[] | undefined,
+): BadgePlacement[] {
+  const local = candidates.find((c) => c.isLocalPlayer);
+  const ordered = [...candidates].sort((a, b) => {
+    if (a.isLocalPlayer !== b.isLocalPlayer) return a.isLocalPlayer ? -1 : 1;
+    const da = local ? Math.hypot(a.headX - local.headX, a.headY - local.headY) : 0;
+    const db = local ? Math.hypot(b.headX - local.headX, b.headY - local.headY) : 0;
+    return da - db;
+  });
+
+  // Checked against every other fighter's actual body box (see BodyBox
+  // above), not just previously-placed badges -- a crowd can stand
+  // close enough that a wide name label collides with a neighbour's
+  // silhouette even when that neighbour never got a badge of its own.
+  const placedBoxes: BadgeBox[] = [];
+  const placements: BadgePlacement[] = [];
+  for (const c of ordered) {
+    const numberLabel = String(c.slot + 1);
+    const otherBodies = bodyBoxes.filter((b) => b.slot !== c.slot);
+    // Prefer the chosen name over the bare slot number -- it's what
+    // makes a fighter "Rook" instead of "#7" at a glance -- but a name
+    // is longer and more likely to collide with a neighbour at
+    // 20-fighter density. Try the name's box first; if it would
+    // overlap another badge OR another fighter's own sprite, retry
+    // with the shorter numeric label before giving up on this badge
+    // entirely, so a name that merely doesn't fit still degrades to
+    // the number rather than vanishing or drawing over someone else.
+    // The local player's own badge is exempt from being dropped
+    // outright -- it is the one identity cue this player actually needs
+    // every frame -- but it still goes through the same name-vs-number
+    // fallback as everyone else: a local name too wide to fit degrades
+    // to the local player's own number rather than being drawn on top of
+    // a neighbour at full width forever (checking this fallback only
+    // decided whether to *place* a badge, never whether to keep it once
+    // placed, so it costs the local player nothing to run it too).
+    const name = names?.[c.slot];
+    const nameLabel = name && name.length > 0 ? name : undefined;
+    let label = nameLabel ?? numberLabel;
+    let box = badgeBox(c.headX, c.headY, label.length, c.isLocalPlayer);
+    let collides = placedBoxes.some((p) => boxesOverlap(p, box)) || otherBodies.some((b) => boxesOverlap(b, box));
+    if (collides && nameLabel) {
+      label = numberLabel;
+      box = badgeBox(c.headX, c.headY, label.length, c.isLocalPlayer);
+      collides = placedBoxes.some((p) => boxesOverlap(p, box)) || otherBodies.some((b) => boxesOverlap(b, box));
+    }
+    if (collides && !c.isLocalPlayer) continue;
+    placedBoxes.push(box);
+    placements.push({ candidate: c, label, box, isNameLabel: label !== numberLabel });
+  }
+  return placements;
+}
+
+export const BADGE_FONT_SIZE = 13;
+// Rough monospace glyph width at BADGE_FONT_SIZE, used only to build an
+// approximate collision box -- no need for exact text metrics here.
+const BADGE_CHAR_WIDTH_PX = 8;
+const BADGE_BOX_HEIGHT_PX = 16;
+const BADGE_BOX_MARGIN_PX = 3;
+
+function badgeBox(x: number, y: number, digits: number, isLocalPlayer = false): BadgeBox {
+  // The local player's badge renders BADGE_FONT_SIZE + 3px larger (see
+  // layoutBadges) so it's the one badge a player can find at a glance --
+  // but this box used to always assume the default font size, so the
+  // space it reserved for the local badge was smaller than what actually
+  // got drawn. A neighbouring badge could then be placed just outside
+  // the (too-small) reserved box and still visually collide with the
+  // bigger local badge actually on screen -- the local player's own
+  // badge, exempt from ever being dropped, was the one most likely to
+  // still show an illegible overlap in a tight cluster. Scale the
+  // reserved box by the same ratio the font grows by so it actually
+  // matches what gets drawn.
+  const sizeScale = isLocalPlayer ? (BADGE_FONT_SIZE + 3) / BADGE_FONT_SIZE : 1;
+  const halfWidth = (digits * BADGE_CHAR_WIDTH_PX * sizeScale) / 2 + BADGE_BOX_MARGIN_PX;
+  const boxHeight = BADGE_BOX_HEIGHT_PX * sizeScale;
+  return {
+    left: x - halfWidth,
+    right: x + halfWidth,
+    top: y - boxHeight - BADGE_BOX_MARGIN_PX,
+    bottom: y + BADGE_BOX_MARGIN_PX,
+  };
+}
+

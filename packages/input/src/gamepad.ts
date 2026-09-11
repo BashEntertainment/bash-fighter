@@ -12,7 +12,7 @@ const BTN_SPECIAL = 2;
 const BTN_SHIELD = 5;
 const DEADZONE = 0.2;
 
-function axisToFixed(v: number): number {
+export function axisToFixed(v: number): number {
   const clamped = Math.abs(v) < DEADZONE ? 0 : v;
   return fx.fromFloat(Math.max(-1, Math.min(1, clamped)));
 }

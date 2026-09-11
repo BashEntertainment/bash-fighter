@@ -24,18 +24,18 @@ export const PALETTE = {
     0x4cd97a, // 2  green
     0x4cd9b0, // 3  teal
     0x4cc9d9, // 4  cyan
-    0x4c9ed9, // 5  sky blue
+    0x4cb3d9, // 5  sky blue (shifted 2026-09-10: was 0x4c9ed9, identical hue to hazardWarning)
     0x4c6fd9, // 6  blue
     0x7a4cd9, // 7  indigo
     0xac4cd9, // 8  violet
     0xd94cc9, // 9  magenta
     0xd94c8f, // 10 rose
-    0xc97a6a, // 11 dusty coral (kept well clear of pure danger-red hue)
+    0xc98a6a, // 11 dusty coral (shifted 2026-09-10: was 0xc97a6a, only ~0.2deg from danger's hue)
     0xd9a34c, // 12 ochre
     0xc9d94c, // 13 chartreuse
     0x6fd94c, // 14 grass green
     0x4cd9d0, // 15 aqua
-    0x4c8fd9, // 16 azure
+    0x4c88d9, // 16 azure (shifted 2026-09-10: was 0x4c8fd9, too close to hazardWarning's hue)
     0x8f4cd9, // 17 purple
     0xd94ca3, // 18 pink
     0xe6e6e6, // 19 near-white (last slot, still reads flat against near-black)

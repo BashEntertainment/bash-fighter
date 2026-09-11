@@ -403,6 +403,45 @@ export class Sim {
     return p;
   }
 
+  /** Respawn spawn choice for 'timedKO' (2026-09-11): plain round-robin
+   * `spawnPoint` is fine for the initial, all-at-once match start, but
+   * mid-match a respawning fighter must not drop back into whatever scrum
+   * is currently happening at "their" fixed point. Instead pick, among the
+   * arena's spawn points, the one whose distance to the *nearest* still-alive
+   * fighter is largest (i.e. the most currently-empty corner of the stage).
+   * Ties broken by lowest point index for determinism. O(points * fighters),
+   * both tiny (<=8 in practice), so no perf concern. */
+  private respawnSpawnPoint(index: number): { x: Fixed; y: Fixed } {
+    const points = this.arena.spawnPoints;
+    if (points.length === 0) return { x: 0 as Fixed, y: GROUND_Y as Fixed };
+    let bestIdx = 0;
+    let bestMinDistSq = -1;
+    for (let pi = 0; pi < points.length; pi++) {
+      const p = points[pi] as { x: Fixed; y: Fixed };
+      let minDistSq = Number.POSITIVE_INFINITY;
+      for (let fi = 0; fi < this.numFighters; fi++) {
+        if (fi === index) continue;
+        const fbase = fi * FighterField.FIELD_COUNT;
+        if ((this.data[fbase + FighterField.ELIMINATED] as number) === 1) continue;
+        const fstate = this.data[fbase + FighterField.STATE] as number;
+        if (fstate === FighterStateId.RESPAWN || fstate === FighterStateId.DEAD) continue;
+        const dx = (this.data[fbase + FighterField.POS_X] as number) - (p.x as number);
+        const dy = (this.data[fbase + FighterField.POS_Y] as number) - (p.y as number);
+        const distSq = dx * dx + dy * dy;
+        if (distSq < minDistSq) minDistSq = distSq;
+      }
+      if (minDistSq === Number.POSITIVE_INFINITY) {
+        // Nobody else alive/on-stage right now: any point is equally empty.
+        minDistSq = 0;
+      }
+      if (minDistSq > bestMinDistSq) {
+        bestMinDistSq = minDistSq;
+        bestIdx = pi;
+      }
+    }
+    return points[bestIdx] as { x: Fixed; y: Fixed };
+  }
+
   /** Full reset for match start: stocks, KO/death counts, placement, and
    * elimination state all cleared. Distinct from `respawnFighter`, which
    * is a mid-match life reset that preserves match-level stats. */
@@ -446,7 +485,13 @@ export class Sim {
   private respawnFighter(index: number): void {
     const base = index * FighterField.FIELD_COUNT;
     const d = this.data;
-    const sp = this.spawnPoint(index);
+    // 'timedKO' uses the scrum-avoiding spawn choice (see
+    // respawnSpawnPoint's comment); 'stocks' keeps the original
+    // round-robin spawnPoint unchanged -- it predates this task, is
+    // golden-hash-fixed (replay-hashes.json uses 'stocks'), and changing
+    // its respawn spot choice is a real behaviour change with no bug
+    // report behind it, not something to bundle into this task silently.
+    const sp = this.settings.winCondition === 'timedKO' ? this.respawnSpawnPoint(index) : this.spawnPoint(index);
     d[base + FighterField.POS_X] = sp.x as number;
     d[base + FighterField.POS_Y] = sp.y as number;
     d[base + FighterField.VEL_X] = 0;
@@ -499,11 +544,27 @@ export class Sim {
     return count;
   }
 
-  /** Index of the sole remaining fighter, or null if the match is still
-   * ongoing or ended in a simultaneous multi-KO with no survivor. Only
-   * meaningful for elimination-style modes ('battleRoyale'/'stocks'); for
-   * 'timedKO' use `getLeaderboard()` once the time limit is reached. */
+  /** For 'battleRoyale'/'stocks': index of the sole remaining fighter, or
+   * null if the match is still ongoing or ended in a simultaneous multi-KO
+   * with no survivor.
+   * For 'timedKO' (2026-09-11): the top of `getLeaderboard()` (highest KO
+   * count, ties broken by fewest deaths) -- but null, an explicit draw,
+   * if the top two fighters are still tied on *both* KO count and death
+   * count once those tie-breaks are exhausted. A fixed-index tie-break
+   * (lowest fighter index wins) would be deterministic but not fair --
+   * fighter 0 has no more claim to the win than fighter 1 -- so a real
+   * tie is surfaced as a draw rather than silently resolved. */
   getWinner(): number | null {
+    if (this.settings.winCondition === 'timedKO') {
+      const board = this.getLeaderboard();
+      const first = board[0] as number;
+      const second = board[1];
+      if (second === undefined) return first;
+      const f1 = this.getFighter(first);
+      const f2 = this.getFighter(second);
+      if (f1.koCount === f2.koCount && f1.deathCount === f2.deathCount) return null;
+      return first;
+    }
     const alive: number[] = [];
     for (let i = 0; i < this.numFighters; i++) {
       const base = i * FighterField.FIELD_COUNT;

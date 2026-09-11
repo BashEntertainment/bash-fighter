@@ -101,3 +101,33 @@ describe('Determinism harness', () => {
     assert.equal(hashStateBuffer(buf2), hashBefore);
   });
 });
+
+// Timed Brawl (2026-09-11): same golden-hash protection as the stocks
+// fixture above, but exercising 'timedKO' specifically -- respawns and
+// the time-limit match end are new state-machine paths that the stocks
+// fixture never touches.
+import { buildReplayInputStreamTimed, REPLAY_TIMED_SEED, REPLAY_TIMED_CHARACTERS, REPLAY_TIMED_SETTINGS } from './fixtures/replay-input-stream-timed.ts';
+const GOLDEN_TIMED_PATH = new URL('./golden/replay-hashes-timed.json', import.meta.url);
+const goldenTimed: string[] = JSON.parse(readFileSync(GOLDEN_TIMED_PATH, 'utf8'));
+
+function runReplayTimed(): string[] {
+  const sim = new Sim(REPLAY_TIMED_SEED, 2, REPLAY_TIMED_CHARACTERS, undefined, REPLAY_TIMED_SETTINGS);
+  const buf = sim.createStateBuffer();
+  const hashes: string[] = [];
+  for (const frameInputs of buildReplayInputStreamTimed()) {
+    sim.advance(frameInputs);
+    sim.saveState(buf);
+    hashes.push(hashStateBuffer(buf));
+  }
+  return hashes;
+}
+
+describe('Determinism harness: timedKO (Timed Brawl)', () => {
+  it('replaying the recorded timedKO input stream reproduces the golden per-frame hashes exactly', () => {
+    assertHashSequenceEqual(runReplayTimed(), goldenTimed, 'timed replay vs golden');
+  });
+
+  it('running the same timedKO replay twice from scratch yields identical hash sequences', () => {
+    assertHashSequenceEqual(runReplayTimed(), runReplayTimed(), 'timed run 1 vs run 2');
+  });
+});

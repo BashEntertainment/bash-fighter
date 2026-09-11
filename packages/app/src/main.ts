@@ -3,6 +3,9 @@ import { Match, STAGE_BOUNDS } from './match.ts';
 import { StartScreen } from './ui/start-screen.ts';
 import { ReplayScreen } from './ui/replay-screen.ts';
 import { WinScreen } from './ui/win-screen.ts';
+import { TimedBrawlEndScreen } from './ui/timed-brawl-end-screen.ts';
+import { isTimedBrawl, formatClock, ticksRemaining } from './timed-brawl.ts';
+import { type MatchSettings } from '@bash-fighter/sim';
 import { Hud } from './ui/hud.ts';
 import { SpectatorBanner } from './ui/spectator-banner.ts';
 import { SimMatchAdapter } from './spectator/sim-adapter.ts';
@@ -348,6 +351,7 @@ async function beginOnlineMatch(): Promise<void> {
   clearSpectateStallTimer();
   startScreen.hide();
   winScreen.hide();
+  timedBrawlEndScreen.hide();
   spectatorBanner.hide();
   matchOverlay.hide();
   hud.hide();
@@ -400,7 +404,7 @@ async function beginOnlineMatch(): Promise<void> {
       const countdown = countdownTicks >= 0 ? ` — starting in ${Math.ceil(countdownTicks / 60)}s` : '';
       setNetStatus('waiting', `${players}/${capacity} players${countdown}`);
     },
-    onMatchOver: (winnerIndex, resolved) => {
+    onMatchOver: (winnerIndex, resolved, leaderboard, settings) => {
       clearSpectateStallTimer();
       hud.hide();
       inMatchMovesButton.classList.add('hidden');
@@ -462,7 +466,22 @@ async function beginOnlineMatch(): Promise<void> {
       // Still alive and the match genuinely resolved: tell them who won.
       matchOverlay.hide();
       audio.play('match_end');
-      winScreen.show(winnerIndex, netMatch?.localSlot(), netMatch ? (slot) => netMatch!.nameFor(slot) : undefined);
+      if (isTimedBrawl(settings) && leaderboard) {
+        // Timed Brawl never eliminates (fighters respawn -- see
+        // eliminatedThisOnlineMatch above, which this mode never sets),
+        // so every finish for a still-connected player takes this
+        // branch. Score is read from currentSnapshots() right now --
+        // FighterSnapshot already carries koCount/deathCount
+        // (packages/sim/src/sim.ts).
+        const scores = (netMatch?.currentSnapshots() ?? []).map((s, slot) => ({
+          slot,
+          koCount: s.koCount,
+          deathCount: s.deathCount,
+        }));
+        timedBrawlEndScreen.show(winnerIndex, leaderboard, scores, netMatch?.localSlot(), netMatch ? (slot) => netMatch!.nameFor(slot) : undefined);
+      } else {
+        winScreen.show(winnerIndex, netMatch?.localSlot(), netMatch ? (slot) => netMatch!.nameFor(slot) : undefined);
+      }
     },
     onEliminated: (placement, totalFighters) => {
       eliminatedThisOnlineMatch = true;
@@ -513,7 +532,16 @@ async function beginOnlineMatch(): Promise<void> {
       inMatchMovesButton.classList.remove('hidden');
       inMatchSettingsButton.classList.remove('hidden');
       if (touchCapable) touchControls.show();
-      hud.update(netMatch.currentSnapshots(), undefined, netMatch.localSlot(), netMatch.displayNames());
+      const onlineSettings = netMatch.getMatchSettings();
+      hud.update(
+        netMatch.currentSnapshots(),
+        undefined,
+        netMatch.localSlot(),
+        netMatch.displayNames(),
+        isTimedBrawl(onlineSettings) && onlineSettings
+          ? { clockText: formatClock(ticksRemaining(netMatch.currentTick, onlineSettings)) }
+          : undefined,
+      );
     } else {
       hud.hide();
       inMatchMovesButton.classList.add('hidden');
@@ -537,9 +565,21 @@ const winScreen = new WinScreen(appRoot, () => {
   }
 });
 
+// Timed Brawl's own end screen (score standings, not "N of 20" placement
+// language) -- see timed-brawl-end-screen.ts. Same rematch routing as
+// winScreen: whichever mode was actually being played.
+const timedBrawlEndScreen = new TimedBrawlEndScreen(appRoot, () => {
+  if (lastMatchWasOnline) {
+    void beginOnlineMatch();
+  } else {
+    void beginMatch();
+  }
+});
+
 async function beginMatch(): Promise<void> {
   lastMatchWasOnline = false;
   winScreen.hide();
+  timedBrawlEndScreen.hide();
   startScreen.hide();
   spectatorBanner.hide();
   matchOverlay.hide();
@@ -584,14 +624,39 @@ async function beginMatch(): Promise<void> {
   const __DEBUG_ARENA_PARAM = __DEBUG_PARAMS.get('arena');
   const localArenaOverride = isKnownArenaId(__DEBUG_ARENA_PARAM) ? __DEBUG_ARENA_PARAM : null;
   const localHumanSlotCount = __DEBUG_CROWD ? 2 : 2;
+  // Dev/QA helper: ?mode=timedKO drives the local (offline) harness --
+  // including ?crowd20=1 -- through Timed Brawl instead of Battle
+  // Royale, the only way to see the Timed Brawl HUD/end screen with a
+  // real 20-fighter crowd, since the preview tunnel used for browser
+  // verification doesn't proxy the websocket upgrade a real online
+  // match needs (see docs/LOCAL_CROWD_TESTING.md). ?timeLimit=<seconds>
+  // shortens the match for faster QA loops; both are no-ops for a normal
+  // player, who never sets either param, and Battle Royale stays the
+  // unconditional default with neither present.
+  const __DEBUG_MODE_PARAM = __DEBUG_PARAMS.get('mode');
+  const __DEBUG_TIME_LIMIT_PARAM = __DEBUG_PARAMS.get('timeLimit');
+  const localSettingsOverride: Partial<MatchSettings> | undefined =
+    __DEBUG_MODE_PARAM === 'timedKO'
+      ? {
+          winCondition: 'timedKO',
+          ...(Number.isFinite(Number(__DEBUG_TIME_LIMIT_PARAM))
+            ? { timeLimitTicks: Math.round(Number(__DEBUG_TIME_LIMIT_PARAM) * 60) }
+            : {}),
+        }
+      : undefined;
   const localMatch: Match = new Match(canvasRoot, localCharacters, localSeed, {
-    onMatchOver: (winnerIndex) => {
+    onMatchOver: (winnerIndex, leaderboard, settings) => {
       hud.hide();
       inMatchMovesButton.classList.add('hidden');
       inMatchSettingsButton.classList.add('hidden');
       touchControls.hide();
       audio.play('match_end');
-      winScreen.show(winnerIndex, 0);
+      if (isTimedBrawl(settings) && leaderboard) {
+        const scores = localMatch.currentSnapshots().map((s, slot) => ({ slot, koCount: s.koCount, deathCount: s.deathCount }));
+        timedBrawlEndScreen.show(winnerIndex, leaderboard, scores, 0);
+      } else {
+        winScreen.show(winnerIndex, 0);
+      }
       match?.stop();
     },
     transformFrame: (frame) => {
@@ -628,7 +693,7 @@ async function beginMatch(): Promise<void> {
 
       return { ...frame, fighters, liveArenaBounds: arena, cameraOverride, localPlayerIndex: LOCAL_SLOT };
     },
-  }, undefined, audio, localHumanSlotCount, localArenaOverride);
+  }, undefined, audio, localHumanSlotCount, localArenaOverride, localSettingsOverride);
   match = localMatch;
   localMatch.input.setBinding(0, currentBindings.p1);
   localMatch.input.setBinding(1, currentBindings.p2);
@@ -654,7 +719,16 @@ async function beginMatch(): Promise<void> {
         const status = (adapter as SimMatchAdapter).status(i);
         return { eliminated: status.eliminated, placement: status.placement };
       });
-      hud.update(match.currentSnapshots(), extras);
+      const localSettings = localMatch.getMatchSettings();
+      hud.update(
+        match.currentSnapshots(),
+        extras,
+        undefined,
+        undefined,
+        isTimedBrawl(localSettings) && localSettings
+          ? { clockText: formatClock(ticksRemaining(localMatch.currentTick, localSettings)) }
+          : undefined,
+      );
     }
     requestAnimationFrame(hudTick);
   };

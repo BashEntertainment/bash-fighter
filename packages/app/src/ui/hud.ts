@@ -13,6 +13,14 @@ export interface HudFighterExtra {
   placement: number | null;
 }
 
+/** Timed Brawl clock/score info for the HUD, or omitted entirely for
+ * Battle Royale/'stocks' matches, which keep the original stocks-dots
+ * column and no clock line -- see timed-brawl.ts for where clockText is
+ * formatted. */
+export interface HudTimedBrawlInfo {
+  clockText: string;
+}
+
 const PLAYER_HEX = PALETTE.playerColors.map((c) => `#${c.toString(16).padStart(6, '0')}`);
 
 export class Hud {
@@ -21,15 +29,20 @@ export class Hud {
   private cards: HTMLDivElement[] = [];
 
   private readonly survivorsLine: HTMLDivElement;
+  private readonly clockLine: HTMLDivElement;
 
   constructor(parent: HTMLElement) {
     this.root = document.createElement('div');
     this.root.id = 'hud';
     this.root.className = 'hidden';
+    this.clockLine = document.createElement('div');
+    this.clockLine.className = 'hud-clock-line';
+    this.clockLine.style.display = 'none';
     this.survivorsLine = document.createElement('div');
     this.survivorsLine.className = 'survivors-line';
     this.list = document.createElement('div');
     this.list.className = 'hud-list';
+    this.root.appendChild(this.clockLine);
     this.root.appendChild(this.survivorsLine);
     this.root.appendChild(this.list);
     parent.appendChild(this.root);
@@ -68,8 +81,19 @@ export class Hud {
     extras?: readonly HudFighterExtra[],
     localIndex = -1,
     names?: readonly string[],
+    // Timed Brawl only (see HudTimedBrawlInfo above): switches the
+    // right-hand column from stocks-remaining dots to a live KO/death
+    // score line and shows the countdown clock. Absent (undefined) for
+    // Battle Royale and 'stocks', which keep their original HUD exactly.
+    timedBrawl?: HudTimedBrawlInfo,
   ): void {
     this.ensureCards(snapshots.length);
+    if (timedBrawl) {
+      this.clockLine.textContent = timedBrawl.clockText;
+      this.clockLine.style.display = '';
+    } else {
+      this.clockLine.style.display = 'none';
+    }
     let survivors = 0;
     for (let i = 0; i < snapshots.length; i++) {
       const s = snapshots[i] as FighterSnapshot;
@@ -105,13 +129,20 @@ export class Hud {
       const pct = Math.round(fx.toFloat(s.percent));
       pctEl.textContent = `${pct}%`;
       pctEl.style.color = s.state === FighterStateId.DEAD ? '#666' : pct >= 100 ? PALETTE_DANGER_HEX : '';
-      if (eliminated) {
+      if (timedBrawl) {
+        // Fighters never carry an 'eliminated'/placement state in Timed
+        // Brawl (they respawn instead, see respawnsEnabled in
+        // packages/sim/src/match-settings.ts), so this branch always
+        // takes over the stocks-dots column with the running score --
+        // the thing that actually decides the match in this mode.
+        stocksEl.textContent = `${s.koCount} KO${s.deathCount > 0 ? ` · ${s.deathCount} D` : ''}`;
+      } else if (eliminated) {
         stocksEl.textContent = placement ? `OUT · ${placement}` : 'OUT';
       } else {
         stocksEl.textContent = '●'.repeat(Math.max(0, s.stocks)) || '—';
       }
     }
-    this.survivorsLine.textContent = snapshots.length > 2 ? `${survivors} / ${snapshots.length} remaining` : '';
+    this.survivorsLine.textContent = !timedBrawl && snapshots.length > 2 ? `${survivors} / ${snapshots.length} remaining` : '';
     this.survivorsLine.style.display = this.survivorsLine.textContent ? '' : 'none';
   }
 }

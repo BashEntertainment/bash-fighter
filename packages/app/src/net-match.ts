@@ -10,8 +10,10 @@ import {
   MAX_ITEMS,
   MAX_HAZARDS,
   DEFAULT_ARENA,
+  resolveMatchSettings,
   type FighterSnapshot,
   type InputFrame,
+  type MatchSettings,
 } from '@bash-fighter/sim';
 import { PLACEHOLDER_CHARACTER, createMatchSim, resolveCharacterId, DEFAULT_CHARACTER_ID } from '@bash-fighter/content';
 import type { CharacterData } from '@bash-fighter/sim';
@@ -88,7 +90,11 @@ function saveResumeToken(token: string | null): void {
 export interface NetMatchEvents {
   onStateChange?(state: ConnectionState, detail?: string): void;
   onLobby?(players: number, capacity: number, countdownTicks: number): void;
-  onMatchOver?(winnerIndex: number | null, resolved: boolean): void;
+  /** leaderboard is slots best-to-worst (server's authoritative
+   * sim.getLeaderboard()) and settings is this match's resolved
+   * MatchSettings -- both needed to tell a Timed Brawl finish from a
+   * Battle Royale one and render the right end screen. */
+  onMatchOver?(winnerIndex: number | null, resolved: boolean, leaderboard?: readonly number[], settings?: MatchSettings): void;
   /** Fired once, the moment the local player is eliminated online.
    * placement is 1-based finish position (e.g. 17 of 20). Lets the UI show
    * a specific "you placed Nth" + play-again offer instead of leaving the
@@ -150,6 +156,11 @@ export class NetMatch {
 
   private localSim: Sim | null = null;
   private renderSim: Sim | null = null; // scratch sim used only to decode remote snapshot buffers
+  // This match's resolved MatchSettings, from matchStart.settings (see
+  // startMatch). null until the match has actually started. Used to gate
+  // every Timed-Brawl-only client affordance (HUD clock/score, end
+  // screen) via isTimedBrawl() in timed-brawl.ts.
+  private matchSettings: MatchSettings | null = null;
   private numFighters = 0;
   private characterId = DEFAULT_CHARACTER_ID;
   private characters: CharacterData[] = [];
@@ -358,7 +369,7 @@ export class NetMatch {
         this.events.onLobby?.(msg.players, msg.capacity, msg.countdownTicks);
         break;
       case 'matchStart':
-        this.startMatch(msg.numFighters, msg.seed, msg.slot, msg.characterIds, msg.arenaId, msg.names);
+        this.startMatch(msg.numFighters, msg.seed, msg.slot, msg.characterIds, msg.arenaId, msg.names, msg.settings);
         break;
       case 'eliminated':
         if (msg.slot === this.mySlot && !this.spectating) {
@@ -387,7 +398,7 @@ export class NetMatch {
         // resume_invalid back from the server, and dead-ended on the
         // disconnected screen instead of just starting the new match.
         this.setResumeToken(null);
-        this.events.onMatchOver?.(msg.winner, msg.resolved);
+        this.events.onMatchOver?.(msg.winner, msg.resolved, msg.leaderboard, this.matchSettings ?? undefined);
         break;
       case 'error':
         if (msg.code === 'resume_invalid' || msg.code === 'resume_expired') {
@@ -412,6 +423,7 @@ export class NetMatch {
     characterIds?: string[],
     arenaId?: string,
     names?: string[],
+    settings?: unknown,
   ): void {
     this.numFighters = numFighters;
     if (names) this.names = names;
@@ -428,8 +440,21 @@ export class NetMatch {
       this.characters = new Array(numFighters).fill(PLACEHOLDER_CHARACTER);
     }
     this.effectsBridge.setContext(this.characters, this.mySlot);
-    this.localSim = createMatchSim(seed, numFighters, undefined, this.characters, arenaId);
-    this.renderSim = createMatchSim(seed, numFighters, undefined, this.characters, arenaId);
+    // The server's matchStart.settings (2026-09-11, Timed Brawl) carries
+    // the full resolved MatchSettings it built its own authoritative Sim
+    // with (see server/src/match.ts's getClientSettings). Both of this
+    // client's Sims (localSim for prediction, renderSim for decoding
+    // remote snapshots) MUST be built with the exact same settings or
+    // they silently diverge from authority the moment the mode isn't
+    // plain battleRoyale -- e.g. a Timed Brawl fighter would never
+    // respawn locally while the server keeps respawning it, permanently
+    // desyncing prediction. Falls back to resolveMatchSettings({}) (=
+    // battleRoyale) for any older server that still sends an empty
+    // settings stub, which is what every client already assumed before
+    // this field carried real data.
+    this.matchSettings = resolveMatchSettings((settings as Partial<MatchSettings>) ?? {});
+    this.localSim = createMatchSim(seed, numFighters, this.matchSettings, this.characters, arenaId);
+    this.renderSim = createMatchSim(seed, numFighters, this.matchSettings, this.characters, arenaId);
     // The server always builds matches via createMatchSim too (see
     // server/src/*), so this.localSim.getArena() is the arena actually
     // being played on -- feed the renderer that, not a default guess.
@@ -624,6 +649,19 @@ export class NetMatch {
 
   hasStarted(): boolean {
     return this.localSim !== null;
+  }
+
+  /** This match's resolved settings once matchStart has arrived, or null
+   * before that / for the pre-match lobby screens. */
+  getMatchSettings(): MatchSettings | null {
+    return this.matchSettings;
+  }
+
+  /** Sim ticks elapsed in this match, for a live countdown clock (see
+   * timed-brawl.ts's ticksRemaining/formatClock). Mirrors localTick, which
+   * this class already advances once per confirmed local tick. */
+  get currentTick(): number {
+    return this.localTick;
   }
 
   currentSnapshots(): readonly FighterSnapshot[] {

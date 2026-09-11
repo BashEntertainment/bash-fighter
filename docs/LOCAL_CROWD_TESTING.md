@@ -33,6 +33,18 @@ nothing to `?online`/the server path):
   absent id silently falls back to the seed-derived choice, so this is
   invisible to a normal player and to ordinary local play — it only
   matters when you deliberately set it.
+- `&mode=timedKO` — runs Timed Brawl (respawns + KO/death scoring, with
+  the countdown-clock HUD and score-based end screen) instead of Battle
+  Royale, in local play including `?crowd20=1`. This is the only way to
+  see the Timed Brawl client experience with a full 20-fighter field
+  without standing up a second server instance, since the browser-preview
+  tunnel used for automated QA doesn't proxy the websocket upgrade a real
+  online match needs. Absent, local play stays Battle Royale exactly as
+  before — this changes nothing for a normal player, who never sets it,
+  and production's own default (also Battle Royale) is untouched.
+- `&timeLimit=<seconds>` — with `&mode=timedKO`, shortens (or lengthens)
+  the match clock for a faster QA loop instead of the mode's normal
+  default. Ignored without `&mode=timedKO`.
 
 Example for a reproducible crowd match on a specific stage:
 

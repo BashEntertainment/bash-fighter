@@ -15,6 +15,7 @@ import {
   type ItemSnapshot,
   type HazardSnapshot,
   type InputFrame,
+  type MatchSettings,
   DEFAULT_ARENA,
 } from '@bash-fighter/sim';
 import { buildLocalBots, buildTickInputs, type BotController } from './local-crowd-bots.ts';
@@ -57,7 +58,11 @@ export const STAGE_BOUNDS: StageBounds = arenaDataToStageBounds(DEFAULT_ARENA);
 
 export interface MatchEvents {
   onStockLost?(fighterIndex: number, stocksRemaining: number): void;
-  onMatchOver?(winnerIndex: number | null): void;
+  /** leaderboard is slots best-to-worst (Sim.getLeaderboard()) and
+   * settings is this match's resolved MatchSettings -- both needed by
+   * main.ts to tell a Timed Brawl finish from a Battle Royale one and
+   * show the right end screen (see timed-brawl.ts, TimedBrawlEndScreen). */
+  onMatchOver?(winnerIndex: number | null, leaderboard?: readonly number[], settings?: MatchSettings): void;
   /** Runs right before a frame is handed to the renderer. Lets the app
    * layer (spectator camera, elimination flags) rewrite the frame
    * without the Match/Renderer needing to know about spectate policy. */
@@ -134,6 +139,13 @@ export class Match {
     // nothing about ordinary local play or online play (which threads its
     // own server-assigned arenaId through a different path entirely).
     arenaIdOverride?: string | null,
+    // Dev/QA override only (local-crowd Timed Brawl testing, see
+    // ?mode=timedKO&timeLimit=<seconds> in main.ts and
+    // docs/LOCAL_CROWD_TESTING.md): lets a local match run any
+    // MatchSettings the sim supports instead of always defaulting to
+    // battleRoyale. Ignored (stays battleRoyale) when omitted, so this
+    // changes nothing about ordinary local play.
+    settingsOverride?: Partial<MatchSettings>,
   ) {
     this.characters = characters;
     this.audio = audio;
@@ -149,7 +161,7 @@ export class Match {
     // deterministically from the seed via the same pickArenaId helper the
     // server uses for its own random-arena selection, keeping local play
     // varied but reproducible for a given seed.
-    this.sim = sim ?? createMatchSim(seed, characters.length, undefined, characters, arenaIdOverride ?? pickArenaId(seed));
+    this.sim = sim ?? createMatchSim(seed, characters.length, settingsOverride, characters, arenaIdOverride ?? pickArenaId(seed));
     this.numFighters = this.sim.numFighters;
     // Bot-fill every slot InputManager doesn't drive. Same construction
     // the server uses per-seat (BotDifficulty.EASY, matching production's
@@ -241,7 +253,7 @@ export class Match {
 
     if (this.sim.isMatchOver() && !this.over) {
       this.over = true;
-      this.events.onMatchOver?.(this.sim.getWinner());
+      this.events.onMatchOver?.(this.sim.getWinner(), this.sim.getLeaderboard(), this.sim.getMatchSettings());
     }
   }
 
@@ -383,6 +395,17 @@ export class Match {
 
   currentSnapshots(): readonly FighterSnapshot[] {
     return this.currSnapshots;
+  }
+
+  /** This match's resolved settings, for the Timed Brawl clock/end screen
+   * gating in main.ts (see isTimedBrawl in timed-brawl.ts). */
+  getMatchSettings(): MatchSettings {
+    return this.sim.getMatchSettings();
+  }
+
+  /** Sim ticks elapsed, for formatClock/ticksRemaining in timed-brawl.ts. */
+  get currentTick(): number {
+    return this.sim.getTick();
   }
 
   private currentHash(): string {

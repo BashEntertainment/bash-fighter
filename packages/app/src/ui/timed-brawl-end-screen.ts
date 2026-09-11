@@ -1,0 +1,103 @@
+// End-of-match screen for Timed Brawl: standings by score, not the
+// placement/"last one standing" language WinScreen uses for Battle
+// Royale. Kept as a separate component rather than branching inside
+// WinScreen -- the two modes end matches on fundamentally different
+// axes (elimination order vs running score) and forcing one component
+// to speak both makes neither reading clear. Same voice, same "screen"
+// shell, same one-button way forward as WinScreen and MatchOverlay.
+import { PALETTE } from '@bash-fighter/render';
+import { buildStandings, placementOf, type TimedBrawlScore } from '../timed-brawl.ts';
+
+const PLAYER_HEX = PALETTE.playerColors.map((c) => `#${c.toString(16).padStart(6, '0')}`);
+
+export class TimedBrawlEndScreen {
+  readonly root: HTMLDivElement;
+  private readonly headline: HTMLDivElement;
+  private readonly subtitle: HTMLDivElement;
+  private readonly list: HTMLDivElement;
+
+  constructor(parent: HTMLElement, onRematch: () => void) {
+    this.root = document.createElement('div');
+    this.root.className = 'screen hidden';
+    this.root.id = 'timed-brawl-end-screen';
+    this.root.innerHTML = `
+      <div class="win-headline" id="tb-headline">&mdash;</div>
+      <div class="subtitle" id="tb-subtitle">Time's up.</div>
+      <div class="tb-standings" id="tb-standings"></div>
+      <button class="btn btn-primary" id="tb-rematch-btn">Play again</button>
+    `;
+    parent.appendChild(this.root);
+    this.headline = this.root.querySelector('#tb-headline') as HTMLDivElement;
+    this.subtitle = this.root.querySelector('#tb-subtitle') as HTMLDivElement;
+    this.list = this.root.querySelector('#tb-standings') as HTMLDivElement;
+    (this.root.querySelector('#tb-rematch-btn') as HTMLButtonElement).addEventListener('click', onRematch);
+  }
+
+  /**
+   * @param winnerSlot slot of the highest-scoring fighter, or null for a
+   *   genuine tie at the top (see Sim.getWinner's 'timedKO' branch).
+   * @param leaderboard slots best-to-worst, from the sim/server -- the
+   *   single source of truth for placement (see buildStandings).
+   * @param scores every fighter's final koCount/deathCount.
+   * @param localSlot the slot this client played, when known.
+   */
+  show(
+    winnerSlot: number | null,
+    leaderboard: readonly number[],
+    scores: readonly TimedBrawlScore[],
+    localSlot?: number,
+    nameFor?: (slot: number) => string,
+  ): void {
+    const standings = buildStandings(leaderboard, scores);
+    const won = localSlot !== undefined && localSlot !== null && localSlot >= 0 && localSlot === winnerSlot;
+    if (winnerSlot === null) {
+      this.headline.textContent = 'Time out — tied for first';
+      this.headline.style.color = '';
+      this.headline.style.borderBottomColor = '#666';
+    } else {
+      const colour = PLAYER_HEX[winnerSlot % PLAYER_HEX.length] as string;
+      const label = nameFor ? nameFor(winnerSlot) : `Fighter ${winnerSlot + 1}`;
+      this.headline.textContent = won ? 'You win' : `${label} won`;
+      this.headline.style.color = colour;
+      this.headline.style.borderBottomColor = colour;
+    }
+    const myPlacement = localSlot !== undefined && localSlot !== null && localSlot >= 0 ? placementOf(standings, localSlot) : null;
+    this.subtitle.textContent =
+      myPlacement !== null ? `You finished ${myPlacement} of ${standings.length} on knockouts.` : 'Highest knockout count wins.';
+
+    this.list.innerHTML = '';
+    for (const row of standings) {
+      const el = document.createElement('div');
+      el.className = 'tb-standing-row';
+      el.classList.toggle('is-you', row.slot === localSlot);
+      el.style.borderLeftColor = PLAYER_HEX[row.slot % PLAYER_HEX.length] as string;
+      const label = nameFor ? nameFor(row.slot) : '';
+      // textContent, never innerHTML, for the name -- same rule as
+      // hud.ts -- a player-chosen display name must never be interpreted
+      // as markup here regardless of what the server already sanitised
+      // (see Player Names on the wiki).
+      const placeEl = document.createElement('span');
+      placeEl.className = 'tb-place';
+      placeEl.textContent = String(row.place);
+      const nameEl = document.createElement('span');
+      nameEl.className = 'tb-name';
+      nameEl.textContent = label && label.length > 0 ? label : `#${row.slot + 1}`;
+      const scoreEl = document.createElement('span');
+      scoreEl.className = 'tb-score';
+      scoreEl.textContent = `${row.koCount} KO · ${row.deathCount} D`;
+      el.appendChild(placeEl);
+      el.appendChild(nameEl);
+      el.appendChild(scoreEl);
+      this.list.appendChild(el);
+    }
+    this.root.classList.remove('hidden');
+  }
+
+  hide(): void {
+    this.root.classList.add('hidden');
+  }
+
+  get isVisible(): boolean {
+    return !this.root.classList.contains('hidden');
+  }
+}

@@ -959,6 +959,52 @@ html, body {
   font-size: 15px;
 }
 
+/* Timed Brawl end screen standings (packages/app/src/ui/timed-brawl-end-screen.ts):
+   a scrollable list so it holds up to 20 rows without pushing the
+   Play again button off screen, flat rows in the same austere voice as
+   the HUD sidebar cards -- no gradients, high-contrast mono figures. */
+.tb-standings {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: min(420px, 90vw);
+  max-height: 46vh;
+  overflow-y: auto;
+  margin: 18px 0;
+  padding-right: 4px;
+}
+
+.tb-standing-row {
+  display: grid;
+  grid-template-columns: 28px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  background: var(--panel);
+  border-left: 3px solid var(--ink-dim);
+  padding: 6px 10px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+.tb-standing-row.is-you {
+  outline: 1px solid var(--accent-strong);
+}
+
+.tb-place {
+  color: var(--ink-dim);
+  font-weight: 700;
+}
+
+.tb-name {
+  color: var(--ink);
+  text-align: left;
+}
+
+.tb-score {
+  color: var(--ink-dim);
+  white-space: nowrap;
+}
+
 .debug-hint {
   position: absolute;
   bottom: 12px;
@@ -995,6 +1041,19 @@ html, body {
   color: var(--ink-dim);
   margin-bottom: 8px;
   letter-spacing: 0.04em;
+}
+
+/* Timed Brawl countdown clock (packages/app/src/ui/hud.ts). Amber like
+   every other primary/attention readout in the design language, sized
+   above the survivors-line text so it reads at a glance among 20 fighter
+   cards. */
+.hud-clock-line {
+  font-family: var(--font-mono);
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--accent-strong);
+  margin-bottom: 10px;
+  letter-spacing: 0.03em;
 }
 
 .hud-card.eliminated {

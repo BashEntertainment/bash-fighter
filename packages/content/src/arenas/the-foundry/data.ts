@@ -63,18 +63,37 @@ export const THE_FOUNDRY_ARENA: ArenaData = {
   // 2026-09-10"), low indices are placed at the outer edge of each
   // chamber's spread, not stacked at the centre where the group is most
   // crowded at tick 0.
+  // BLAST-ZONE PROXIMITY FIX (2026-09-11, see wiki "Low-Percent Knockouts
+  // and Stage Blast Zones 2026-09-11"): the human-survival fix's "low
+  // index = outer edge of the spread" rule was written against The
+  // Undercroft, where the outer edge is the safe direction (away from the
+  // centre chasm). On The Foundry the outer edge of each side chamber is
+  // instead the direction *toward the stage's own edge and the blast
+  // zone* -- production evidence showed the sole human seat (always
+  // index 0, always the outermost spawn in the left chamber at x=-420)
+  // eliminated by knockout at 22% damage 3.5s into the match. Side
+  // chambers now spawn low indices at the *inner* end (toward the
+  // chamber-dividing wall, away from the stage edge) instead; the centre
+  // chamber is unaffected since it is walled on both sides and was never
+  // the reported problem.
   spawnPoints: [
-    // Left chamber (7 spawns), x in roughly -420..-160.
+    // Left chamber (7 spawns), x in roughly -420..-160, low indices inner
+    // (near the -140 dividing wall) rather than outer (near the -440
+    // stage edge / blast zone).
     ...Array.from({ length: 7 }, (_, i) => ({
-      x: fx.fromInt(-420 + i * 40),
+      x: fx.fromInt(-420 + (6 - i) * 40),
       y: fx.fromInt(0),
     })),
-    // Centre chamber (6 spawns), x in roughly -110..110.
+    // Centre chamber (6 spawns), x in roughly -110..110 -- unaffected,
+    // walled on both sides.
     ...Array.from({ length: 6 }, (_, i) => ({
       x: fx.fromInt(-110 + i * 44),
       y: fx.fromInt(0),
     })),
-    // Right chamber (7 spawns), x in roughly 160..420.
+    // Right chamber (7 spawns), x in roughly 160..420. Unaffected: index 0
+    // here was already the inner slot (near the 140 dividing wall, x=160)
+    // before this fix, so it never exhibited the bug -- only the left
+    // chamber's index-0-at-the-stage-edge mapping did.
     ...Array.from({ length: 7 }, (_, i) => ({
       x: fx.fromInt(160 + i * 40),
       y: fx.fromInt(0),

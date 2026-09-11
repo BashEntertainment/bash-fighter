@@ -69,6 +69,31 @@ const ALIVE_TERM_CAP: Fixed = fx.fromFloat(0.6);
  * Roughly two hurtbox-widths (placeholder hurtboxWidth/2 = 8). */
 const STANDING_MARGIN: Fixed = fx.fromInt(20);
 
+/** MEASURED 2026-09-11 (see wiki "Low-Percent Knockouts and Stage Blast
+ * Zones 2026-09-11"): a flat 20-unit STANDING_MARGIN meant the *actual*
+ * in-sim boundary while the whole field is alive is only 20 units past
+ * the platform bounding box on every stage, regardless of stage size --
+ * far tighter than each arena file's own authored blastMinX/blastMaxX
+ * (60-140 units past ground on these stages), because computeSafeExtents
+ * clamps the live boundary to computeGroundHalfExtents(), not to the
+ * arena's own wider blast rectangle, whenever the whole field is alive
+ * (t=1). Combined with the human-survival fix placing low fighter
+ * indices at the *outer* edge of each stage's spawn spread -- right next
+ * to the platform edge on stages without a chasm to keep them away from
+ * (Colosseum, Spire, Foundry, Atoll islands) -- this left as little as
+ * ~40 units between a fresh spawn and the live boundary on The Foundry's
+ * outer chambers, closer than on any other stage. A real early hit could
+ * cross that in under a second even heavily dampened by
+ * EARLY_MATCH_KB_DAMPENER. Fix: size the margin as a fraction of the
+ * ground box's own half-extent (proportional to stage size, not a fixed
+ * number), floored at the old 20 so small/narrow stages don't regress. */
+const STANDING_MARGIN_FRACTION: Fixed = fx.fromFloat(0.08);
+
+function proportionalMargin(halfExtent: Fixed): Fixed {
+  const scaled = fx.mul(halfExtent, STANDING_MARGIN_FRACTION);
+  return fxMaxNum(STANDING_MARGIN, scaled);
+}
+
 /** How much horizontal room one standing fighter needs, used only to
  * size the *final* ring floor from roster size — never hand-picked per
  * stage. Roughly a fighter's hurtbox width (16) plus enough gap either
@@ -138,11 +163,15 @@ export function computeGroundHalfExtents(arena: ArenaData): BlastRect {
     if ((p.y as number) < (minY as number)) minY = p.y;
     if ((p.y as number) > (maxY as number)) maxY = p.y;
   }
+  const halfW = fx.div(fx.sub(maxX, minX), fx.fromInt(2));
+  const halfH = fx.div(fx.sub(maxY, minY), fx.fromInt(2));
+  const marginX = proportionalMargin(halfW);
+  const marginY = proportionalMargin(halfH);
   return {
-    minX: fx.sub(minX, STANDING_MARGIN),
-    maxX: fx.add(maxX, STANDING_MARGIN),
-    minY: fx.sub(minY, STANDING_MARGIN),
-    maxY: fx.add(maxY, STANDING_MARGIN),
+    minX: fx.sub(minX, marginX),
+    maxX: fx.add(maxX, marginX),
+    minY: fx.sub(minY, marginY),
+    maxY: fx.add(maxY, marginY),
   };
 }
 

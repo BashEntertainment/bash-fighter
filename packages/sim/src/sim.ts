@@ -1693,6 +1693,19 @@ export class Sim {
       posX < this.blastMinX || posX > this.blastMaxX || posY < this.blastMinY || posY > this.blastMaxY;
     if (!outsideSoft) return;
 
+    // Falling below the stage floor (posY < blastMinY) is categorically different from being
+    // pushed out through the shrinking ring's sides/top: it is a plain fall/self-destruct/walk-
+    // off-a-ledge, not ring pressure, and it can happen in the opening seconds of a match on any
+    // stage with a gap, long before the ring has closed at all. Production evidence (2026-09-11,
+    // see wiki 'Resolution Guarantee and Harness Trust 2026-09-10'): a 0.5%-damage 'ring'
+    // elimination 3.2s into a match, which the ring cannot possibly have caused yet. A fighter
+    // drifting slowly downward through the floor threshold could always accumulate a few ticks
+    // of ring soft-damage (and so a fresh RING_DAMAGE_TICK) before finally crossing the hard
+    // margin -- the truthful-attribution pass never accounted for this. A fall through the floor
+    // must never earn 'ring'/'ring_lethal': only 'knockout' (a real recent hit sent them off) or
+    // 'fall' (they walked/dropped off on their own).
+    const exitedBelowFloor = posY < this.blastMinY;
+
     // The hard backstop closes in once the ordinary shrink schedule has fully run: over the
     // stalemate-override window the margin decays to zero, so a late match can never sit
     // forever on chip damage with nobody able to finish anyone (the sim-level guarantee that
@@ -1725,9 +1738,15 @@ export class Sim {
     // (not a harness artifact): see wiki 'Resolution Guarantee and Harness Trust 2026-09-10'.
     // outsideSoft is already established (checked above; function returns early if false), so
     // this fighter is taking ring pressure this tick regardless of which branch runs next.
-    d[base + FighterField.RING_DAMAGE_TICK] = this.tick;
+    if (!exitedBelowFloor) d[base + FighterField.RING_DAMAGE_TICK] = this.tick;
 
     if (!outsideHard && !ringLethal) {
+      if (exitedBelowFloor) {
+        // A gap in the platforms, not the ring: no ring chip damage, no RING_DAMAGE_TICK, no
+        // inward nudge. Let them keep falling under ordinary physics; if nobody hit them
+        // recently this resolves as a plain 'fall' once they cross the hard margin below.
+        return;
+      }
       // Soft boundary: damaging pressure, not a kill. Accumulating percent both threatens the
       // hard backstop on its own over time and makes this fighter far easier for anyone else to
       // launch (knockback scales with percent) -- that's the whole point of the redesign.
@@ -1745,8 +1764,7 @@ export class Sim {
       // hurting them in place.
       if (posX < this.blastMinX) d[base + FighterField.VEL_X] = fx.add(d[base + FighterField.VEL_X] as number, RING_INWARD_PUSH);
       else if (posX > this.blastMaxX) d[base + FighterField.VEL_X] = fx.sub(d[base + FighterField.VEL_X] as number, RING_INWARD_PUSH);
-      if (posY < this.blastMinY) d[base + FighterField.VEL_Y] = fx.add(d[base + FighterField.VEL_Y] as number, RING_INWARD_PUSH);
-      else if (posY > this.blastMaxY) d[base + FighterField.VEL_Y] = fx.sub(d[base + FighterField.VEL_Y] as number, RING_INWARD_PUSH);
+      if (posY > this.blastMaxY) d[base + FighterField.VEL_Y] = fx.sub(d[base + FighterField.VEL_Y] as number, RING_INWARD_PUSH);
       return;
     }
 

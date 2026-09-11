@@ -73,6 +73,9 @@ export class SettingsPanel {
   private reducedMotion: boolean;
   private volume: number;
   private readonly host: SettingsPanelHost;
+  private readonly reducedMotionCheckbox: HTMLInputElement;
+  private readonly volumeSlider: HTMLInputElement;
+  private readonly volumeValueEl: HTMLSpanElement;
 
   constructor(
     parent: HTMLElement,
@@ -94,7 +97,7 @@ export class SettingsPanel {
         </div>
         <div class="settings-hint">Click a key, then press the new key you want. Esc cancels.</div>
         <div class="settings-list"></div>
-        <button type="button" class="btn btn-plain settings-reset-btn">Reset to defaults</button>
+        <button type="button" class="btn btn-plain settings-reset-btn">Reset all settings</button>
         <div class="settings-group settings-accessibility-group">
           <div class="settings-group-title">Accessibility</div>
           <label class="settings-row settings-checkbox-row">
@@ -122,20 +125,20 @@ export class SettingsPanel {
     (this.root.querySelector('.settings-reset-btn') as HTMLButtonElement).addEventListener('click', () =>
       this.resetToDefaults(),
     );
-    const reducedMotionCheckbox = this.root.querySelector('.settings-reduced-motion-checkbox') as HTMLInputElement;
-    reducedMotionCheckbox.checked = this.reducedMotion;
-    reducedMotionCheckbox.addEventListener('change', () => {
-      this.reducedMotion = reducedMotionCheckbox.checked;
+    this.reducedMotionCheckbox = this.root.querySelector('.settings-reduced-motion-checkbox') as HTMLInputElement;
+    this.reducedMotionCheckbox.checked = this.reducedMotion;
+    this.reducedMotionCheckbox.addEventListener('change', () => {
+      this.reducedMotion = this.reducedMotionCheckbox.checked;
       this.host.onReducedMotionChange(this.reducedMotion);
     });
-    const volumeSlider = this.root.querySelector('.settings-volume-slider') as HTMLInputElement;
-    const volumeValue = this.root.querySelector('.settings-volume-value') as HTMLSpanElement;
+    this.volumeSlider = this.root.querySelector('.settings-volume-slider') as HTMLInputElement;
+    this.volumeValueEl = this.root.querySelector('.settings-volume-value') as HTMLSpanElement;
     const volumePercent = () => Math.round(this.volume * 100);
-    volumeSlider.value = String(volumePercent());
-    volumeValue.textContent = `${volumePercent()}%`;
-    volumeSlider.addEventListener('input', () => {
-      this.volume = Math.max(0, Math.min(1, Number(volumeSlider.value) / 100));
-      volumeValue.textContent = `${volumePercent()}%`;
+    this.volumeSlider.value = String(volumePercent());
+    this.volumeValueEl.textContent = `${volumePercent()}%`;
+    this.volumeSlider.addEventListener('input', () => {
+      this.volume = Math.max(0, Math.min(1, Number(this.volumeSlider.value) / 100));
+      this.volumeValueEl.textContent = `${Math.round(this.volume * 100)}%`;
       this.host.onVolumeChange(this.volume);
     });
     parent.appendChild(this.root);
@@ -162,12 +165,33 @@ export class SettingsPanel {
     return { p1: cloneBinding(this.bindings[0]), p2: cloneBinding(this.bindings[1]) };
   }
 
+  /** Resets everything this panel controls -- key bindings, reduced
+   * motion, and volume -- back to defaults. Previously this button (then
+   * labelled "Reset to defaults") only reset key bindings, silently
+   * leaving the Accessibility and Audio groups it sits right above
+   * untouched, so a player using it to get back to a known-good state
+   * would still be left with whatever volume/motion settings they'd
+   * fiddled with. Volume default is full (1); reduced-motion default is
+   * off, matching DEFAULT_P1_BINDING/DEFAULT_P2_BINDING's "defaults" for
+   * bindings (note this intentionally does not re-derive from the OS
+   * prefers-reduced-motion query the way first-visit does -- "reset"
+   * means back to the game's own defaults, not back to autodetection). */
   private resetToDefaults(): void {
     this.cancelCapture();
     this.bindings[0] = cloneBinding(DEFAULT_P1_BINDING);
     this.bindings[1] = cloneBinding(DEFAULT_P2_BINDING);
     this.host.onBindingChange(0, this.bindings[0]);
     this.host.onBindingChange(1, this.bindings[1]);
+
+    this.reducedMotion = false;
+    this.reducedMotionCheckbox.checked = false;
+    this.host.onReducedMotionChange(this.reducedMotion);
+
+    this.volume = 1;
+    this.volumeSlider.value = '100';
+    this.volumeValueEl.textContent = '100%';
+    this.host.onVolumeChange(this.volume);
+
     this.render();
   }
 

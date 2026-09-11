@@ -220,3 +220,38 @@ test('Escape during a capture cancels it and leaves both bindings unchanged', as
     assert.deepEqual(after.p2, before.p2);
   });
 });
+
+test('Reset all settings restores reduced motion and volume, not just key bindings', async () => {
+  // Regression for the "Reset to defaults" button previously only
+  // resetting key bindings while silently leaving the Accessibility
+  // and Audio groups untouched -- see settings-panel.ts resetToDefaults.
+  await withPanel(({ clickKeyButton, fireKeydown, panel, calls }) => {
+    // Rebind something so we can confirm bindings also still get reset.
+    clickKeyButton(0, 1);
+    fireKeydown('KeyZ');
+    assert.equal(panel.current().p1.right, 'KeyZ');
+
+    // Flip reduced-motion and volume away from their defaults directly
+    // on the fake checkbox/slider elements, mirroring what a user
+    // interacting with the panel would do, then dispatch the events
+    // SettingsPanel listens for.
+    const root = panel.root as unknown as FakeElement;
+    const reducedMotionCheckbox = root.querySelector('.settings-reduced-motion-checkbox')!;
+    reducedMotionCheckbox.checked = true;
+    reducedMotionCheckbox.dispatchEvent(new Event('change'));
+    const volumeSlider = root.querySelector('.settings-volume-slider')!;
+    volumeSlider.value = '40';
+    volumeSlider.dispatchEvent(new Event('input'));
+    assert.deepEqual(calls.reducedMotion, [true]);
+    assert.deepEqual(calls.volume, [0.4]);
+
+    const resetBtn = root.querySelector('.settings-reset-btn')!;
+    resetBtn.dispatchEvent(new Event('click'));
+
+    assert.equal(panel.current().p1.right, 'KeyD', 'bindings should be back to default');
+    assert.equal(calls.reducedMotion.at(-1), false, 'reset should turn reduced motion back off');
+    assert.equal(calls.volume.at(-1), 1, 'reset should restore full volume');
+    assert.equal(reducedMotionCheckbox.checked, false, 'checkbox UI should reflect the reset');
+    assert.equal(volumeSlider.value, '100', 'slider UI should reflect the reset');
+  });
+});

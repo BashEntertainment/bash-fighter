@@ -138,6 +138,33 @@ const HazardField = {
  * Per-fighter hit-dedup fields (LAST_HIT_FROM_0/1 in the 2-fighter version)
  * were pulled out into a separate N*N dedup table sized from the actual
  * fighter count (see Sim.dedupIndex) so this stride does not grow with N. */
+
+/** Truthful attribution for why a fighter's death happened, computed from exit geometry and
+ * whether a combat hit landed recently enough to plausibly have caused it -- not from "any
+ * damage in the last N ticks means combat", which misattributes ordinary falls/walk-offs at
+ * low percent as knockouts (see wiki 'Opening-Seconds Eliminations: Falls Misreported as
+ * Knockouts 2026-09-10'). Ring causes are always their own bucket since no attacker is credited. */
+export type EliminationCause =
+  | 'fall' // exited the blast zone (any edge) with no recent combat hit: self-destruct/walk-off, not a KO
+  | 'knockout' // exited the blast zone within COMBAT_ATTRIBUTION_TICKS of a real hit: a genuine KO
+  | 'ring' // pushed out through the hard-backstop margin while already taking ring pressure damage
+  | 'ring_lethal'; // eliminated by the percent-based ring lethal backstop, not by exiting geometrically
+
+/** How many ticks after a combat hit a subsequent death may still be credited to that hit as a
+ * knockout. Chosen to comfortably cover hitstun + launch travel time for a real KO while
+ * excluding hits from long before (e.g. a graze several seconds earlier that a fighter then
+ * walks off a ledge from, unrelated to the fall). */
+export const COMBAT_ATTRIBUTION_TICKS = 90; // 1.5s at 60Hz
+
+export interface EliminationEvent {
+  readonly fighterIndex: number;
+  readonly tick: number;
+  readonly cause: EliminationCause;
+  /** Fighter index credited with the KO, or -1 if none (fall, ring, ring_lethal). */
+  readonly attacker: number;
+  readonly percentAtDeath: Fixed;
+}
+
 export const FighterField = {
   POS_X: 0,
   POS_Y: 1,
@@ -166,7 +193,8 @@ export const FighterField = {
   PREV_JUMP_HELD: 24, // 0/1: BUTTON_JUMP state last tick, for edge-triggering
   DROP_THROUGH_TIMER: 25, // ticks remaining to ignore 'pass-through' platforms, 0 = none
   RING_DAMAGE_TICK: 26, // last tick this fighter took ring (out-of-bounds) damage, -1 if never
-  FIELD_COUNT: 27,
+  LAST_HIT_TICK: 27, // last tick a combat hit landed on this fighter, -1 if never (see DEATH_CAUSE below)
+  FIELD_COUNT: 28,
 } as const;
 
 /** Ring-pressure tuning (2026-09-10): the collapsing boundary no longer kills on contact. A
@@ -294,6 +322,10 @@ export class Sim {
   private rng: RngState;
   private tick = 0;
   private eliminatedCount = 0;
+  /** Elimination attribution recorded this tick (transient, not part of the serialized
+   *  state -- it is a ground-truth log for the server/tooling, not something the sim needs
+   *  to replay). Cleared and repopulated at the top of every advance(). See EliminationCause. */
+  readonly eliminationEvents: EliminationEvent[] = [];
   private blastMinX: Fixed;
   private blastMaxX: Fixed;
   private blastMinY: Fixed;
@@ -405,6 +437,7 @@ export class Sim {
     d[base + FighterField.PREV_JUMP_HELD] = 0;
     d[base + FighterField.DROP_THROUGH_TIMER] = 0;
     d[base + FighterField.RING_DAMAGE_TICK] = -1;
+    d[base + FighterField.LAST_HIT_TICK] = -1;
   }
 
   /** Mid-match life reset after a non-final KO: position/percent/shield
@@ -431,6 +464,7 @@ export class Sim {
     d[base + FighterField.PREV_JUMP_HELD] = 0;
     d[base + FighterField.DROP_THROUGH_TIMER] = 0;
     d[base + FighterField.RING_DAMAGE_TICK] = -1;
+    d[base + FighterField.LAST_HIT_TICK] = -1;
     this.setState(base, FighterStateId.IDLE);
   }
 
@@ -747,6 +781,7 @@ export class Sim {
     if (inputs.length !== this.numFighters) {
       throw new RangeError(`advance: expected ${this.numFighters} inputs, got ${inputs.length}`);
     }
+    this.eliminationEvents.length = 0;
     for (let i = 0; i < this.numFighters; i++) {
       this.stepFighter(i, inputs[i] as InputFrame);
     }
@@ -1198,6 +1233,7 @@ export class Sim {
 
     this.dedup[dedupIdx] = moveInstance;
     d[dBase + FighterField.LAST_ATTACKER] = attacker;
+    d[dBase + FighterField.LAST_HIT_TICK] = this.tick;
 
     if (defenderState === FighterStateId.SHIELD) {
       const shieldLoss = fx.mul(hb.damage, SHIELD_DAMAGE_MULTIPLIER);
@@ -1686,7 +1722,12 @@ export class Sim {
       const percentBefore = d[base + FighterField.PERCENT] as number;
       d[base + FighterField.PERCENT] = fx.add(percentBefore, RING_DAMAGE_PER_TICK);
       d[base + FighterField.RING_DAMAGE_TICK] = this.tick;
-      d[base + FighterField.LAST_ATTACKER] = -1; // ring damage does not credit a KO to anyone
+      // Note (2026-09-10): LAST_ATTACKER is deliberately left alone here. Clearing it every ring
+      // tick used to also wipe the record of a genuine recent combat hit for anyone who spent a
+      // few ticks drifting through ring pressure before crossing the hard margin -- which is the
+      // common case for a real knockback-driven KO near the shrinking ring, not an edge case.
+      // Whether a ring-pressure death still counts as a KO or as pure 'ring' is now decided
+      // explicitly below, in the elimination attribution, using COMBAT_ATTRIBUTION_TICKS.
       // Nudge inward on whichever axes are actually out of bounds, on top of existing velocity,
       // so the ring pushes fighters back toward the middle (and each other) instead of just
       // hurting them in place.
@@ -1699,10 +1740,44 @@ export class Sim {
 
     d[base + FighterField.DEATH_COUNT] = (d[base + FighterField.DEATH_COUNT] as number) + 1;
     const attacker = d[base + FighterField.LAST_ATTACKER] as number;
-    if (attacker >= 0 && attacker !== index) {
-      const attackerBase = attacker * FighterField.FIELD_COUNT;
+
+    // Truthful attribution (2026-09-10, see wiki 'Opening-Seconds Eliminations: Falls
+    // Misreported as Knockouts'): ring causes are their own bucket first (no attacker, they are
+    // not exits through the geometric boundary in the sense a KO is). Otherwise a death only
+    // counts as a knockout if a real combat hit landed within COMBAT_ATTRIBUTION_TICKS -- at low
+    // percent, knockback is far too small to send anyone out on its own, so an old or absent hit
+    // means this was a fall/self-destruct/walk-off, not something the attacker caused.
+    const lastHitTick = d[base + FighterField.LAST_HIT_TICK] as number;
+    const recentlyHit = attacker >= 0 && attacker !== index && lastHitTick >= 0 && this.tick - lastHitTick <= COMBAT_ATTRIBUTION_TICKS;
+    // Recently exposed to ring soft-damage (within the same window used for combat attribution):
+    // covers both "still drifting through ring pressure this exact tick" and "took ring chip
+    // damage a couple of ticks ago, then the hard margin/lethal threshold caught up with it".
+    const ringDamageTick = d[base + FighterField.RING_DAMAGE_TICK] as number;
+    const recentRingExposure = ringDamageTick >= 0 && this.tick - ringDamageTick <= COMBAT_ATTRIBUTION_TICKS;
+    let cause: EliminationCause;
+    if (ringLethal) {
+      cause = 'ring_lethal';
+    } else if (recentlyHit) {
+      // A real, recent combat hit takes priority over ring exposure: someone launched this
+      // fighter and the ring's chip damage along the way did not change who did it.
+      cause = 'knockout';
+    } else if (recentRingExposure) {
+      cause = 'ring';
+    } else {
+      cause = 'fall';
+    }
+    const creditedAttacker = cause === 'knockout' ? attacker : -1;
+    if (creditedAttacker >= 0) {
+      const attackerBase = creditedAttacker * FighterField.FIELD_COUNT;
       d[attackerBase + FighterField.KO_COUNT] = (d[attackerBase + FighterField.KO_COUNT] as number) + 1;
     }
+    this.eliminationEvents.push({
+      fighterIndex: index,
+      tick: this.tick,
+      cause,
+      attacker: creditedAttacker,
+      percentAtDeath: d[base + FighterField.PERCENT] as Fixed,
+    });
     d[base + FighterField.LAST_ATTACKER] = -1;
 
     const respawns = respawnsEnabled(this.settings);

@@ -409,7 +409,7 @@ export class BotController {
     let buttons = 0;
 
     const blast = sim.getCurrentBlastRect();
-    const unsafe = this.unsafeDirection(self, blast);
+    const unsafe = this.unsafeDirection(self, blast, sim.getArena().platforms);
     // Passivity: at EASY, this decision has a real chance of skipping
     // target-chasing entirely -- a genuinely passive bot, not merely a
     // slow-and-sloppy one. Recovery (unsafe !== 0) always overrides this;
@@ -715,6 +715,7 @@ export class BotController {
   private unsafeDirection(
     self: FighterSnapshot,
     blast: { minX: Fixed; maxX: Fixed; minY: Fixed; maxY: Fixed },
+    platforms: readonly { minX: Fixed; maxX: Fixed; y: Fixed; kind?: string }[],
   ): Fixed {
     if (self.posX < fx.add(blast.minX, EDGE_SAFETY_MARGIN)) return ONE;
     if (self.posX > fx.sub(blast.maxX, EDGE_SAFETY_MARGIN)) return fx.neg(ONE);
@@ -722,6 +723,22 @@ export class BotController {
       // Below the safe band (e.g. knocked down off a platform): steer back
       // toward center X so at least horizontal drift helps a recovery.
       return self.posX > 0 ? fx.neg(ONE) : ONE;
+    }
+    // Minimal ledge awareness (2026-09-10, see wiki 'Opening-Seconds Eliminations: Falls
+    // Misreported as Knockouts'): a grounded bot standing near the edge of the solid ground
+    // platform it is actually on (e.g. the-undercroft's central chasm, or either end of a
+    // ground slab) steers back inward, exactly like it already does for the outer blast rect.
+    // This is not combat awareness or edge-guarding -- it fires from standing still or
+    // wandering near a drop, regardless of any target, and is unconditional across
+    // difficulties because "don't walk off a cliff for no reason" is not a difficulty knob.
+    if (self.grounded) {
+      const onLedge = platforms.find(
+        (p) => p.kind !== 'pass-through' && fx.abs(fx.sub(p.y, self.posY)) <= EDGE_SAFETY_MARGIN && self.posX >= fx.sub(p.minX, EDGE_SAFETY_MARGIN) && self.posX <= fx.add(p.maxX, EDGE_SAFETY_MARGIN),
+      );
+      if (onLedge) {
+        if (self.posX < fx.add(onLedge.minX, EDGE_SAFETY_MARGIN)) return ONE;
+        if (self.posX > fx.sub(onLedge.maxX, EDGE_SAFETY_MARGIN)) return fx.neg(ONE);
+      }
     }
     return 0;
   }

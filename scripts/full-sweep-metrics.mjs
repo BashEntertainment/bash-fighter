@@ -39,7 +39,6 @@ if (CEIL < MIN_SAFE_CEIL) {
   console.log(`WARNING: ceilingTicks=${CEIL} is below ${MIN_SAFE_CEIL} (current shrinkFullyClosedTick + stalemate-override relax window). Timeout/no-survivor counts below may be a harness-ceiling artifact, not a real game defect -- raise the ceiling before trusting them.`);
 }
 const N = 20;
-const COMBAT_WINDOW_TICKS = 60;
 
 const DIFFS = [
   ['EASY', BotDifficulty.EASY],
@@ -50,13 +49,12 @@ const DIFFS = [
 function runMatch(arenaEntry, seed, difficulty, chars) {
   const sim = new Sim(seed, N, chars, arenaEntry.arena);
   const bots = Array.from({ length: N }, (_, i) => new BotController(i, difficulty, deriveBotSeed(seed, i)));
-  const lastCombatHitTick = new Array(N).fill(-1); // real attack damage only (2026-09-10 rework:
-  // ring damage now also raises percent every tick a fighter is outside, so the old "any recent
-  // percent rise" heuristic would misclassify hard-backstop ring kills as combat. inRingDanger
-  // lets us tell the two damage sources apart directly instead of guessing from percent deltas.)
   const lastPercent = new Array(N).fill(0);
-  const wasEliminated = new Array(N).fill(false);
-  let boundaryElims = 0, combatElims = 0;
+  // Truthful attribution (2026-09-10): read Sim.eliminationEvents directly instead of guessing
+  // "recent damage means combat" from the outside. See sim.ts EliminationCause and wiki
+  // 'Opening-Seconds Eliminations: Falls Misreported as Knockouts 2026-09-10'.
+  let boundaryElims = 0, combatElims = 0, fallElims = 0, ringLethalElims = 0;
+  let earlyFallElims = 0; // falls in the first 10s of the match, at low percent -- the specific defect under investigation
   let totalDamage = 0;
   let endTick = CEIL, matchEnded = false;
 
@@ -66,18 +64,16 @@ function runMatch(arenaEntry, seed, difficulty, chars) {
     for (let i = 0; i < N; i++) {
       const f = sim.getFighter(i);
       const pct = fx.toFloat(f.percent);
-      if (pct > lastPercent[i] + 0.01) {
-        totalDamage += pct - lastPercent[i];
-        if (!f.inRingDanger) lastCombatHitTick[i] = t; // rose from an attack, not ring tick damage
-      }
+      if (pct > lastPercent[i] + 0.01) totalDamage += pct - lastPercent[i];
       lastPercent[i] = pct;
-      if (f.eliminated && !wasEliminated[i]) {
-        wasEliminated[i] = true;
-        // Combat KO = actually launched (in hitstun / airborne from an attack) recently, not just
-        // "has taken any damage ever". A fighter who dies to the hard ring backstop still counts
-        // as boundary even if they took a hit minutes ago.
-        const recentlyHit = lastCombatHitTick[i] >= 0 && t - lastCombatHitTick[i] <= COMBAT_WINDOW_TICKS;
-        if (recentlyHit && !f.inRingDanger) combatElims++; else boundaryElims++;
+    }
+    for (const ev of sim.eliminationEvents) {
+      if (ev.cause === 'knockout') combatElims++;
+      else if (ev.cause === 'fall') { fallElims++; boundaryElims++; }
+      else if (ev.cause === 'ring_lethal') { ringLethalElims++; boundaryElims++; }
+      else boundaryElims++; // 'ring'
+      if (ev.cause === 'fall' && t < 600 /* 10s @ 60Hz */ && fx.toFloat(ev.percentAtDeath) < 10) {
+        earlyFallElims++;
       }
     }
     if (sim.isMatchOver && sim.isMatchOver()) { endTick = t; matchEnded = true; break; }
@@ -107,7 +103,7 @@ function runMatch(arenaEntry, seed, difficulty, chars) {
 
   return {
     seed, matchEnded, durationSec: Number((endTick / 60).toFixed(1)), survivors,
-    boundaryElims, combatElims, endingKind, totalDamage, endTick,
+    boundaryElims, combatElims, fallElims, ringLethalElims, earlyFallElims, endingKind, totalDamage, endTick,
     survivedIdx: Array.from({ length: N }, (_, i) => !sim.getFighter(i).eliminated),
   };
 }
@@ -132,6 +128,9 @@ for (const arenaEntry of ALL_ARENAS) {
     const wholeLobbyWipe = results.filter((r) => r.endingKind === 'whole-lobby-wipe').length;
     const totalBoundary = results.reduce((a, r) => a + r.boundaryElims, 0);
     const totalCombat = results.reduce((a, r) => a + r.combatElims, 0);
+    const totalFall = results.reduce((a, r) => a + r.fallElims, 0);
+    const totalRingLethal = results.reduce((a, r) => a + r.ringLethalElims, 0);
+    const totalEarlyFall = results.reduce((a, r) => a + r.earlyFallElims, 0);
     const totalDamage = results.reduce((a, r) => a + r.totalDamage, 0);
     const totalTicks = results.reduce((a, r) => a + r.endTick, 0);
     const dps = totalDamage / (totalTicks / 60);
@@ -150,11 +149,14 @@ for (const arenaEntry of ALL_ARENAS) {
       oneSurvivor, noSurvivor, timeouts, finalTwoDoubleKo, wholeLobbyWipe,
       boundaryPct: Number(((100*totalBoundary)/Math.max(1,totalBoundary+totalCombat)).toFixed(1)),
       combatPct: Number(((100*totalCombat)/Math.max(1,totalBoundary+totalCombat)).toFixed(1)),
+      fallPct: Number(((100*totalFall)/Math.max(1,totalBoundary+totalCombat)).toFixed(1)),
+      ringLethalPct: Number(((100*totalRingLethal)/Math.max(1,totalBoundary+totalCombat)).toFixed(1)),
+      earlyFallElims: totalEarlyFall,
       dps: Number(dps.toFixed(2)),
       charSurvivalPct: Object.fromEntries(Object.entries(charTotal).map(([k,v])=>[k, Number((100*(charSurv[k]||0)/v).toFixed(0))])),
     };
     summary.push(row);
-    console.log(`${arenaEntry.id} / ${diffName}: dur[min/med/max]=${row.durMin}/${row.durMed}/${row.durMax}s 1surv=${oneSurvivor}/${SEEDS} nobody=${noSurvivor}/${SEEDS} timeout=${timeouts}/${SEEDS} dblKO=${finalTwoDoubleKo} wipe=${wholeLobbyWipe} boundary=${row.boundaryPct}% combat=${row.combatPct}% dps=${row.dps}`);
+    console.log(`${arenaEntry.id} / ${diffName}: dur[min/med/max]=${row.durMin}/${row.durMed}/${row.durMax}s 1surv=${oneSurvivor}/${SEEDS} nobody=${noSurvivor}/${SEEDS} timeout=${timeouts}/${SEEDS} dblKO=${finalTwoDoubleKo} wipe=${wholeLobbyWipe} boundary=${row.boundaryPct}% combat=${row.combatPct}% fall=${row.fallPct}% ringLethal=${row.ringLethalPct}% earlyFalls(<10s,<10%)=${row.earlyFallElims}/${SEEDS} dps=${row.dps}`);
   }
 }
 

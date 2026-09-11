@@ -463,7 +463,15 @@ export class Match {
         // for reporting the outcome, which an eliminated seat is just as
         // entitled to hear as a surviving one.
         this.events.onEliminated(seat.slot, snap.placement, this.tick);
-        const cause = this.tick - this.lastDamageTick[seat.slot] <= Match.COMBAT_WINDOW_TICKS ? 'combat' : 'boundary_or_other';
+        // Truthful attribution (2026-09-10): read the cause straight off the sim's own
+        // elimination bookkeeping for this tick rather than re-deriving it from "damage
+        // recently" here, which mislabelled ordinary falls/walk-offs at low percent as combat
+        // KOs (see wiki 'Opening-Seconds Eliminations: Falls Misreported as Knockouts
+        // 2026-09-10'). Fall back to 'unknown' only if the event is somehow missing --
+        // should not happen since checkBlastZone always pushes one on elimination.
+        const ev = sim.eliminationEvents.find((e) => e.fighterIndex === seat.slot);
+        const cause = ev ? ev.cause : 'unknown';
+        const attacker = ev ? ev.attacker : -1;
         const matchAgeSec = ((this.tick - this.matchStartedAtTick) / 60).toFixed(1);
         console.log(JSON.stringify({
           evt: 'elimination',
@@ -475,6 +483,7 @@ export class Match {
           matchAgeSec,
           percentAtDeath: pct,
           cause,
+          attacker,
           aliveAfter: this.seats.filter((s) => !s.eliminated).length,
         }));
       }

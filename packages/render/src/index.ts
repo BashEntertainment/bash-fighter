@@ -167,21 +167,46 @@ function framingFloor(stage: StageBounds, viewWidth: number, viewHeight: number)
   minY -= FALL_HEADROOM_WORLD;
   maxY += JUMP_HEADROOM_WORLD;
 
+  // Never claim more than the live blast rect actually covers — this is
+  // what makes the floor shrink correctly as the collapsing arena closes
+  // in, rather than permanently framing the arena's original footprint.
+  // This must happen BEFORE the aspect-ratio correction below, not after:
+  // clamping post-hoc cuts whichever side sticks out past the live blast
+  // rect (independently per edge) without touching the opposite edge,
+  // which silently breaks the aspect match the padding step below just
+  // established and re-centers the box off the actual fought-over space —
+  // this was the real cause of the reported dead-space/off-center bug on
+  // stages whose headroom box pokes past a shrunk blast rect on only one
+  // side (e.g. the fall-headroom band below the ground going past
+  // blastMinY as the ring closes, while the jump-headroom band above
+  // stays inside it, pulling the framed box's center upward and leaving a
+  // dead band at the bottom of the screen).
+  minX = Math.max(minX, stage.blastMinX);
+  maxX = Math.min(maxX, stage.blastMaxX);
+  minY = Math.max(minY, stage.blastMinY);
+  maxY = Math.min(maxY, stage.blastMaxY);
+
   // The "fought-over space plus jump/fall headroom" box computed above
-  // has whatever aspect ratio the stage's own geometry happens to
-  // produce, which on every current stage does not match the viewport's
-  // (see wiki "Camera Framing and Start Screen Composition 2026-09-10"):
-  // battle-royale-20 and the-undercroft are wide relative to their
-  // headroom (viewport ends up X-bound, leaving a dead band above or
-  // below the action), while the-spire is comparatively tall (viewport
-  // ends up Y-bound, leaving dead bands left and right). Pad whichever
-  // axis is short so the box's aspect ratio matches the viewport's
-  // before it is ever handed to computeCamera — that is what actually
-  // fills the screen with the arena instead of leaving letterboxing,
-  // without ever changing what a fighter can reach (presentation only).
-  // Vertical padding keeps the existing fall:jump ratio (a hard landing
-  // needs less warning room than a rising jump); horizontal padding is
-  // split evenly since there's no equivalent asymmetry left-to-right.
+  // (now also clamped to the live blast rect) has whatever aspect ratio
+  // the stage's own geometry happens to produce, which on every current
+  // stage does not match the viewport's (see wiki "Camera Framing and
+  // Start Screen Composition 2026-09-10"): battle-royale-20 and
+  // the-undercroft are wide relative to their headroom (viewport ends up
+  // X-bound, leaving a dead band above or below the action), while
+  // the-spire is comparatively tall (viewport ends up Y-bound, leaving
+  // dead bands left and right). Pad whichever axis is short so the box's
+  // aspect ratio matches the viewport's before it is ever handed to
+  // computeCamera — that is what actually fills the screen with the
+  // arena instead of leaving letterboxing, without ever changing what a
+  // fighter can reach (presentation only). Vertical padding keeps the
+  // existing fall:jump ratio (a hard landing needs less warning room
+  // than a rising jump); horizontal padding is split evenly since
+  // there's no equivalent asymmetry left-to-right. This step is allowed
+  // to grow the box back past the live blast rect on the padded axis —
+  // that only ever shows a little more of the (still physically present)
+  // stage floor/void, never invents geometry, and a correctly-filled,
+  // correctly-centered frame matters more than never drawing a pixel
+  // beyond the ring.
   const viewportAspect = viewWidth / viewHeight;
   const spanX = maxX - minX;
   const spanY = maxY - minY;
@@ -203,15 +228,7 @@ function framingFloor(stage: StageBounds, viewWidth: number, viewHeight: number)
     maxX += extra / 2;
   }
 
-  // Never claim more than the live blast rect actually covers — this is
-  // what makes the floor shrink correctly as the collapsing arena closes
-  // in, rather than permanently framing the arena's original footprint.
-  return {
-    minX: Math.max(minX, stage.blastMinX),
-    maxX: Math.min(maxX, stage.blastMaxX),
-    minY: Math.max(minY, stage.blastMinY),
-    maxY: Math.min(maxY, stage.blastMaxY),
-  };
+  return { minX, maxX, minY, maxY };
 }
 
 // Fighters spread by roughly a screen-width during normal play; a
@@ -271,12 +288,25 @@ const BADGE_CHAR_WIDTH_PX = 8;
 const BADGE_BOX_HEIGHT_PX = 16;
 const BADGE_BOX_MARGIN_PX = 3;
 
-function badgeBox(x: number, y: number, digits: number): BadgeBox {
-  const halfWidth = (digits * BADGE_CHAR_WIDTH_PX) / 2 + BADGE_BOX_MARGIN_PX;
+function badgeBox(x: number, y: number, digits: number, isLocalPlayer = false): BadgeBox {
+  // The local player's badge renders BADGE_FONT_SIZE + 3px larger (see
+  // layoutBadges) so it's the one badge a player can find at a glance --
+  // but this box used to always assume the default font size, so the
+  // space it reserved for the local badge was smaller than what actually
+  // got drawn. A neighbouring badge could then be placed just outside
+  // the (too-small) reserved box and still visually collide with the
+  // bigger local badge actually on screen -- the local player's own
+  // badge, exempt from ever being dropped, was the one most likely to
+  // still show an illegible overlap in a tight cluster. Scale the
+  // reserved box by the same ratio the font grows by so it actually
+  // matches what gets drawn.
+  const sizeScale = isLocalPlayer ? (BADGE_FONT_SIZE + 3) / BADGE_FONT_SIZE : 1;
+  const halfWidth = (digits * BADGE_CHAR_WIDTH_PX * sizeScale) / 2 + BADGE_BOX_MARGIN_PX;
+  const boxHeight = BADGE_BOX_HEIGHT_PX * sizeScale;
   return {
     left: x - halfWidth,
     right: x + halfWidth,
-    top: y - BADGE_BOX_HEIGHT_PX - BADGE_BOX_MARGIN_PX,
+    top: y - boxHeight - BADGE_BOX_MARGIN_PX,
     bottom: y + BADGE_BOX_MARGIN_PX,
   };
 }
@@ -471,7 +501,7 @@ export class Renderer {
     let textIndex = 0;
     for (const c of ordered) {
       const label = String(c.slot + 1);
-      const box = badgeBox(c.headX, c.headY, label.length);
+      const box = badgeBox(c.headX, c.headY, label.length, c.isLocalPlayer);
       const overlaps = !c.isLocalPlayer && placedBoxes.some((p) => boxesOverlap(p, box));
       if (overlaps) continue;
       placedBoxes.push(box);

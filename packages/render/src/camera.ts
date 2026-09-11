@@ -100,10 +100,25 @@ export function computeCamera(
   // to the arena's vertical midpoint then frames empty sky above a
   // field of fighters clustered on the ground instead of the ground
   // itself.
-  if (cfg.arena.maxX - cfg.arena.minX > halfViewWorldX * 2) {
+  // Use >= (not strictly >) here: when the arena's own span exactly
+  // matches what the view can show (the common "camera holds the whole
+  // arena, no zoom-in" case -- e.g. a few fighters standing near the
+  // ground on a stage whose asymmetric fall/jump headroom box is exactly
+  // the view's own size), the valid center range collapses to a single
+  // point: the arena box's own center. With a strict >, that boundary
+  // case fell through to raw fighter-centroid centering instead, which
+  // ignores the asymmetric fall:jump headroom split framingFloor()
+  // deliberately built (arena boxes lean toward jump headroom above the
+  // ground, since jumps need more warning room than falls) and instead
+  // centers on the fighters' own (near-ground) mean position -- showing
+  // far more empty space below the ground than above it. This is what
+  // produced the "empty bottom third" dead-space defect on stages like
+  // the-foundry: the ground-hugging fighter cluster's centroid sits well
+  // below the arena box's own vertical middle.
+  if (cfg.arena.maxX - cfg.arena.minX >= halfViewWorldX * 2) {
     centerX = Math.min(Math.max(centerX, cfg.arena.minX + halfViewWorldX), cfg.arena.maxX - halfViewWorldX);
   }
-  if (cfg.arena.maxY - cfg.arena.minY > halfViewWorldY * 2) {
+  if (cfg.arena.maxY - cfg.arena.minY >= halfViewWorldY * 2) {
     centerY = Math.min(Math.max(centerY, cfg.arena.minY + halfViewWorldY), cfg.arena.maxY - halfViewWorldY);
   }
 

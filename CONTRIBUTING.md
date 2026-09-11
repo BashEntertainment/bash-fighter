@@ -172,6 +172,20 @@ For a full annotated walkthrough — data file, validator, render shape,
 and roster registration, with real file paths and commands — see
 [`docs/ADDING_A_CHARACTER.md`](./docs/ADDING_A_CHARACTER.md).
 
+## Adding a new stage
+
+Stages (called "arenas" in code — both names mean the same thing) are
+also data, not sim code. Each one is a single `ArenaData` object under
+`packages/content/src/arenas/<name>/data.ts` (platforms, walls, blast-rect
+bounds, spawn points), registered in `packages/content/src/arenas.ts`.
+The existing five (`battle-royale-20`, `the-undercroft`, `the-spire`,
+`the-foundry`, `the-atoll`) are the reference pattern. Run the content
+validator (`assertValidArena`) and `npm test`, which stress-tests every
+registered arena for determinism.
+
+For a full annotated walkthrough with real file paths and commands, see
+[`docs/ADDING_A_STAGE.md`](./docs/ADDING_A_STAGE.md).
+
 ## Coding standards
 
 - TypeScript, strict mode (`tsconfig.base.json`: `strict`,

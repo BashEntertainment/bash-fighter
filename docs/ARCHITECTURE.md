@@ -107,6 +107,43 @@ Bash Fighter instead uses:
   server side. One WebSocket connection per client at `/socket`; see
   `docs/PROTOCOL.md` for the exact message set.
 
+## How a match is created and torn down (server)
+
+`server/src/rooms.ts` owns lobby/room management: incoming connections
+queue until a room reaches its minimum player count, at which point it
+fills any remaining seats with bots and picks a random arena from
+`packages/content/src/arenas.ts`. `server/src/match.ts` then owns one
+room's lifetime: it constructs the same `Sim` every client will build
+from `seed` + `numFighters` + `arenaId`, runs the authoritative tick
+loop, and broadcasts snapshots (`docs/PROTOCOL.md`) until the match ends
+or every human seat disconnects. Teardown is driven by *total connected
+clients* (players and spectators), not just human players — a spectated
+match with zero remaining human players still tears down promptly rather
+than running forever as a phantom room; see the reconnection grace
+window and abandoned-match handling in the same file for the exact
+rules. `server/src/index.ts` is just the HTTP/WebSocket entry point that
+wires a new connection into `rooms.ts`.
+
+## Where characters and stages are defined, and how to add one
+
+Both are pure data, validated by `packages/content/src/validate.ts`, and
+registered in exactly one place each (`packages/content/src/characters.ts`
+and `packages/content/src/arenas.ts` respectively) so nothing else in the
+repo hardcodes the roster or the stage list:
+
+- Characters: one directory per character under
+  `packages/content/src/characters/<name>/` (`data.ts` for stats/moveset,
+  `animation.ts` for pose parameters). Walkthrough:
+  [`docs/ADDING_A_CHARACTER.md`](./ADDING_A_CHARACTER.md).
+- Stages (called "arenas" in code — both names refer to the same thing):
+  one file per stage under `packages/content/src/arenas/<name>/data.ts`,
+  an `ArenaData` object (platforms, walls, blast-rect bounds, spawn
+  points). Walkthrough: [`docs/ADDING_A_STAGE.md`](./ADDING_A_STAGE.md).
+
+Both are drawn generically by `packages/render` from their data alone —
+a new character or stage is playable and visible with zero render-code
+changes before any custom art/animation pass.
+
 ## What's real vs. stubbed today
 
 - `packages/sim`: implemented and tested — fixed-point math, PRNG, the
@@ -132,7 +169,13 @@ Bash Fighter instead uses:
 - `packages/render`, `packages/input`: implemented — WebGL2 (PixiJS)
   renderer with per-character shapes and a shared pose/animation system,
   keyboard/gamepad input, items and stage hazards drawn on screen (not
-  just simulated invisibly).
+  just simulated invisibly). Known gap: `packages/render` has almost no
+  automated test coverage (one regression test, `test/palette.test.ts`)
+  — most render changes are still verified by eyeballing local/production
+  screenshots rather than an assertion. Contributions adding tests for
+  pure-logic render modules (e.g. `camera.ts`'s aspect-ratio framing math,
+  `fighter-pose.ts`'s pose interpolation) are welcome and don't need a
+  DOM/WebGL context to run — see the good-first-issues on GitHub.
 - **Live deployment.** The match server and web client run in production
   at http://135.181.45.254/ (plain HTTP/WS — no TLS yet, pending a domain
   purchase), serving real 20-player matches over the public internet.

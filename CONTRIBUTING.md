@@ -37,7 +37,7 @@ package's tests before opening a PR.
 
 ### Running the tests
 
-`npm test` runs every test in `packages/*/test/**/*.test.ts` — 334 tests
+`npm test` runs every test in `packages/*/test/**/*.test.ts` — 431 tests as of 2026-09-10 (this number grows regularly; don't be alarmed if `npm test`'s own summary reports more than what's written here — the summary is the source of truth, not this doc)
 as of this writing, including the heavy N-fighter/battle-royale suites
 (`determinism-20`, `stress-match-end`, `items-hazards`, `bot`). Nothing
 is skipped by default; there is no separate "heavy" script to remember.
@@ -74,7 +74,8 @@ stderr instead of failing outright.
 `server/test/*.test.ts` (websocket reconnection, mid-match join, spectator
 rate — real sockets and timers) is a separate script, `npm run test:server`,
 kept apart from the packages suite's single process because it uses real
-network sockets and timers. It's small (10 tests, ~19s) so it doesn't need
+network sockets and timers. It's small (16 tests, ~20-35s depending on
+container load) so it doesn't need
 splitting further. **It is not included in `npm test`** — run it
 explicitly. CI runs both via `npm run test:all`, so don't rely on `npm
 test` alone to catch a server regression.
@@ -90,9 +91,9 @@ node --test --test-isolation=none packages/sim/test/*.test.ts
 
 | Command | Tests | Peak RSS | Wall time |
 |---|---|---|---|
-| `npm test` (isolation=none, this repo's default) | 334 | ~148-183MB | 6-12s |
-| same suite, `--test-concurrency=8`, no isolation flag (the old script's behaviour on any multi-core machine) | 334 | ~838MB | ~12s |
-| `npm run test:server` | 10 | not separately measured; small | ~19s |
+| `npm test` (isolation=none, this repo's default) | 431 | ~148-183MB | 6-12s |
+| same suite, `--test-concurrency=8`, no isolation flag (the old script's behaviour on any multi-core machine) | 334 (measured 2026-09-08; test count has grown since) | ~838MB | ~12s |
+| `npm run test:server` | 16 | not separately measured; small | ~20-35s |
 
 The 838MB figure is not hypothetical — it's what the old `npm test`
 script actually did on any machine with several CPU cores (most

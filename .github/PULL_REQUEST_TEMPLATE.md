@@ -8,6 +8,9 @@ closes, if any (`Closes #123`).
 - [ ] `npm run typecheck` passes
 - [ ] `npm run lint` passes (no new warnings)
 - [ ] `npm test` passes
+- [ ] `npm run test:server` passes (separate from `npm test` — covers the
+      match server, only needed if you touched `server/` or protocol code
+      it depends on)
 - Manual testing notes (what you ran, what you saw), if applicable.
 
 ## Scope

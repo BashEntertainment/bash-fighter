@@ -18,11 +18,13 @@
  * reality with no error anywhere.
  */
 
-/** Bumped to 2 for resume-token reconnection support (hello may carry a
- *  `resume` token, welcome always carries one). A mismatch is still refused
- *  explicitly at the handshake rather than silently misbehaving -- see the
- *  module comment above. */
-export const PROTOCOL_VERSION = 2;
+/** Bumped to 3 for delta-compressed snapshots (2026-09-11): the server may
+ *  now send a `SNAPSHOT_DELTA` binary frame instead of a full `SNAPSHOT`,
+ *  see "Binary: snapshot delta" below and the "Bandwidth Reduction Pass
+ *  2026-09-11" wiki page. A mismatch is still refused explicitly at the
+ *  handshake rather than silently misbehaving -- see the module comment
+ *  above. (Was bumped to 2 for resume-token reconnection support.) */
+export const PROTOCOL_VERSION = 3;
 
 /** Snapshots per second sent to each client. The sim runs at 60Hz; clients
  *  interpolate between snapshots and predict their own fighter, so the
@@ -33,7 +35,17 @@ export const SNAPSHOT_HZ = 20;
 export const BinaryTag = {
   INPUT: 1,
   SNAPSHOT: 2,
+  /** A delta against a previously-sent full SNAPSHOT for this same
+   *  connection, see "Binary: snapshot delta" below. */
+  SNAPSHOT_DELTA: 3,
 } as const;
+
+/** How many snapshots between forced full keyframes, per connection. Bounds
+ *  how stale a client's baseline can ever get after a dropped delta or a
+ *  reconnect: at 20Hz this is once per second. Also the periodic resync
+ *  safety net flagged in the original design as future work -- see
+ *  [[Netcode Design Part 2: Bandwidth and State Sync]]. */
+export const KEYFRAME_INTERVAL_SNAPSHOTS = 20;
 
 // ---------------------------------------------------------------------------
 // Control messages: client -> server
@@ -275,6 +287,157 @@ export function decodeSnapshot(bytes: Uint8Array): WireSnapshot | null {
     ackedInputTick: view.getUint32(5, true),
     state,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Binary: snapshot delta (server -> client)
+//
+// A delta is always relative to a specific previously-sent full SNAPSHOT for
+// THIS connection (identified by baseTick), never to another delta -- this
+// keeps reconstruction a single step (copy the last full state, apply
+// changed words) instead of a chain that a single dropped frame could break
+// silently. If a client's decoder doesn't recognise baseTick as its current
+// baseline (never received that keyframe, or has since applied a different
+// one), it must discard the delta and wait for the next periodic full
+// keyframe (KEYFRAME_INTERVAL_SNAPSHOTS) rather than guess -- see
+// SnapshotStreamDecoder below, which is the only supported way to consume
+// this frame type.
+// ---------------------------------------------------------------------------
+
+/** tag(1) + tick(4) + ackedInputTick(4) + baseTick(4) + changedCount(2) =
+ *  15 bytes, then changedCount * (index(2) + value(4)) = 6 bytes/change. */
+export const SNAPSHOT_DELTA_HEADER_BYTES = 15;
+
+export interface WireSnapshotDelta {
+  tick: number;
+  ackedInputTick: number;
+  /** The tick of the full SNAPSHOT this delta is relative to. */
+  baseTick: number;
+  changed: Array<{ index: number; value: number }>;
+}
+
+export function encodeSnapshotDelta(delta: WireSnapshotDelta): Uint8Array {
+  const n = delta.changed.length;
+  const out = new Uint8Array(SNAPSHOT_DELTA_HEADER_BYTES + n * 6);
+  const view = new DataView(out.buffer);
+  view.setUint8(0, BinaryTag.SNAPSHOT_DELTA);
+  view.setUint32(1, delta.tick >>> 0, true);
+  view.setUint32(5, delta.ackedInputTick >>> 0, true);
+  view.setUint32(9, delta.baseTick >>> 0, true);
+  view.setUint16(13, n, true);
+  let off = SNAPSHOT_DELTA_HEADER_BYTES;
+  for (const c of delta.changed) {
+    view.setUint16(off, c.index, true);
+    view.setInt32(off + 2, c.value, true);
+    off += 6;
+  }
+  return out;
+}
+
+export function decodeSnapshotDelta(bytes: Uint8Array): WireSnapshotDelta | null {
+  if (bytes.byteLength < SNAPSHOT_DELTA_HEADER_BYTES) return null;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  if (view.getUint8(0) !== BinaryTag.SNAPSHOT_DELTA) return null;
+  const n = view.getUint16(13, true);
+  if (bytes.byteLength !== SNAPSHOT_DELTA_HEADER_BYTES + n * 6) return null;
+  const changed: Array<{ index: number; value: number }> = [];
+  let off = SNAPSHOT_DELTA_HEADER_BYTES;
+  for (let i = 0; i < n; i++) {
+    changed.push({ index: view.getUint16(off, true), value: view.getInt32(off + 2, true) });
+    off += 6;
+  }
+  return {
+    tick: view.getUint32(1, true),
+    ackedInputTick: view.getUint32(5, true),
+    baseTick: view.getUint32(9, true),
+    changed,
+  };
+}
+
+/** Server-side helper: turns a stream of full state buffers for one
+ *  connection into full keyframes + deltas, per the scheme above. One
+ *  instance per connection -- state is per-recipient by design, since two
+ *  clients can be at different points in the stream (e.g. one just
+ *  reconnected). */
+export class SnapshotStreamEncoder {
+  private lastSentState: Int32Array | null = null;
+  private lastSentTick: number | null = null;
+  private sinceKeyframe = 0;
+
+  /** Forces the next call to encode() to be a full keyframe. Call this on a
+   *  fresh/resumed connection so its first frame is never a delta against a
+   *  baseline the client cannot possibly have. */
+  reset(): void {
+    this.lastSentState = null;
+    this.lastSentTick = null;
+    this.sinceKeyframe = 0;
+  }
+
+  encode(tick: number, ackedInputTick: number, state: Int32Array): Uint8Array {
+    const needsKeyframe =
+      this.lastSentState === null ||
+      this.lastSentTick === null ||
+      this.lastSentState.length !== state.length ||
+      this.sinceKeyframe >= KEYFRAME_INTERVAL_SNAPSHOTS;
+    if (needsKeyframe) {
+      this.sinceKeyframe = 0;
+      this.lastSentState = state.slice();
+      this.lastSentTick = tick;
+      return encodeSnapshot({ tick, ackedInputTick, state });
+    }
+    const baseTick = this.lastSentTick as number;
+    const prev = this.lastSentState as Int32Array;
+    const changed: Array<{ index: number; value: number }> = [];
+    for (let i = 0; i < state.length; i++) {
+      if (state[i] !== prev[i]) changed.push({ index: i, value: state[i] as number });
+    }
+    this.sinceKeyframe += 1;
+    this.lastSentState = state.slice();
+    this.lastSentTick = tick;
+    return encodeSnapshotDelta({ tick, ackedInputTick, baseTick, changed });
+  }
+}
+
+/** Client-side helper: the exact inverse of SnapshotStreamEncoder. Feed it
+ *  every binary snapshot frame in arrival order; it hands back a
+ *  reconstructed full WireSnapshot, or null if the frame could not be
+ *  applied (malformed, or a delta whose baseTick isn't the decoder's
+ *  current baseline -- e.g. after a dropped frame). Returning null rather
+ *  than guessing is deliberate: the caller simply skips that tick's update
+ *  and picks back up cleanly on the next full keyframe, at most
+ *  KEYFRAME_INTERVAL_SNAPSHOTS away -- it never risks applying a delta to
+ *  the wrong base and drifting from the server. */
+export class SnapshotStreamDecoder {
+  private lastState: Int32Array | null = null;
+  private lastTick: number | null = null;
+
+  decode(bytes: Uint8Array): WireSnapshot | null {
+    if (bytes.byteLength === 0) return null;
+    const tag = bytes[0];
+    if (tag === BinaryTag.SNAPSHOT) {
+      const snap = decodeSnapshot(bytes);
+      if (!snap) return null;
+      this.lastState = snap.state.slice();
+      this.lastTick = snap.tick;
+      return snap;
+    }
+    if (tag === BinaryTag.SNAPSHOT_DELTA) {
+      const delta = decodeSnapshotDelta(bytes);
+      if (!delta) return null;
+      if (this.lastState === null || this.lastTick !== delta.baseTick) {
+        // Unknown or stale baseline (never got the keyframe this delta is
+        // relative to, or missed a frame since) -- drop it and wait for the
+        // next full keyframe rather than reconstructing from a guess.
+        return null;
+      }
+      const state = this.lastState.slice();
+      for (const c of delta.changed) state[c.index] = c.value;
+      this.lastState = state;
+      this.lastTick = delta.tick;
+      return { tick: delta.tick, ackedInputTick: delta.ackedInputTick, state };
+    }
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------

@@ -61,18 +61,52 @@ Any frame that isn't exactly 15 bytes, or whose first byte isn't `1`, is
 silently dropped — never trusted, never allowed to reach the sim or crash
 the tick loop.
 
-## Binary: snapshot (server -> client), variable length
+## Binary: snapshot (server -> client), two shapes
+
+Sent to every connected client (players and spectators) at `SNAPSHOT_HZ`
+(20/sec), each with its own `ackedInputTick`. As of protocol version 3
+(2026-09-11, see wiki "Bandwidth Reduction Pass 2026-09-11") this is
+**delta-compressed**: a full keyframe only periodically, deltas the rest of
+the time. Which shape a given frame is is the first byte (`tag`).
+
+### Full keyframe (`tag=2`, `SNAPSHOT`)
 
 Header (9 bytes): `tag(1)=2 | tick(u32 LE) | ackedInputTick(u32 LE)`, then
 the full serialized sim `StateBuffer` as consecutive `i32` LE words (see
-`Sim.saveState`/`loadState` in `packages/sim`).
+`Sim.saveState`/`loadState` in `packages/sim`). Sent:
 
-Sent to every connected client (players and spectators) at `SNAPSHOT_HZ`
-(20/sec), each with its own `ackedInputTick`. This is the full state, not a
-delta, in this first cut — see `NETPLAY_TODO` in
-`packages/net/src/index.ts` and the "Netplay Implementation and Measured
-Performance" wiki page for the delta-compression follow-up and the actual
-bytes/sec this costs at 20 players.
+- as the very first snapshot on any connection (fresh join, resumed
+  reconnect — a connection can never be sent a delta against a baseline it
+  could not possibly have), and
+- at least once every `KEYFRAME_INTERVAL_SNAPSHOTS` (20, i.e. once/sec at
+  20Hz) regardless, as a resync safety net.
+
+### Delta (`tag=3`, `SNAPSHOT_DELTA`)
+
+Header (15 bytes): `tag(1)=3 | tick(u32 LE) | ackedInputTick(u32 LE) |
+baseTick(u32 LE) | changedCount(u16 LE)`, then `changedCount` entries of
+`index(u16 LE) | value(i32 LE)` (6 bytes each) — the sparse set of
+`StateBuffer` words that changed since `baseTick`.
+
+`baseTick` names the specific full keyframe this delta is relative to for
+*this connection*. A delta is always relative to the last keyframe sent on
+this same connection, never to another delta, so reconstruction is always
+one step (copy the keyframe, apply the changed words) — never a chain a
+single dropped frame could break silently.
+
+### Client decoding: `SnapshotStreamDecoder`
+
+Both server encoding (`SnapshotStreamEncoder`) and client decoding
+(`SnapshotStreamDecoder`) live in `packages/net/src/protocol.ts` — these are
+the only supported way to produce/consume this stream; nothing else should
+hand-roll delta application. `SnapshotStreamDecoder.decode(bytes)` returns a
+reconstructed full `WireSnapshot` exactly like `decodeSnapshot` used to
+return directly, so callers elsewhere in the client are unchanged. If a
+delta's `baseTick` doesn't match the decoder's current baseline (a dropped
+frame, or a stale decoder after some other frame was applied), `decode`
+returns `null` for that frame — the caller simply skips that tick's update,
+never guesses, and self-heals cleanly at the next full keyframe (at most
+`KEYFRAME_INTERVAL_SNAPSHOTS` away).
 
 ## Client responsibilities
 

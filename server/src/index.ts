@@ -14,10 +14,9 @@ import {
   PROTOCOL_VERSION,
   parseClientControl,
   decodeInput,
-  encodeSnapshot,
+  SnapshotStreamEncoder,
   sanitiseName,
   type ServerControlMessage,
-  type WireSnapshot,
 } from '@bash-fighter/net/src/protocol.ts';
 import { RoomManager, DEFAULT_CAPACITY, DEFAULT_MINIMUM } from './rooms.ts';
 import { tickMetricsSnapshot } from './tick-metrics.ts';
@@ -45,6 +44,13 @@ interface ClientConn {
    *  needs. A belated close from a socket the server has already retired
    *  is expected, not an error. */
   superseded: boolean;
+  /** Per-connection delta-compression state for the snapshot broadcast --
+   *  see [[Bandwidth Reduction Pass 2026-09-11]]. Deliberately per
+   *  connection, not per match/slot: a fresh connection (new socket, incl.
+   *  a resumed reconnect) always starts with a fresh encoder, so its very
+   *  first snapshot is a full keyframe -- there is no way for a client to
+   *  receive a delta against a baseline it could not possibly have. */
+  snapshotEncoder: SnapshotStreamEncoder;
 }
 
 const clients = new Map<string, ClientConn>();
@@ -224,8 +230,7 @@ function makeEventsFor(matchId: string) {
         // 0 for them rather than a per-slot lookup that has no meaning for
         // that connection.
         const ackedInputTick = spectator ? 0 : acked.get(c.slot) ?? 0;
-        const snap: WireSnapshot = { tick, ackedInputTick, state: buf };
-        sendBinary(c, encodeSnapshot(snap));
+        sendBinary(c, c.snapshotEncoder.encode(tick, ackedInputTick, buf));
       }
     },
     onEliminated(slot: number, placement: number, tick: number) {
@@ -288,6 +293,7 @@ const wss = new WebSocketServer({ server, path: '/socket' });
     spectating: false,
     helloed: false,
     superseded: false,
+    snapshotEncoder: new SnapshotStreamEncoder(),
   };
   clients.set(conn.id, conn);
   logConn(conn, 'connected');

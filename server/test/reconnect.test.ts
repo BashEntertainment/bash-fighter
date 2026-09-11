@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { WebSocket } from 'ws';
 import { hashStateBuffer } from '@bash-fighter/sim/src/hash.ts';
-import { PROTOCOL_VERSION, BinaryTag, decodeSnapshot, encodeInput } from '@bash-fighter/net/src/protocol.ts';
+import { PROTOCOL_VERSION, SnapshotStreamDecoder, encodeInput } from '@bash-fighter/net/src/protocol.ts';
 
 function waitForHealth(port: number, timeoutMs: number): Promise<void> {
   const deadline = Date.now() + timeoutMs;
@@ -69,6 +69,7 @@ function connectClient(
     const controls: ControlMsg[] = [];
     const waiters: { pred: (m: ControlMsg) => boolean; resolve: (m: ControlMsg) => void }[] = [];
     let last: { tick: number; state: Int32Array } | null = null;
+    const snapshotDecoder = new SnapshotStreamDecoder();
     const timer = setTimeout(() => reject(new Error(`${name} never opened`)), 20000);
 
     ws.on('open', () => {
@@ -110,10 +111,8 @@ function connectClient(
         }
       } else {
         const buf = data as Buffer;
-        if (buf[0] === BinaryTag.SNAPSHOT) {
-          const snap = decodeSnapshot(new Uint8Array(buf));
-          if (snap) last = { tick: snap.tick, state: snap.state };
-        }
+        const snap = snapshotDecoder.decode(new Uint8Array(buf));
+        if (snap) last = { tick: snap.tick, state: snap.state };
       }
     });
     ws.on('error', reject);

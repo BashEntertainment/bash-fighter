@@ -60,7 +60,9 @@ test('a spectating connection receives roughly half the snapshot rate of an acti
 
     function countSnapshots(ws: WebSocket, onCount: () => void): void {
       ws.on('message', (data, isBinary) => {
-        if (isBinary && (data as Buffer)[0] === BinaryTag.SNAPSHOT) onCount();
+        // Count any snapshot frame, full keyframe or delta -- rate is about
+        // frequency of updates, not which encoding a given tick happened to use.
+        if (isBinary && ((data as Buffer)[0] === BinaryTag.SNAPSHOT || (data as Buffer)[0] === BinaryTag.SNAPSHOT_DELTA)) onCount();
       });
     }
     countSnapshots(activeWs, () => activeSnapshots++);

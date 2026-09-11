@@ -38,7 +38,7 @@ import {
   PROTOCOL_VERSION,
   SNAPSHOT_HZ,
   encodeInput,
-  decodeSnapshot,
+  SnapshotStreamDecoder,
   type ServerControlMessage,
 } from '@bash-fighter/net';
 import { FixedTimestepLoop } from './loop.ts';
@@ -123,6 +123,7 @@ function snapshotToRenderFighter(s: FighterSnapshot): RenderFighterState {
  * shape so main.ts can switch between the two without them knowing about
  * each other. */
 export class NetMatch {
+  private snapshotDecoder = new SnapshotStreamDecoder();
   readonly renderer: Renderer;
   readonly input = new InputManager();
   private ws: WebSocket | null = null;
@@ -243,6 +244,12 @@ export class NetMatch {
   private openSocket(): void {
     const ws = new WebSocket(this.url);
     this.ws = ws;
+    // Fresh connection (including a resumed reconnect) -- the server's own
+    // per-connection encoder also resets on a new socket, so the very
+    // first snapshot it sends will be a full keyframe. Resetting the
+    // client decoder in lockstep just means it never tries to apply a
+    // delta against a baseline from a dead connection.
+    this.snapshotDecoder = new SnapshotStreamDecoder();
     ws.binaryType = 'arraybuffer';
     ws.addEventListener('open', () => {
       const hello: Record<string, unknown> = { t: 'hello', protocolVersion: PROTOCOL_VERSION, name: this.name };
@@ -454,7 +461,7 @@ export class NetMatch {
   }
 
   private handleBinary(bytes: Uint8Array): void {
-    const snap = decodeSnapshot(bytes);
+    const snap = this.snapshotDecoder.decode(bytes);
     if (!snap || !this.localSim) return;
 
     const previousSnapState = this.currSnapState;

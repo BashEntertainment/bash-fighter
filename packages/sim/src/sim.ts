@@ -1715,6 +1715,18 @@ export class Sim {
     const percentNow = d[base + FighterField.PERCENT] as number;
     const ringLethal = (percentNow as number) >= (RING_LETHAL_PERCENT as number);
 
+    // Record ring exposure for THIS tick before branching on hard/lethal. Once the stalemate
+    // override has decayed ringHardMargin() to zero (see above -- routinely true late in a long
+    // match, exactly when most eliminations happen), outsideSoft and outsideHard become the same
+    // threshold, so a fighter can go straight from "inside" to "eliminated" in a single tick
+    // without ever passing through the soft-only branch below that used to be the only place
+    // RING_DAMAGE_TICK got set. That left recentRingExposure false at the moment of death and
+    // every such elimination was misattributed as a plain 'fall' -- a real classification bug
+    // (not a harness artifact): see wiki 'Resolution Guarantee and Harness Trust 2026-09-10'.
+    // outsideSoft is already established (checked above; function returns early if false), so
+    // this fighter is taking ring pressure this tick regardless of which branch runs next.
+    d[base + FighterField.RING_DAMAGE_TICK] = this.tick;
+
     if (!outsideHard && !ringLethal) {
       // Soft boundary: damaging pressure, not a kill. Accumulating percent both threatens the
       // hard backstop on its own over time and makes this fighter far easier for anyone else to

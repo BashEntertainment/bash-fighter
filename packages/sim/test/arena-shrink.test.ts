@@ -12,6 +12,7 @@ import { makeInputFrame } from '../src/types.ts';
 import {
   computeCurrentBlastRect,
   computeGroundHalfExtents,
+  computeSafeExtents,
   computeShrinkProgress,
 } from '../src/arena-shrink.ts';
 import { resolveMatchSettings } from '../src/match-settings.ts';
@@ -124,5 +125,51 @@ describe('Arena shrink: a passive fighter does not win', () => {
       const passive = sim.getFighter(0);
       assert.notStrictEqual(passive.placement, 1, `seed ${seed}: passive fighter won (placement 1)`);
     }
+  });
+});
+
+describe('Arena shrink: fully-closed floor keeps shrinking below FINAL_RING_FIGHTERS (regression for the-foundry seed 1003)', () => {
+  it('the floor for a 2-fighter endgame is narrower than the floor for a 6-fighter endgame, on every stage', () => {
+    // Regression for the 2026-09-10 defect: once the field thinned below
+    // FINAL_RING_FIGHTERS (6), the fully-closed ring floor used to stay
+    // pinned at the 6-fighter size forever (or wider, if a stage's
+    // convergence platform was roomier), so the last couple of survivors
+    // could circle safely inside it indefinitely and the match would
+    // never resolve (see scripts/repro/repro-foundry-1003.ts). The floor
+    // must keep contracting as fewer fighters remain, all the way down to
+    // a true final-duel size.
+    const fighterCount = 20;
+    const tick = 0; // tick 0 so the time-based schedule (t) plays no role -- isolates the alive-count effect
+    for (const entry of ALL_ARENAS) {
+      const settings = resolveMatchSettings({});
+      const sixLeft = computeSafeExtents(entry.arena, 6, fighterCount, tick, settings);
+      const twoLeft = computeSafeExtents(entry.arena, 2, fighterCount, tick, settings);
+      const sixWidth = sixLeft.maxX - sixLeft.minX;
+      const twoWidth = twoLeft.maxX - twoLeft.minX;
+      assert.ok(
+        twoWidth < sixWidth,
+        `${entry.id}: expected the 2-survivor floor (${twoWidth}) to be narrower than the 6-survivor floor (${sixWidth})`,
+      );
+    }
+  });
+
+  it('the-foundry seed 1003 at HARD resolves to exactly one survivor within the tick ceiling', () => {
+    const seed = 1003;
+    const entry = ALL_ARENAS[seed % ALL_ARENAS.length]!;
+    assert.equal(entry.id, 'the-foundry', 'this regression is specifically about the-foundry; ALL_ARENAS order changed');
+    const N = 20;
+    const sim = new Sim(seed, N, undefined, entry.arena);
+    const bots = Array.from({ length: N }, (_, i) => new BotController(i, BotDifficulty.HARD, deriveBotSeed(seed, i)));
+    const TICK_CEILING = 60 * 60 * 10;
+    let ticks = 0;
+    while (!sim.isMatchOver() && ticks < TICK_CEILING) {
+      const inputs = bots.map((b) => b.nextInput(sim));
+      sim.advance(inputs);
+      ticks++;
+    }
+    assert.ok(sim.isMatchOver(), `match did not end within ${TICK_CEILING} ticks`);
+    let survivors = 0;
+    for (let i = 0; i < N; i++) if (!sim.getFighter(i).eliminated) survivors++;
+    assert.equal(survivors, 1, `expected exactly one survivor, got ${survivors}`);
   });
 });

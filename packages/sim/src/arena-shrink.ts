@@ -229,7 +229,23 @@ export function computeSafeExtents(
 ): BlastRect {
   const ground = computeGroundHalfExtents(arena);
   const ringFighters = finalRingFighterCount(fighterCount);
-  const minFinal = computeMinFinalHalfExtents(arena, ground, ringFighters);
+  // The floor a fully-closed ring must never cross was previously sized
+  // once, for `ringFighters` (a roster-wide constant, capped at
+  // FINAL_RING_FIGHTERS=6) and then held constant for the rest of the
+  // match. That is correct while >= ringFighters are alive, but wrong
+  // once the field thins past that: a 20-fighter match that comes down to
+  // its last two survivors still got a floor sized for six, wide enough
+  // (or, on a stage whose convergence platform is roomier still, wider)
+  // that two cautious bots could circle inside it for the rest of the
+  // 10-minute regression ceiling without ever being forced to touch --
+  // exactly the seed-1003/the-foundry non-resolution this rework was
+  // supposed to make structurally impossible. The floor must keep
+  // shrinking as the field keeps thinning below ringFighters, all the
+  // way down to a final-duel size (2 fighters) once only two remain, so
+  // "every match resolves" no longer depends on how many of the last
+  // handful's original ring-size budget happen to still be alive.
+  const finalFloorFighters = Math.max(2, Math.min(ringFighters, aliveCount));
+  const minFinal = computeMinFinalHalfExtents(arena, ground, finalFloorFighters);
   const denom = fighterCount > ringFighters ? fighterCount - ringFighters : 1;
   const clampedAlive = Math.max(0, Math.min(aliveCount - ringFighters, denom));
   // t = 1 while alive count is at/above the full roster, 0 once down to

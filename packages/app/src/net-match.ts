@@ -19,6 +19,7 @@ import { InputManager } from '@bash-fighter/input';
 import {
   Renderer,
   arenaDataToStageBounds,
+  computeEdgeDangerFrac,
   type RenderFighterState,
   type RenderItemState,
   type RenderHazardState,
@@ -154,6 +155,7 @@ export class NetMatch {
   private characters: CharacterData[] = [];
   private mySlot = -1;
   private ringDamageAudioCooldownTicks = 0;
+  private edgeDangerSounding = false;
   private spectating = false;
   private matchStarted = false;
   private over = false;
@@ -516,6 +518,25 @@ export class NetMatch {
         if (mySnap && !mySnap.eliminated && mySnap.inRingDanger && this.ringDamageAudioCooldownTicks <= 0) {
           this.audio.playRingDamage(true);
           this.ringDamageAudioCooldownTicks = 18;
+        }
+
+        // Edge/boundary danger cue (mirrors the local-match adapter in
+        // match.ts -- this was previously wired up there only, so every
+        // online match, which is what production actually serves, never
+        // played the "you're now near the closing boundary" chirp at all.
+        // Debounced on the threshold crossing, not continuous.
+        if (mySnap && !mySnap.eliminated) {
+          const liveBounds = currentArenaBounds(this.renderSim.getCurrentBlastRect());
+          const danger = computeEdgeDangerFrac(fx.toFloat(mySnap.posX), fx.toFloat(mySnap.posY), {
+            platforms: [],
+            blastMinX: liveBounds.minX,
+            blastMaxX: liveBounds.maxX,
+            blastMinY: liveBounds.minY,
+            blastMaxY: liveBounds.maxY,
+          });
+          const inDanger = danger > 0.6;
+          if (inDanger && !this.edgeDangerSounding) this.audio.playHazardWarning(true);
+          this.edgeDangerSounding = inDanger;
         }
       }
 

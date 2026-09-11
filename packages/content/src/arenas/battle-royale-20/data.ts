@@ -74,10 +74,37 @@ export const BATTLE_ROYALE_20_ARENA: ArenaData = {
   // in aggregate (it's the same 20 points, just relabelled), but any
   // fixture keyed to a specific fighter index's exact spawn position
   // needs regenerating -- see scripts/regen-golden.mjs.
+  // OPENING-SECONDS KNOCKOUT FIX (2026-09-11, see wiki "Opening-Seconds
+  // Knockouts on Battle Royale 20: 2026-09-11"): the outermost spawn slot
+  // (34 + 9*45 = 439) sat only ~79 units from the live boundary
+  // (computeGroundHalfExtents's 8% margin puts it at 480+38.4=518.4 while
+  // the whole field is alive). Measured: Anchor's Forward Tilt (13 dmg,
+  // base 13.0/1.0 growth) against a fresh 0%-damage fighter launches an
+  // unstunted horizontal arc of ~108-136 units even scaled down by the
+  // early-match knockback dampener -- comfortably past that 79-unit gap,
+  // producing sub-15%-damage knockouts in the first 4 seconds on this,
+  // the default and most-played stage. Widening the live boundary itself
+  // (a per-stage standingMarginX override) was tried first and rejected:
+  // it restored the full 140-unit authored blast clearance but slowed
+  // this stage's own combat-driven match resolution enough to make
+  // server/test/reconnect.test.ts's "match already ended" scenario time
+  // out (reproduced 3/3 runs at quiet load; passed 2/2 without the
+  // change) -- the same failure mode the 2026-09-10 margin work already
+  // flagged for global margin increases. Compressing the spawn spacing
+  // from 45 to 37 units per slot instead moves the outermost spawn to
+  // 34 + 9*37 = 367, giving ~151 units of clearance (> the ~136-unit
+  // worst measured arc, with headroom) without touching the boundary or
+  // its shrink timeline at all, so match-resolution speed is unaffected.
+  // Trade-off accepted and not fully resolved: this also tightens the
+  // same-side adjacent-spawn gap from 45 to 37, partially walking back
+  // the anti-scrum spacing widened for the "Bot Difficulty Correction"
+  // pass on 2026-09-10 (see [[Character Roster]] history) for this stage
+  // only. No dense-scrum regression was observed in the crowd20 checks
+  // run for this fix, but it was not exhaustively re-verified.
   spawnPoints: Array.from({ length: 20 }, (_, i) => {
     const slot = 9 - Math.floor(i / 2);
     const side = i % 2 === 0 ? 1 : -1;
-    const x = side * fx.fromInt(34 + slot * 45);
+    const x = side * fx.fromInt(34 + slot * 37);
     return { x, y: fx.fromInt(0) };
   }),
 };

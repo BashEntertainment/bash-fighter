@@ -13,6 +13,7 @@ const PLAYER_HEX = PALETTE.playerColors.map((c) => `#${c.toString(16).padStart(6
 export class TimedBrawlEndScreen {
   readonly root: HTMLDivElement;
   private readonly headline: HTMLDivElement;
+  private readonly winnerSwatch: HTMLSpanElement;
   private readonly subtitle: HTMLDivElement;
   private readonly list: HTMLDivElement;
 
@@ -21,13 +22,14 @@ export class TimedBrawlEndScreen {
     this.root.className = 'screen hidden';
     this.root.id = 'timed-brawl-end-screen';
     this.root.innerHTML = `
-      <div class="win-headline" id="tb-headline">&mdash;</div>
+      <div class="win-headline"><span class="tb-winner-swatch" id="tb-winner-swatch"></span><span id="tb-headline">&mdash;</span></div>
       <div class="subtitle" id="tb-subtitle">Time's up.</div>
       <div class="tb-standings" id="tb-standings"></div>
       <button class="btn btn-primary" id="tb-rematch-btn">Play again</button>
     `;
     parent.appendChild(this.root);
     this.headline = this.root.querySelector('#tb-headline') as HTMLDivElement;
+    this.winnerSwatch = this.root.querySelector('#tb-winner-swatch') as HTMLSpanElement;
     this.subtitle = this.root.querySelector('#tb-subtitle') as HTMLDivElement;
     this.list = this.root.querySelector('#tb-standings') as HTMLDivElement;
     (this.root.querySelector('#tb-rematch-btn') as HTMLButtonElement).addEventListener('click', onRematch);
@@ -50,16 +52,24 @@ export class TimedBrawlEndScreen {
   ): void {
     const standings = buildStandings(leaderboard, scores);
     const won = localSlot !== undefined && localSlot !== null && localSlot >= 0 && localSlot === winnerSlot;
+    // Deliberately no per-fighter colour on the headline itself -- keep
+    // the normal neutral-ink/accent-border treatment .win-headline
+    // already has (see style.css) rather than a huge block of whatever
+    // colour the winner happens to be, which can land on something as
+    // loud as magenta. Winner identity is instead signalled with a
+    // small colour swatch next to their name, same idea as the thin
+    // per-fighter left border on every standings row.
+    this.headline.style.color = '';
+    this.headline.style.borderBottomColor = '';
+    this.winnerSwatch.style.display = 'none';
     if (winnerSlot === null) {
       this.headline.textContent = 'Time out — tied for first';
-      this.headline.style.color = '';
-      this.headline.style.borderBottomColor = '#666';
     } else {
       const colour = PLAYER_HEX[winnerSlot % PLAYER_HEX.length] as string;
       const label = nameFor ? nameFor(winnerSlot) : `Fighter ${winnerSlot + 1}`;
       this.headline.textContent = won ? 'You win' : `${label} won`;
-      this.headline.style.color = colour;
-      this.headline.style.borderBottomColor = colour;
+      this.winnerSwatch.style.background = colour;
+      this.winnerSwatch.style.display = 'inline-block';
     }
     const myPlacement = localSlot !== undefined && localSlot !== null && localSlot >= 0 ? placementOf(standings, localSlot) : null;
     this.subtitle.textContent =

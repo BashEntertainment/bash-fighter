@@ -4,7 +4,35 @@
 // so adding a third character never requires touching this file.
 import { DEFAULT_P1_BINDING, DEFAULT_P2_BINDING, type KeyBinding } from '@bash-fighter/input';
 import { DEFAULT_CHARACTER_ID } from '@bash-fighter/content';
+import { MAX_NAME_LENGTH } from '@bash-fighter/net/src/protocol.ts';
 import { CharacterSelect } from './character-select.ts';
+
+/** localStorage key the chosen display name is persisted under, so a
+ *  returning player never has to retype it. Deliberately separate from
+ *  the key-binding/reduced-motion persistence keys in main.ts -- this
+ *  file owns its own read/write of this one value. */
+const NAME_STORAGE_KEY = 'bash-fighter-name';
+
+/** Reads the persisted name, or '' if none was ever saved. Never throws:
+ *  localStorage can be unavailable (privacy mode, some embeds), and an
+ *  empty name is already a valid, supported choice (see sanitiseName's
+ *  fallback-to-slot-label design in packages/net/src/protocol.ts), so
+ *  failing closed to '' is exactly the right fallback here too. */
+function loadPersistedName(): string {
+  try {
+    return localStorage.getItem(NAME_STORAGE_KEY) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+function savePersistedName(name: string): void {
+  try {
+    localStorage.setItem(NAME_STORAGE_KEY, name);
+  } catch {
+    // Best-effort only -- see loadPersistedName.
+  }
+}
 
 function bindingLines(b: KeyBinding): string {
   return [
@@ -21,6 +49,7 @@ export class StartScreen {
   private readonly characterSelect: CharacterSelect;
   private readonly p1BindingsEl: HTMLPreElement;
   private readonly p2BindingsEl: HTMLPreElement;
+  private readonly nameInput: HTMLInputElement;
 
   constructor(parent: HTMLElement, onStart: () => void, onWatchReplay?: () => void) {
     this.root = document.createElement('div');
@@ -30,6 +59,18 @@ export class StartScreen {
       <div class="hero">
         <div class="wordmark">BASH FIGHTER</div>
         <div class="subtitle">Twenty fighters, a different arena every match, last one standing. Free and open source, plays in your browser.</div>
+        <div class="name-entry-row">
+          <label class="name-entry-label" for="player-name-input">Your name</label>
+          <input
+            class="name-entry-input"
+            id="player-name-input"
+            type="text"
+            maxlength="${MAX_NAME_LENGTH}"
+            placeholder="Fighter #7"
+            autocomplete="off"
+            spellcheck="false"
+          />
+        </div>
         <div id="primary-actions"></div>
       </div>
       <div class="below-fold">
@@ -68,6 +109,12 @@ export class StartScreen {
     if (onWatchReplay) {
       (this.root.querySelector('#watch-replay-btn') as HTMLButtonElement).addEventListener('click', onWatchReplay);
     }
+
+    this.nameInput = this.root.querySelector('#player-name-input') as HTMLInputElement;
+    this.nameInput.value = loadPersistedName();
+    this.nameInput.addEventListener('input', () => {
+      savePersistedName(this.nameInput.value);
+    });
   }
 
   /** Player 1's chosen character id, from @bash-fighter/content's roster.
@@ -76,6 +123,18 @@ export class StartScreen {
    *  choice for this local 2-player test harness. */
   get selectedCharacterId(): string {
     return this.characterSelect.value;
+  }
+
+  /** The player's typed-and-trimmed display name, or '' if they never
+   *  typed one -- joining a match in one click must stay possible, so
+   *  this is deliberately never forced non-empty here. The server falls
+   *  back to the slot label for an empty name (see sanitiseName), and so
+   *  does every client-side display of it. Not sanitised here: this is
+   *  just what the player typed, and the server is the only boundary
+   *  that treats it as untrusted, per the sanitise-at-the-boundary rule
+   *  in packages/net/src/protocol.ts. */
+  get playerName(): string {
+    return this.nameInput.value.trim();
   }
 
   /** Called by main.ts whenever the player's remapped bindings change, so

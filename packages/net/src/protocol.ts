@@ -481,13 +481,53 @@ export function parseClientControl(text: string): ClientControlMessage | null {
   }
 }
 
-/** Names are shown to other players, so they are stripped of control
- *  characters and length-capped here, at the boundary, before anything else
- *  in the system sees them. */
+/** Max characters kept from a client-supplied name. Applied after
+ *  stripping and trimming so it counts visible characters, not raw
+ *  bytes an attacker padded with control characters. */
+export const MAX_NAME_LENGTH = 16;
+
+/** Names are shown to other players -- as plain text, never as markup, in
+ *  every renderer this codebase has (DOM textContent in the HUD/overlays,
+ *  PIXI Text glyphs in the world badges) -- so there is technically no
+ *  script-injection surface today. Sanitising here anyway is deliberate
+ *  defence in depth at the one boundary every name crosses: it is cheap,
+ *  and it means a future renderer that is less careful (say, an HTML
+ *  tooltip built with a template string) inherits safety for free instead
+ *  of having to remember this rule itself.
+ *
+ *  Stripped: C0/C1 control characters and newlines (would break single-line
+ *  layouts, HUD cards, and log lines), then whitespace is collapsed and
+ *  trimmed so a name can't be an invisible run of spaces or tabs.
+ *  Truncated to MAX_NAME_LENGTH.
+ *
+ *  Deliberately returns '' for empty/whitespace-only/all-control input
+ *  rather than a forced placeholder like "Fighter": callers (server seat
+ *  assignment, client display) treat '' as "this player didn't pick a
+ *  name" and fall back to the slot label ("#7") instead, which stays
+ *  distinct per-seat for free. A forced non-empty fallback would instead
+ *  make every anonymous player collide on the exact same string. */
 export function sanitiseName(name: string): string {
-  const cleaned = name
+  return name
     .replace(/[\u0000-\u001f\u007f-\u009f]/g, '')
+    .replace(/\s+/g, ' ')
     .trim()
-    .slice(0, 16);
-  return cleaned.length > 0 ? cleaned : 'Fighter';
+    .slice(0, MAX_NAME_LENGTH);
+}
+
+/** De-duplicates a sanitised name against names already in use (case-
+ *  insensitive -- "Rook" and "rook" read as the same identity to a human
+ *  even though they're different strings), by appending " (2)", " (3)",
+ *  etc. Empty names are never deduped: they carry no identity to collide
+ *  on and are shown via slot fallback instead. Stays within
+ *  MAX_NAME_LENGTH even with the suffix appended. */
+export function dedupeName(name: string, existing: readonly string[]): string {
+  if (name.length === 0) return name;
+  const taken = new Set(existing.filter((n) => n.length > 0).map((n) => n.toLowerCase()));
+  if (!taken.has(name.toLowerCase())) return name;
+  for (let n = 2; n < 1000; n++) {
+    const suffix = ` (${n})`;
+    const candidate = (name.slice(0, MAX_NAME_LENGTH - suffix.length) + suffix).trim();
+    if (!taken.has(candidate.toLowerCase())) return candidate;
+  }
+  return name;
 }

@@ -32,7 +32,7 @@ export class WinScreen {
    * @param localSlot the slot this client was playing, when known, so the
    *   winner is told they won rather than reading their own slot number.
    */
-  show(winnerIndex: number | null, localSlot?: number): void {
+  show(winnerIndex: number | null, localSlot?: number, nameFor?: (slot: number) => string): void {
     if (winnerIndex === null) {
       this.headline.textContent = 'Nobody survived';
       this.headline.style.color = '';
@@ -41,7 +41,8 @@ export class WinScreen {
     } else {
       const won = localSlot !== undefined && localSlot >= 0 && localSlot === winnerIndex;
       const colour = PLAYER_HEX[winnerIndex % PLAYER_HEX.length] as string;
-      this.headline.textContent = won ? 'You win' : `Fighter ${winnerIndex + 1} wins`;
+      const label = nameFor ? nameFor(winnerIndex) : `Fighter ${winnerIndex + 1}`;
+      this.headline.textContent = won ? 'You win' : `${label} won`;
       this.headline.style.color = colour;
       this.headline.style.borderBottomColor = colour;
       this.subtitle.textContent = won

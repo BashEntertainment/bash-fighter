@@ -38,3 +38,20 @@ test('winnerAnnouncementLine does not claim victory for an uninvolved local slot
   assert.doesNotMatch(line, /you won/i);
   assert.match(line, /#5/);
 });
+
+test('winnerAnnouncementLine uses the winner\'s display name over the bare slot number when nameFor is given', () => {
+  const line = winnerAnnouncementLine(4, 7, (slot) => (slot === 4 ? 'Rook' : `#${slot + 1}`));
+  assert.match(line, /Rook won/);
+  assert.doesNotMatch(line, /#5/);
+});
+
+test('winnerAnnouncementLine falls back to the slot label when nameFor returns the fallback itself', () => {
+  const line = winnerAnnouncementLine(4, 7, (slot) => `#${slot + 1}`);
+  assert.match(line, /#5 won/);
+});
+
+test('winnerAnnouncementLine still says "you won it" for the local winner even with nameFor given', () => {
+  const line = winnerAnnouncementLine(4, 4, () => 'Rook');
+  assert.match(line, /you won/i);
+  assert.doesNotMatch(line, /Rook/);
+});

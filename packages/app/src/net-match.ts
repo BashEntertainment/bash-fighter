@@ -154,6 +154,12 @@ export class NetMatch {
   private characterId = DEFAULT_CHARACTER_ID;
   private characters: CharacterData[] = [];
   private mySlot = -1;
+  // Per-slot display names as broadcast by the server (lobby + matchStart).
+  // Presentation/networking metadata only -- never touches localSim/renderSim
+  // or anything determinism-hashed. An empty string means that seat's
+  // player never chose a name; nameFor() below is the single place that
+  // turns that into the '#N' slot-label fallback every display uses.
+  private names: string[] = [];
   private ringDamageAudioCooldownTicks = 0;
   private edgeDangerSounding = false;
   private spectating = false;
@@ -348,10 +354,11 @@ export class NetMatch {
         }
         break;
       case 'lobby':
+        this.names = msg.names ?? [];
         this.events.onLobby?.(msg.players, msg.capacity, msg.countdownTicks);
         break;
       case 'matchStart':
-        this.startMatch(msg.numFighters, msg.seed, msg.slot, msg.characterIds, msg.arenaId);
+        this.startMatch(msg.numFighters, msg.seed, msg.slot, msg.characterIds, msg.arenaId, msg.names);
         break;
       case 'eliminated':
         if (msg.slot === this.mySlot && !this.spectating) {
@@ -404,8 +411,10 @@ export class NetMatch {
     slot: number,
     characterIds?: string[],
     arenaId?: string,
+    names?: string[],
   ): void {
     this.numFighters = numFighters;
+    if (names) this.names = names;
     this.mySlot = slot;
     this.spectating = slot < 0;
     this.matchStarted = true;
@@ -594,6 +603,25 @@ export class NetMatch {
     return !this.spectating && this.mySlot >= 0 ? this.mySlot : -1;
   }
 
+  /** Per-slot display names as last broadcast by the server (lobby, then
+   *  matchStart). Presentation-only, never simulation state -- see the
+   *  field comment. Callers should use nameFor() rather than indexing this
+   *  directly so the '#N' slot-label fallback for an unnamed seat is
+   *  applied consistently everywhere. */
+  displayNames(): readonly string[] {
+    return this.names;
+  }
+
+  /** A slot's display name, or its slot label ('#N', 1-based) if that
+   *  seat's player never chose a name. The one place every display of a
+   *  fighter's identity (HUD, in-world badge, win screen, placement
+   *  overlay) should go through, so the fallback rule lives in exactly
+   *  one place. */
+  nameFor(slot: number): string {
+    const n = this.names[slot];
+    return n && n.length > 0 ? n : `#${slot + 1}`;
+  }
+
   hasStarted(): boolean {
     return this.localSim !== null;
   }
@@ -724,6 +752,7 @@ export class NetMatch {
       hitEffects: this.pendingHitEffects,
       eliminationEffects: this.pendingEliminationEffects,
       localPlayerIndex: !this.spectating && this.mySlot >= 0 ? this.mySlot : undefined,
+      names: this.names,
       liveArenaBounds: currentArenaBounds(this.renderSim.getCurrentBlastRect()),
       previewArenaBounds: previewArenaBounds(
         this.renderSim.getArena(),

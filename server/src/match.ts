@@ -5,7 +5,7 @@ import { randomBytes } from 'node:crypto';
 import { Sim, makeInputFrame, type InputFrame, type MatchSettings } from '@bash-fighter/sim/src/index.ts';
 import { BotController, BotDifficulty, deriveBotSeed, type BotDifficultyValue } from '@bash-fighter/sim/src/ai/bot.ts';
 import { createMatchSim, resolveCharacterId, DEFAULT_CHARACTER_ID, pickArenaId } from '@bash-fighter/content/src/index.ts';
-import { SNAPSHOT_HZ } from '@bash-fighter/net/src/protocol.ts';
+import { SNAPSHOT_HZ, dedupeName } from '@bash-fighter/net/src/protocol.ts';
 import { recordTickDurationMs } from './tick-metrics.ts';
 import { PRODUCTION_DEFAULT_BOT_DIFFICULTY_NAME } from './match-defaults.ts';
 
@@ -223,9 +223,16 @@ export class Match {
 
   addSeat(name: string, isBot = false, characterId: string = DEFAULT_CHARACTER_ID): Seat {
     const slot = this.seats.length;
+    // De-duplicate against every name already in this match (human or
+    // bot -- a human called "Rex" showing up alongside a bot already
+    // named "Rex" is just as confusing as two humans colliding) so two
+    // fighters are never indistinguishable by name alone in the HUD, the
+    // win screen, or the elimination log. Empty names (no name chosen)
+    // are left alone -- see dedupeName's own comment.
+    const dedupedName = dedupeName(name, this.seats.map((s) => s.name));
     const seat: Seat = {
       slot,
-      name,
+      name: dedupedName,
       connected: true,
       eliminated: false,
       isBot,

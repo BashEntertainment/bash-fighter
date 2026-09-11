@@ -7,6 +7,7 @@ import {
   decodeSnapshot,
   parseClientControl,
   sanitiseName,
+  dedupeName,
   PROTOCOL_VERSION,
   INPUT_FRAME_BYTES,
 } from '../src/protocol.ts';
@@ -87,8 +88,53 @@ describe('sanitiseName', () => {
     assert.equal(sanitiseName('Al\u0000ice\u007fLongLongLongName'), 'AliceLongLongLon');
   });
 
-  test('falls back to Fighter for an empty/whitespace name', () => {
-    assert.equal(sanitiseName('   '), 'Fighter');
-    assert.equal(sanitiseName(''), 'Fighter');
+  test('returns empty for an empty/whitespace-only name, not a forced placeholder', () => {
+    assert.equal(sanitiseName('   '), '');
+    assert.equal(sanitiseName(''), '');
+    assert.equal(sanitiseName('\u0000\u0001\u0007'), '');
+  });
+
+  test('collapses interior whitespace runs (tabs, newlines-as-control-chars)', () => {
+    assert.equal(sanitiseName('Rook   the   Second'), 'Rook the Second');
+  });
+
+  test('strips a script tag down to inert text, never markup', () => {
+    // Control characters are stripped but '<'/'>' are ordinary printable
+    // characters here -- they are never treated as markup because every
+    // renderer in the app writes names via textContent/PIXI Text, never
+    // innerHTML. sanitiseName's job is length/control-character hygiene,
+    // not HTML escaping (there is nothing that would ever parse this).
+    assert.equal(sanitiseName('<script>alert(1)</script>'), '<script>alert(1)');
+  });
+
+  test('a 500-character name is capped to 16', () => {
+    const huge = 'x'.repeat(500);
+    assert.equal(sanitiseName(huge).length, 16);
+  });
+
+  test('rejects a lone all-whitespace name including unicode spaces', () => {
+    assert.equal(sanitiseName('\u00a0\u2003\t\n'), '');
+  });
+});
+
+describe('dedupeName', () => {
+  test('leaves a unique name untouched', () => {
+    assert.equal(dedupeName('Rook', ['Anchor', 'Zephyr']), 'Rook');
+  });
+
+  test('appends a counter suffix on collision, case-insensitively', () => {
+    assert.equal(dedupeName('rook', ['Rook']), 'rook (2)');
+    assert.equal(dedupeName('Rook', ['Rook', 'Rook (2)']), 'Rook (3)');
+  });
+
+  test('never dedupes an empty name -- it carries no identity to collide on', () => {
+    assert.equal(dedupeName('', ['', '', '']), '');
+  });
+
+  test('keeps the deduped result within MAX_NAME_LENGTH', () => {
+    const long = 'AAAAAAAAAAAAAAAA'; // exactly 16 chars
+    const result = dedupeName(long, [long]);
+    assert.ok(result.length <= 16, `expected <=16 chars, got "${result}" (${result.length})`);
+    assert.notEqual(result, long);
   });
 });

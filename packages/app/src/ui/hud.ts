@@ -54,7 +54,7 @@ export class Hud {
     while (this.cards.length < count) {
       const card = document.createElement('div');
       card.className = 'hud-card';
-      card.innerHTML = '<div class="slot-num"></div><div class="pct">0%</div><div class="stocks"></div>';
+      card.innerHTML = '<div class="slot-num"></div><div class="fighter-name"></div><div class="pct">0%</div><div class="stocks"></div>';
       this.cards.push(card);
       this.list.appendChild(card);
     }
@@ -63,7 +63,12 @@ export class Hud {
     }
   }
 
-  update(snapshots: readonly FighterSnapshot[], extras?: readonly HudFighterExtra[], localIndex = -1): void {
+  update(
+    snapshots: readonly FighterSnapshot[],
+    extras?: readonly HudFighterExtra[],
+    localIndex = -1,
+    names?: readonly string[],
+  ): void {
     this.ensureCards(snapshots.length);
     let survivors = 0;
     for (let i = 0; i < snapshots.length; i++) {
@@ -84,7 +89,19 @@ export class Hud {
       const pctEl = card.querySelector('.pct') as HTMLDivElement;
       const stocksEl = card.querySelector('.stocks') as HTMLDivElement;
       const numEl = card.querySelector('.slot-num') as HTMLDivElement;
+      const nameEl = card.querySelector('.fighter-name') as HTMLDivElement;
       numEl.textContent = '#' + String(i + 1);
+      // Slot number stays visible unconditionally (existing debug tooling,
+      // the journal, and the elimination log are all slot-indexed -- see
+      // docs/PROTOCOL.md), the chosen display name (if any) is shown
+      // alongside it via textContent only, never innerHTML, so a hostile
+      // name is always plain text here regardless of what the server
+      // already stripped. names[] and '#N' fallback come from
+      // NetMatch.nameFor()/Match's slot labels -- this component just
+      // renders whatever it's given.
+      const name = names?.[i];
+      nameEl.textContent = name && name.length > 0 ? name : '';
+      nameEl.style.display = nameEl.textContent ? '' : 'none';
       const pct = Math.round(fx.toFloat(s.percent));
       pctEl.textContent = `${pct}%`;
       pctEl.style.color = s.state === FighterStateId.DEAD ? '#666' : pct >= 100 ? PALETTE_DANGER_HEX : '';

@@ -43,6 +43,52 @@ anywhere. Any other message before `hello`, or a malformed message, gets
 | `eliminated` | `slot`, `placement`, `tick` | A fighter was eliminated. `placement` is `1` for the eventual winner (announced at match end), `N` for the first fighter out. |
 | `matchEnd` | `winner`, `leaderboard`, `tick` | Final result. `winner` is `null` only for a genuine simultaneous final KO. |
 | `error` | `code`, `message` | `protocol_mismatch`, `bad_message`, `match_full`, or `server_error`. Connection is closed after this is sent. |
+
+## Player names
+
+`hello.name` is the client's requested display name (typed on the start
+screen and persisted client-side in localStorage; empty if the player
+never typed one -- see [[Player Names 2026-09-11]] for the full feature
+writeup). It is presentation and networking metadata only: never part of
+the sim snapshot, never fed into anything determinism-hashed, and never
+trusted as given.
+
+The server sanitises every name at the `hello` boundary (`sanitiseName` in
+`packages/net/src/protocol.ts`) before it is stored on the seat or
+broadcast to anyone:
+
+- Control characters (C0/C1) and newlines are stripped -- they would
+  break single-line layouts, HUD cards, and log/journal lines.
+- Interior whitespace runs are collapsed and the result trimmed, so a
+  name can't be an invisible run of spaces or tabs.
+- Truncated to `MAX_NAME_LENGTH` (16 characters).
+- Empty/whitespace-only/all-control input sanitises to `''`, not a
+  forced placeholder like `"Fighter"`. `''` is a first-class value
+  meaning "this seat has no chosen name"; every display of it (HUD,
+  in-world badge, win screen, placement/elimination text) falls back to
+  the slot label (`#N`, 1-based) instead. This keeps anonymous players
+  distinct from each other for free, which a forced shared placeholder
+  would not.
+
+Names are never HTML-escaped, because they are never inserted as markup
+anywhere: the DOM-based UI (HUD, overlays, win screen) writes them via
+`textContent` only, and the PIXI-based world renderer writes them as
+`Text` glyphs. There is no code path where a name string is interpreted
+as HTML/JS in this codebase, so sanitisation here is about layout/log
+safety, not escaping.
+
+Names are also de-duplicated per match (`dedupeName`, same file): a new
+seat whose sanitised name case-insensitively collides with an existing
+seat's name (human or bot) gets `" (2)"`, `" (3)"`, etc. appended, capped
+back to `MAX_NAME_LENGTH`. Two fighters called "Rook" would otherwise be
+indistinguishable in the HUD, the win screen, and the elimination log.
+Empty names are exempt from de-duplication -- they carry no identity to
+collide on.
+
+No wire-format field changed for this feature (the `name`/`names` fields
+already existed in the `hello`/`lobby`/`matchStart` schema since the
+initial protocol), so `PROTOCOL_VERSION` was **not** bumped for it. Only
+sanitisation/de-duplication behaviour and client-side UI changed.
 | `ping` | `id` | RTT probe; client should reply `pong` with the same `id`. |
 
 ## Binary: input (client -> server), 15 bytes

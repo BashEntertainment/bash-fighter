@@ -39,10 +39,15 @@ function slotLabel(slot: number): string {
  * coverage without needing a DOM (see match-overlay.test.ts) -- this is
  * the part that was actually wrong (missing entirely) in the 2026-09-10
  * stranded-spectator bug, not the DOM plumbing around it. */
-export function winnerAnnouncementLine(winnerSlot: number | null, localSlot: number | null | undefined): string {
+export function winnerAnnouncementLine(
+  winnerSlot: number | null,
+  localSlot: number | null | undefined,
+  nameFor?: (slot: number) => string,
+): string {
   if (winnerSlot == null) return 'The match ended with no winner.';
   if (localSlot != null && localSlot === winnerSlot) return 'The match ended -- you won it!';
-  return `The match ended -- ${slotLabel(winnerSlot)} won.`;
+  const label = nameFor ? nameFor(winnerSlot) : slotLabel(winnerSlot);
+  return `The match ended -- ${label} won.`;
 }
 
 export class MatchOverlay {
@@ -103,10 +108,14 @@ export class MatchOverlay {
    * overlay with just the winner line if it had been dismissed) without
    * keeping their "Play again" action and dropping "Keep spectating",
    * which is meaningless once the match is over. Safe to call multiple times. */
-  announceWinner(winnerSlot: number | null, localSlot: number | null | undefined): void {
+  announceWinner(
+    winnerSlot: number | null,
+    localSlot: number | null | undefined,
+    nameFor?: (slot: number) => string,
+  ): void {
     const already = this.messageEl.dataset.winnerAnnounced === String(winnerSlot);
     if (already) return;
-    const line = winnerAnnouncementLine(winnerSlot, localSlot);
+    const line = winnerAnnouncementLine(winnerSlot, localSlot, nameFor);
     this.messageEl.textContent = `${this.messageEl.textContent} ${line}`.trim();
     this.messageEl.dataset.winnerAnnounced = String(winnerSlot);
     // Once the match has genuinely ended there is nothing left to spectate,

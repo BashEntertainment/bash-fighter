@@ -121,6 +121,14 @@ export interface RenderFrame {
    * while spectating). Draws a persistent above-head marker so the local
    * player stays findable in a 20-fighter crowd. Presentation-only. */
   localPlayerIndex?: number;
+  /** Per-slot display names, index-aligned with `fighters`, for the
+   * above-head badge. Presentation-only, sourced from the server's
+   * per-connection metadata -- never simulation state, never hashed.
+   * Empty string (or a missing/absent array) means "no chosen name for
+   * this slot"; layoutBadges falls back to the slot number, and the
+   * slot number remains available as a second fallback if the name
+   * itself doesn't fit -- see layoutBadges for exactly how. */
+  names?: readonly string[];
   /** Wall-clock ms to hold the previous frame's drawing before applying
    * new positions this call -- a presentation-only "freeze frame" on a
    * strong hit. Renderer decides internally how long based on strength;
@@ -486,6 +494,8 @@ export class Renderer {
    * order of distance to the local player, so in a crowded scrum the
    * badges that survive are the ones for whoever is actually nearby --
    * exactly the fighters this player is about to fight or be hit by. */
+  private names: readonly string[] | undefined;
+
   private layoutBadges(candidates: BadgeCandidate[]): void {
     this.ensureBadgePool(candidates.length);
 
@@ -500,9 +510,26 @@ export class Renderer {
     const placedBoxes: BadgeBox[] = [];
     let textIndex = 0;
     for (const c of ordered) {
-      const label = String(c.slot + 1);
-      const box = badgeBox(c.headX, c.headY, label.length, c.isLocalPlayer);
-      const overlaps = !c.isLocalPlayer && placedBoxes.some((p) => boxesOverlap(p, box));
+      const numberLabel = String(c.slot + 1);
+      // Prefer the chosen name over the bare slot number -- it's what
+      // makes a fighter "Rook" instead of "#7" at a glance -- but a name
+      // is longer and more likely to collide with a neighbour at
+      // 20-fighter density. Try the name's box first; if it would
+      // overlap, retry with the shorter numeric label before giving up
+      // on this badge entirely, so a name that merely doesn't fit still
+      // degrades to the number rather than vanishing. The local player's
+      // own badge is exempt from being dropped either way (see the
+      // isLocalPlayer check below), matching the existing rule.
+      const name = this.names?.[c.slot];
+      const nameLabel = name && name.length > 0 ? name : undefined;
+      let label = nameLabel ?? numberLabel;
+      let box = badgeBox(c.headX, c.headY, label.length, c.isLocalPlayer);
+      let overlaps = !c.isLocalPlayer && placedBoxes.some((p) => boxesOverlap(p, box));
+      if (overlaps && nameLabel) {
+        label = numberLabel;
+        box = badgeBox(c.headX, c.headY, label.length, c.isLocalPlayer);
+        overlaps = !c.isLocalPlayer && placedBoxes.some((p) => boxesOverlap(p, box));
+      }
       if (overlaps) continue;
       placedBoxes.push(box);
       const text = this.badgeTexts[textIndex] as Text;
@@ -631,6 +658,7 @@ export class Renderer {
         headY: screen.y - clampHeadOffsetPx(FighterSprite.HEAD_TOP_OFFSET_WORLD * cam.scale),
       });
     }
+    this.names = frame.names;
     this.layoutBadges(badgeCandidates);
 
     const hazards = frame.hazards ?? [];

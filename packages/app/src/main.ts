@@ -368,7 +368,12 @@ async function beginOnlineMatch(): Promise<void> {
   }
   canvasRoot.innerHTML = '';
 
-  const name = `Fighter${Math.floor(Math.random() * 1000)}`;
+  // Whatever the player typed on the start screen (persisted to
+  // localStorage there), or '' if they never typed one -- an empty
+  // name is a first-class, supported choice: joining a match must stay
+  // a single click, and the server/every display falls back to the
+  // slot label for an empty name rather than forcing a placeholder.
+  const name = startScreen.playerName;
   const characterId = startScreen.selectedCharacterId;
   const net = new NetMatch(serverUrl(), {
     onStateChange: (state, detail) => {
@@ -431,7 +436,7 @@ async function beginOnlineMatch(): Promise<void> {
         // keeps their own placement, "Play again" and "Keep spectating"
         // controls, and now also learns who won.
         if (resolved) {
-          matchOverlay.announceWinner(winnerIndex, netMatch?.localSlot());
+          matchOverlay.announceWinner(winnerIndex, netMatch?.localSlot(), netMatch ? (slot) => netMatch!.nameFor(slot) : undefined);
         } else if (!matchOverlay.isVisible && lastEliminationContent) {
           // Genuinely unresolved teardown (no human seats left) while the
           // player had dismissed their placement screen to keep watching.
@@ -457,7 +462,7 @@ async function beginOnlineMatch(): Promise<void> {
       // Still alive and the match genuinely resolved: tell them who won.
       matchOverlay.hide();
       audio.play('match_end');
-      winScreen.show(winnerIndex, netMatch?.localSlot());
+      winScreen.show(winnerIndex, netMatch?.localSlot(), netMatch ? (slot) => netMatch!.nameFor(slot) : undefined);
     },
     onEliminated: (placement, totalFighters) => {
       eliminatedThisOnlineMatch = true;
@@ -508,7 +513,7 @@ async function beginOnlineMatch(): Promise<void> {
       inMatchMovesButton.classList.remove('hidden');
       inMatchSettingsButton.classList.remove('hidden');
       if (touchCapable) touchControls.show();
-      hud.update(netMatch.currentSnapshots(), undefined, netMatch.localSlot());
+      hud.update(netMatch.currentSnapshots(), undefined, netMatch.localSlot(), netMatch.displayNames());
     } else {
       hud.hide();
       inMatchMovesButton.classList.add('hidden');

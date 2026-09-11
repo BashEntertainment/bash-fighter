@@ -32,9 +32,21 @@ export const THE_ATOLL_ARENA: ArenaData = {
     // little overhang either side. Bailing downward through it drops a
     // fighter straight into the gap, same choice as The Undercroft's
     // bridge.
-    { minX: fx.fromInt(-210), maxX: fx.fromInt(-110), y: fx.fromInt(70), kind: 'pass-through' },
+    // VERTICAL CLEARANCE FIX 2026-09-11 (see wiki "The Atoll: Vertical
+    // Clearance and Low-Percent Knockouts 2026-09-11"): bridge y raised
+    // from 70 to 82. computeGroundHalfExtents() derives the live ceiling
+    // from the highest platform any fighter can stand on (here, the
+    // bridge) plus its margin -- at y=70 that gave only 90 units of
+    // ceiling clearance against the roster's worst-case 85.1-unit upward
+    // launch arc (a 1.06x safety factor, the thinnest of any stage in any
+    // direction). Raising the bridge's own y is a pure stage-geometry
+    // change -- no knockback/physics constant touched -- and widens the
+    // ceiling by the same 12 units, to 1.20x, clearing the same >=1.15x
+    // bar the horizontal check already uses. Cosmetic effect only:
+    // bridges sit slightly higher above the islands.
+    { minX: fx.fromInt(-210), maxX: fx.fromInt(-110), y: fx.fromInt(82), kind: 'pass-through' },
     // Right bridge: mirror of the left, spans the right gap (120..200).
-    { minX: fx.fromInt(110), maxX: fx.fromInt(210), y: fx.fromInt(70), kind: 'pass-through' },
+    { minX: fx.fromInt(110), maxX: fx.fromInt(210), y: fx.fromInt(82), kind: 'pass-through' },
   ],
   blastMinX: fx.fromInt(-600),
   blastMaxX: fx.fromInt(600),

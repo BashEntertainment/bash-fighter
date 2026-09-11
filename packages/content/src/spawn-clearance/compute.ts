@@ -12,7 +12,14 @@ import { ALL_CHARACTERS } from '../characters.ts';
 import type { ArenaData } from '../../../sim/src/arena/types.ts';
 
 export const HORIZ_SAFETY_FACTOR = 1.15;
-export const VERT_SAFETY_FACTOR = 1.0;
+// RAISED 2026-09-11 (see wiki "The Atoll: Vertical Clearance and
+// Low-Percent Knockouts 2026-09-11"): was 1.0x. The-atoll's bridges were
+// the tightest vertical margin of any stage/direction at 1.06x -- passing
+// but with almost no headroom. Fixed by raising the atoll's bridge height
+// (pure stage geometry, no knockback change) to 1.20x; every other stage
+// already cleared >=1.29x. Bar raised to match the horizontal
+// requirement now that every stage clears it.
+export const VERT_SAFETY_FACTOR = 1.15;
 
 export interface WorstArc {
   horiz: number;

@@ -69,12 +69,14 @@ export class SettingsPanel {
   private readonly keydownHandler = (e: KeyboardEvent) => this.handleCapture(e);
 
   private reducedMotion: boolean;
+  private readonly host: SettingsPanelHost;
 
   constructor(
     parent: HTMLElement,
     initial: { p1: KeyBinding; p2: KeyBinding; reducedMotion: boolean },
-    private readonly host: SettingsPanelHost,
+    host: SettingsPanelHost,
   ) {
+    this.host = host;
     this.bindings = [cloneBinding(initial.p1), cloneBinding(initial.p2)];
     this.reducedMotion = initial.reducedMotion;
     this.root = document.createElement('div');

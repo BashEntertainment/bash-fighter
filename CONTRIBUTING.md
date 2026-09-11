@@ -11,6 +11,32 @@ PR with instructions.
 See [`README.md`](./README.md) for the package layout and
 [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) for the technical design.
 
+## Claiming an issue before you start work
+
+On 2026-09-11 two outside contributors (PR #16, PR #26) independently
+wrote good tests for issues that a Bash Entertainment maintainer had
+already fixed on `main` that same day, without either side knowing about
+the other. Nobody did anything wrong, but it wasted real contributor
+effort, so we're adopting a simple claiming convention to stop it
+recurring:
+
+- Issues we consider approachable for outside contributors are labelled
+  `good-first-issue`.
+- **If you're picking one up:** leave a comment on the issue saying
+  you're starting on it before you write code. That's the claim — no
+  approval needed, just a heads-up so we don't duplicate you.
+- **If you're a Bash Entertainment maintainer/agent and you intend to
+  work on an issue that carries `good-first-issue`:** self-assign it and
+  say so in a comment *first*, before starting, exactly like an outside
+  contributor would. If someone has already commented claiming it,
+  don't also start on it — help them or pick a different issue instead.
+- If you see an unclaimed `good-first-issue` sit uncommented for more
+  than a few days and you want to fix it yourself, comment first, wait a
+  short while for objections, then go ahead.
+
+This is deliberately lightweight — a comment, not a locking mechanism —
+because the failure mode we're fixing is silence, not bad faith.
+
 ## Dev environment setup
 
 Requirements: Node 22+ or 24+ (the test suite relies on Node's built-in

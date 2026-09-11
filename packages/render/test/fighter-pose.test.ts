@@ -167,3 +167,26 @@ test('dead pose falls further from neutral as ticks advance, clamped at ticks>=1
   // Clamped: fall = min(1, ticks/10), so ticks=10 and ticks=20 are identical.
   assert.deepEqual(t10, t20);
 });
+
+test('airborne/jump tuck settles monotonically back to the neutral pose', () => {
+  // JUMP and AIRBORNE share airbornePose(); tuck starts deep and decays
+  // to 0 as stateTicks advances -- covered here since main's pass over
+  // this file (issue #23) left JUMP/AIRBORNE unexercised, a gap PR #26
+  // (ericseandevlin) surfaced.
+  const start = computePose(baseInput({ state: FighterStateId.JUMP, stateTicks: 0 }));
+  assert.ok(start.bodyScaleY < 1, 'tuck should compress bodyScaleY below neutral at takeoff');
+  assert.ok(start.bodyBob > 0, 'tuck should lift bodyBob above neutral at takeoff');
+
+  const scaleYs: number[] = [];
+  for (let ticks = 0; ticks <= 12; ticks++) {
+    scaleYs.push(computePose(baseInput({ state: FighterStateId.AIRBORNE, stateTicks: ticks })).bodyScaleY);
+  }
+  for (let i = 1; i < scaleYs.length; i++) {
+    assert.ok(scaleYs[i]! > scaleYs[i - 1]!, `tuck must decay monotonically at tick ${i}`);
+  }
+
+  const settled = computePose(baseInput({ state: FighterStateId.JUMP, stateTicks: 12 }));
+  assert.ok(Math.abs(settled.bodyScaleY - NEUTRAL_POSE.bodyScaleY) < 1e-9);
+  assert.ok(Math.abs(settled.bodyBob - NEUTRAL_POSE.bodyBob) < 1e-9);
+  assert.ok(Math.abs(settled.bodyLean - NEUTRAL_POSE.bodyLean) < 1e-9);
+});

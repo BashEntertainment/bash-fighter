@@ -247,7 +247,8 @@ function makeEventsFor(matchId: string) {
       // came from the server, and exactly when/why -- see wiki "Match-End
       // Client Bugs and Session Wrap".
       const botDifficulty = manager.getMatch(matchId)?.botDifficulty ?? null;
-      console.log(`[matchEnd] ${JSON.stringify({ matchId, winner, tick, resolved, watchers: watcherSet(matchId).size, botDifficulty })}`);
+      const winCondition = manager.getMatch(matchId)?.winCondition ?? null;
+      console.log(`[matchEnd] ${JSON.stringify({ matchId, winner, tick, resolved, watchers: watcherSet(matchId).size, botDifficulty, winCondition })}`);
       for (const cid of watcherSet(matchId)) {
         const c = clients.get(cid);
         if (c) send(c, msg);

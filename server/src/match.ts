@@ -167,6 +167,13 @@ export class Match {
   // actually given, rather than re-deriving it from env. See
   // botDifficultyFromEnv().
   botDifficulty: BotDifficultyValue | null = null;
+
+  /** Win condition of the currently-running (or most recently run) sim,
+   * for the [matchEnd] production log (2026-09-11, Timed Brawl). null
+   * before start() has ever run. */
+  get winCondition(): string | null {
+    return this.sim?.getMatchSettings().winCondition ?? null;
+  }
   private bots = new Map<number, BotController>();
   private timer: NodeJS.Timeout | null = null;
   private lastTickAt = 0;
@@ -380,6 +387,18 @@ export class Match {
     // clock. Never set in production (systemd unit does not set it).
     const shrinkOverride = process.env.MATCH_SHRINK_FULLY_CLOSED_TICK;
     if (shrinkOverride) settingsOverride.shrinkFullyClosedTick = Number(shrinkOverride);
+    // Mode selection (2026-09-11, Timed Brawl): 'battleRoyale' (last
+    // fighter standing, the production default) is what a player joining
+    // production gets unless this is set. Follows the same MATCH_* env
+    // pattern as everything else here; the systemd unit does not set it
+    // in production, so this is a deliberate opt-in only, e.g. for a
+    // dedicated Timed Brawl rollout or this task's own live verification.
+    const winConditionOverride = process.env.MATCH_WIN_CONDITION;
+    if (winConditionOverride === 'battleRoyale' || winConditionOverride === 'timedKO' || winConditionOverride === 'stocks') {
+      settingsOverride.winCondition = winConditionOverride;
+    }
+    const timeLimitOverride = process.env.MATCH_TIME_LIMIT_TICKS;
+    if (timeLimitOverride) settingsOverride.timeLimitTicks = Number(timeLimitOverride);
     this.sim = createMatchSim(this.seed, this.seats.length, settingsOverride, characters, this.arenaId);
     this.lastPercent = new Array(this.seats.length).fill(0);
     this.lastDamageTick = new Array(this.seats.length).fill(-Match.COMBAT_WINDOW_TICKS - 1);

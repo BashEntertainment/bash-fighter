@@ -8,7 +8,7 @@ import { SpectatorBanner } from './ui/spectator-banner.ts';
 import { SimMatchAdapter } from './spectator/sim-adapter.ts';
 import { SpectatorController } from './spectator/controller.ts';
 import { NetMatch, type ConnectionState } from './net-match.ts';
-import { MatchOverlay } from './ui/match-overlay.ts';
+import { MatchOverlay, type MatchOverlayContent } from './ui/match-overlay.ts';
 import { ControlsHint } from './ui/controls-hint.ts';
 import { MoveReferencePanel } from './ui/move-reference-panel.ts';
 import { SettingsPanel } from './ui/settings-panel.ts';
@@ -200,7 +200,7 @@ setReducedMotion(reducedMotionPref);
 
 const settingsPanel = new SettingsPanel(
   appRoot,
-  { ...currentBindings, reducedMotion: reducedMotionPref },
+  { ...currentBindings, reducedMotion: reducedMotionPref, volume: audio.volumeLevel },
   {
     onBindingChange: (slot, binding) => {
       if (slot === 0) currentBindings.p1 = binding;
@@ -216,6 +216,12 @@ const settingsPanel = new SettingsPanel(
       reducedMotionPref = reduced;
       localStorage.setItem(REDUCED_MOTION_KEY, String(reduced));
       setReducedMotion(reduced);
+    },
+    // Volume slider (repo issue #14): a separate, independently persisted
+    // control from mute/unmute -- setting it to 0 sounds identical to
+    // muting but doesn't touch the `muted` flag or its own button label.
+    onVolumeChange: (volume) => {
+      audio.setVolume(volume);
     },
   },
 );
@@ -273,6 +279,21 @@ let netMatch: NetMatch | null = null;
 // player already saw with a global win/loss overlay for a match they
 // were no longer part of -- see the doc comment on that handler.
 let eliminatedThisOnlineMatch = false;
+// 2026-09-10: the most common path into onMatchOver is a human eliminated
+// early, watching the remaining bots fight it out, then dismissing their
+// placement overlay via "Keep spectating". The server almost always
+// tears that down with resolved: false (isAbandonedByHumans, no human
+// seats left) rather than a genuine resolution -- and the branch below
+// used to do nothing at all in that case, on the theory that an
+// unresolved end is "noise" once the player already has their placement
+// screen. That left a real, reproducible dead end live in production: a
+// frozen last frame, a plain (non-interactive) "Match complete" corner
+// chip, and zero controls -- verified by playing a full match to
+// elimination, choosing "Keep spectating", and watching the match get
+// torn down with no way back. Remember what the placement overlay said
+// so we can put the player's own "Play again" control back in front of
+// them if they dismissed it and nothing else ever will.
+let lastEliminationContent: MatchOverlayContent | null = null;
 
 function serverUrl(): string {
   const params = new URLSearchParams(location.search);
@@ -288,6 +309,7 @@ function serverUrl(): string {
 async function beginOnlineMatch(): Promise<void> {
   lastMatchWasOnline = true;
   eliminatedThisOnlineMatch = false;
+  lastEliminationContent = null;
   startScreen.hide();
   winScreen.hide();
   spectatorBanner.hide();
@@ -373,6 +395,13 @@ async function beginOnlineMatch(): Promise<void> {
         // controls, and now also learns who won.
         if (resolved) {
           matchOverlay.announceWinner(winnerIndex, netMatch?.localSlot());
+        } else if (!matchOverlay.isVisible && lastEliminationContent) {
+          // Genuinely unresolved teardown (no human seats left) while the
+          // player had dismissed their placement screen to keep watching.
+          // Nothing else will ever bring a control back on screen, so put
+          // their own placement overlay back up rather than leave a
+          // frozen frame behind a non-interactive "Match complete" chip.
+          matchOverlay.show(lastEliminationContent);
         }
         return;
       }
@@ -396,14 +425,15 @@ async function beginOnlineMatch(): Promise<void> {
     onEliminated: (placement, totalFighters) => {
       eliminatedThisOnlineMatch = true;
       touchControls.hide();
-      matchOverlay.show({
+      lastEliminationContent = {
         title: `You finished ${placement} of ${totalFighters}`,
         message: 'You can jump straight into a new match, or keep watching this one play out.',
         actions: [
           { label: 'Play again', onClick: () => void beginOnlineMatch() },
           { label: 'Keep spectating', onClick: () => matchOverlay.hide(), kind: 'plain' },
         ],
-      });
+      };
+      matchOverlay.show(lastEliminationContent);
     },
   }, audio);
   netMatch = net;

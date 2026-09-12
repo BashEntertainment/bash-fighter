@@ -43,8 +43,8 @@ export interface FramingStageBounds {
 // blast rect (falls are the fast, brief case; the full blast-zone clamp
 // two steps below still shows however much further a knocked-out
 // fighter actually falls, this is only the *minimum* reserved band).
-export const JUMP_HEADROOM_WORLD = 250;
-export const FALL_HEADROOM_WORLD = 40;
+export const JUMP_HEADROOM_WORLD = 220;
+export const FALL_HEADROOM_WORLD = 70;
 
 /** The camera's "always show at least this much" floor used to be the
  * *entire* blast zone -- a battle-royale arena's blast zone is sized with

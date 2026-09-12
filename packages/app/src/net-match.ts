@@ -144,6 +144,15 @@ export class NetMatch {
   // outlives the tab, so a seat can't be reclaimed from a stale token left
   // lying around after the tab is closed.
   private resumeToken: string | null = loadResumeToken();
+  // Set for exactly one tick: the moment a 'welcome' arrives with
+  // resumed === true and resumeToken === null. That specific combination
+  // is unique to the server's resume-into-ended path (server/src/index.ts,
+  // handleResume: `match.phase === 'ended'` branch) -- a normal fresh join
+  // sends resumed: false, and a real resumed-into-a-live-match welcome
+  // always carries a real (non-null) token. The 'matchEnd' that follows
+  // immediately after is the server informing us of an outcome for a seat
+  // we are no longer meaningfully part of, not a real result to show.
+  private resumedIntoEndedMatch = false;
   private setResumeToken(token: string | null): void {
     this.resumeToken = token;
     saveResumeToken(token);
@@ -248,22 +257,19 @@ export class NetMatch {
     this.characterId = characterId;
     this.stopped = false;
     this.reconnectAttempt = 0;
-    // Clicking "Play online" (or "Play again") is always an explicit,
-    // fresh request for a live or forming lobby -- never an attempt to
-    // get back into whatever this tab's sessionStorage happens to still
-    // be holding. A leftover token here is not a sign the player wants
-    // back into that seat; it is a leftover from a prior session that
-    // never got the chance to clear it itself (e.g. the socket died
-    // without a matchEnd/eliminated message ever arriving to run the
-    // cleanup in handleControl). Offering it here is exactly how a brand
-    // new join lands straight on an already-finished match's result
-    // screen (production, 2026-09-11: server logs
-    // `[matchEnd] {"path":"resume-into-ended"}`) instead of a new lobby.
-    // Automatic mid-match reconnection after an accidental drop does NOT
-    // go through this method -- scheduleReconnect() calls openSocket()
-    // directly and keeps using whatever token this session has live --
-    // so that recovery path is untouched by this clear.
-    this.setResumeToken(null);
+    // Offering a stored resumeToken here is deliberate and must stay: it is
+    // what lets an accidental browser refresh mid-match drop the player
+    // straight back into the live match they were winning, instead of a
+    // fresh lobby. The problem was never the token itself -- it was a
+    // *stale* token pointing at a match that had already ended by the time
+    // it got offered (server logs that exact case as
+    // `[matchEnd] {"path":"resume-into-ended"}`). That case is handled where
+    // it actually surfaces, in handleControl's 'matchEnd' case below: it
+    // clears the token and transparently opens a fresh connection instead
+    // of showing a result screen for a match the player is not part of any
+    // more. See handleControl for the detection (welcome.resumed === true
+    // with welcome.resumeToken === null -- the one combination the server
+    // only ever sends on the resume-into-ended path; server/src/index.ts).
     this.events.onStateChange?.('connecting');
     this.openSocket();
   }
@@ -316,6 +322,11 @@ export class NetMatch {
       }
     });
     ws.addEventListener('close', () => {
+      // A socket this connection has already moved on from (e.g. matchEnd's
+      // resume-into-ended handling below opens a brand-new one immediately,
+      // while this one is still finishing its own close) must not report
+      // state for a connection nobody cares about any more.
+      if (ws !== this.ws) return;
       this.loop?.stop();
       if (this.stopped) return;
       // Mid-match drop with a resume token in hand: try to get back in
@@ -330,6 +341,7 @@ export class NetMatch {
       }
     });
     ws.addEventListener('error', () => {
+      if (ws !== this.ws) return;
       if (!this.resumeToken || !this.matchStarted || this.over) {
         this.events.onStateChange?.('error', 'connection error');
       }
@@ -369,6 +381,7 @@ export class NetMatch {
       case 'welcome':
         this.mySlot = msg.slot;
         this.spectating = msg.slot < 0;
+        this.resumedIntoEndedMatch = msg.resumed === true && (msg.resumeToken ?? null) === null;
         this.setResumeToken(msg.resumeToken ?? null);
         this.reconnectAttempt = 0;
         if (msg.resumed) {
@@ -405,7 +418,6 @@ export class NetMatch {
         }
         break;
       case 'matchEnd':
-        this.over = true;
         // The match is finished -- there is nothing left to resume into, so
         // drop any saved token now rather than leaving it in sessionStorage
         // to be replayed by the *next* NetMatch's initial `hello`. Without
@@ -414,6 +426,19 @@ export class NetMatch {
         // resume_invalid back from the server, and dead-ended on the
         // disconnected screen instead of just starting the new match.
         this.setResumeToken(null);
+        if (this.resumedIntoEndedMatch) {
+          // We only got here because a stale token (a refresh, or an
+          // automatic reconnect after a drop) pointed at a seat in a match
+          // that had already ended by the time the server looked it up.
+          // The player asked to play, not to be told the score of a match
+          // they are no longer part of -- open a brand-new connection into
+          // a live or forming lobby instead of surfacing this as a result.
+          this.resumedIntoEndedMatch = false;
+          this.ws?.close();
+          this.connect(this.name, this.characterId);
+          return;
+        }
+        this.over = true;
         this.events.onMatchOver?.(msg.winner, msg.resolved, msg.leaderboard, this.matchSettings ?? undefined);
         break;
       case 'error':

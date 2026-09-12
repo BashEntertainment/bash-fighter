@@ -1191,6 +1191,20 @@ html, body {
   display: none;
 }
 
+/* Waiting screen (packages/app/src/ui/waiting-screen.ts) already shows the
+   mode line and the player count/countdown in its own centred composition
+   -- while it is up, the small always-on connection chip and mode chip
+   below it would just repeat the same two sentences a second time on the
+   same screen. Suppress them for exactly the 'waiting' state (driven off
+   the same data-state attribute setNetStatus() already sets, so there is
+   one source of truth); every other state (connecting, in-match,
+   spectating, reconnecting, disconnected, error, match-complete) keeps
+   both chips exactly as before. */
+#net-status[data-state='waiting'],
+#net-status[data-state='waiting'] ~ #net-mode-line {
+  display: none;
+}
+
 /* Mode line (2026-09-11, Timed Brawl mode rotation): sits just above the
    connection chip, telling a waiting player which mode their match will
    run in plain language. Amber, matching --accent-strong, since this is

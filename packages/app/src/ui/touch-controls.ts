@@ -28,6 +28,13 @@ interface StickPointerState {
 
 const STICK_RADIUS = 52;
 
+// Synthetic pointer id for keyboard activation (Enter/Space on a focused
+// action button). Real browsers issue non-negative pointer ids, so -1 can
+// never collide with a real finger; reusing the pointer bookkeeping means
+// keyboard presses get the same "another finger may still hold this
+// button" release logic for free (issue #27).
+const KEYBOARD_POINTER_ID = -1;
+
 export class TouchControls {
   readonly root: HTMLDivElement;
   readonly source = new TouchSource();
@@ -83,8 +90,42 @@ export class TouchControls {
     this.source.setActivePointerCount(count);
   }
 
-  private makeButton(name: TouchButton, label: string): HTMLDivElement {
-    const btn = document.createElement('div');
+  // -- Shared press/release bookkeeping (pointer + keyboard) ---------
+
+  // One code path for every way a button can come down (touch, pen,
+  // keyboard) so the multi-pointer rules -- second finger on the same
+  // button, releases arriving out of order -- are identical regardless
+  // of input source. Keyboard presses ride the same Map under
+  // KEYBOARD_POINTER_ID.
+  private pressButton(name: TouchButton, btn: HTMLButtonElement, pointerId: number): void {
+    this.buttonPointers.set(pointerId, name);
+    this.source.setButton(name, true);
+    btn.classList.add('pressed');
+    this.updateActiveCount();
+  }
+
+  private releaseButton(name: TouchButton, btn: HTMLButtonElement, pointerId: number): void {
+    if (!this.buttonPointers.has(pointerId)) return;
+    this.buttonPointers.delete(pointerId);
+    // Only clear the button if no other pointer is still holding it --
+    // relevant if a second finger lands on the same button mid-tap, or a
+    // finger holds it while the keyboard press on it is released.
+    const stillHeld = Array.from(this.buttonPointers.values()).includes(name);
+    if (!stillHeld) {
+      this.source.setButton(name, false);
+      btn.classList.remove('pressed');
+    }
+    this.updateActiveCount();
+  }
+
+  private makeButton(name: TouchButton, label: string): HTMLButtonElement {
+    // A real <button>, not a div with role="button" (issue #27): it is
+    // in the tab order by default, announced as a button by screen
+    // readers (its text content is the accessible name), and
+    // Enter/Space key handling below makes keyboard activation drive
+    // the same source state a finger would.
+    const btn = document.createElement('button');
+    btn.type = 'button';
     btn.className = `touch-btn touch-btn-${name}`;
     btn.textContent = label;
     btn.dataset.button = name;
@@ -103,26 +144,41 @@ export class TouchControls {
       } catch {
         // Ignored -- see comment above.
       }
-      this.buttonPointers.set(e.pointerId, name);
-      this.source.setButton(name, true);
-      btn.classList.add('pressed');
-      this.updateActiveCount();
+      this.pressButton(name, btn, e.pointerId);
     };
     const onUp = (e: PointerEvent): void => {
-      if (!this.buttonPointers.has(e.pointerId)) return;
-      this.buttonPointers.delete(e.pointerId);
-      // Only clear the button if no other pointer is still holding it --
-      // relevant if a second finger lands on the same button mid-tap.
-      const stillHeld = Array.from(this.buttonPointers.values()).includes(name);
-      if (!stillHeld) {
-        this.source.setButton(name, false);
-        btn.classList.remove('pressed');
-      }
-      this.updateActiveCount();
+      this.releaseButton(name, btn, e.pointerId);
+    };
+    // Keyboard activation: hold Enter or Space and the button is held,
+    // release and it clears -- matching a finger's press-and-hold
+    // semantics (shield especially is a hold, not a tap). preventDefault
+    // stops the browser's synthetic click on keyup, which would fire a
+    // second, stateless activation on top of the hold.
+    const onKeyDown = (e: KeyboardEvent): void => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      if (e.repeat) return; // key auto-repeat must not re-enter the press path
+      e.preventDefault();
+      this.pressButton(name, btn, KEYBOARD_POINTER_ID);
+    };
+    const onKeyUp = (e: KeyboardEvent): void => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      e.preventDefault();
+      this.releaseButton(name, btn, KEYBOARD_POINTER_ID);
+    };
+    // If focus leaves while the keyboard press is held (Tab away, or
+    // focus jumps on a HUD toggle), the keyup would land on another
+    // element and the action would stick on forever -- the worst
+    // failure mode here, same reason pointercancel is handled below.
+    // Releasing on blur closes that hole.
+    const onBlur = (): void => {
+      this.releaseButton(name, btn, KEYBOARD_POINTER_ID);
     };
     btn.addEventListener('pointerdown', onDown);
     btn.addEventListener('pointerup', onUp);
     btn.addEventListener('pointercancel', onUp);
+    btn.addEventListener('keydown', onKeyDown);
+    btn.addEventListener('keyup', onKeyUp);
+    btn.addEventListener('blur', onBlur);
     return btn;
   }
 

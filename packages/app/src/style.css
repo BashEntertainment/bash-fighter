@@ -1648,3 +1648,16 @@ html, body {
   vertical-align: 0.08em;
   border-radius: 50%;
 }
+
+/* Escape hatch for a player who chose to keep watching after their own
+   elimination: small, out of the way, and always clickable. */
+.spectate-chip {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 40;
+}
+
+.spectate-chip.hidden {
+  display: none;
+}

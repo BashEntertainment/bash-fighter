@@ -11,6 +11,7 @@ import { SpectatorBanner } from './ui/spectator-banner.ts';
 import { SimMatchAdapter } from './spectator/sim-adapter.ts';
 import { SpectatorController } from './spectator/controller.ts';
 import { NetMatch, type ConnectionState } from './net-match.ts';
+import { SpectateChip } from './ui/spectate-chip.ts';
 import { MatchOverlay, SPECTATE_OFFER, type MatchOverlayContent } from './ui/match-overlay.ts';
 import { ControlsHint } from './ui/controls-hint.ts';
 import { MoveReferencePanel } from './ui/move-reference-panel.ts';
@@ -111,6 +112,7 @@ topRightControls.appendChild(muteButton);
 const hud = new Hud(appRoot);
 const spectatorBanner = new SpectatorBanner(appRoot);
 const matchOverlay = new MatchOverlay(appRoot);
+const spectateChip = new SpectateChip(appRoot, () => void beginOnlineMatch());
 const controlsHint = new ControlsHint(appRoot);
 
 const touchControls = new TouchControls(appRoot);
@@ -336,8 +338,11 @@ let lastEliminationContent: MatchOverlayContent | null = null;
 // nothing to click, even though lastEliminationContent already exists.
 // This timer guarantees an escape hatch regardless of the root cause on
 // the server side: if no matchEnd shows up within SPECTATE_STALL_MS of
-// our own elimination, we force the player's own placement overlay back
-// up so 'Play again' is always reachable.
+// our own elimination, a small 'Play again' chip appears and stays.
+// 2026-09-12: it used to re-show the whole placement overlay, repeatedly,
+// which threw a panel over the fight a player had explicitly asked to keep
+// watching -- and made a click aimed at the game land on a button that had
+// just reappeared. The chip keeps the guarantee without the interruption.
 const SPECTATE_STALL_MS = 25_000;
 let spectateStallTimer: ReturnType<typeof setInterval> | null = null;
 function clearSpectateStallTimer(): void {
@@ -363,6 +368,7 @@ async function beginOnlineMatch(): Promise<void> {
   eliminatedThisOnlineMatch = false;
   lastEliminationContent = null;
   clearSpectateStallTimer();
+  spectateChip.hide();
   startScreen.hide();
   winScreen.hide();
   timedBrawlEndScreen.hide();
@@ -470,6 +476,7 @@ async function beginOnlineMatch(): Promise<void> {
         // keeps their own placement, "Play again" and "Keep spectating"
         // controls, and now also learns who won.
         if (resolved) {
+          spectateChip.hide();
           matchOverlay.announceWinner(winnerIndex, netMatch?.localSlot(), netMatch ? (slot) => netMatch!.nameFor(slot) : undefined);
         } else if (!matchOverlay.isVisible && lastEliminationContent) {
           // Genuinely unresolved teardown (no human seats left) while the
@@ -486,6 +493,7 @@ async function beginOnlineMatch(): Promise<void> {
         // abandoned-teardown edge case reached before our own elimination
         // event fired). No winner to announce, but the player must still
         // get a way forward -- never leave a dead frame with no control.
+        spectateChip.hide();
         matchOverlay.show({
           title: 'Match ended',
           message: 'This match ended before it finished. You can jump straight into a new one.',
@@ -495,6 +503,7 @@ async function beginOnlineMatch(): Promise<void> {
       }
       // Still alive and the match genuinely resolved: tell them who won.
       matchOverlay.hide();
+      spectateChip.hide();
       audio.play('match_end');
       if (isTimedBrawl(settings) && leaderboard) {
         // Timed Brawl never eliminates (fighters respawn -- see
@@ -521,7 +530,14 @@ async function beginOnlineMatch(): Promise<void> {
         message: `You can jump straight into a new match${SPECTATE_OFFER}.`,
         actions: [
           { label: 'Play again', onClick: () => void beginOnlineMatch() },
-          { label: 'Keep spectating', onClick: () => matchOverlay.hide(), kind: 'plain' },
+          {
+            label: 'Keep spectating',
+            onClick: () => {
+              matchOverlay.hide();
+              spectateChip.show();
+            },
+            kind: 'plain',
+          },
         ],
       };
       matchOverlay.show(lastEliminationContent);
@@ -532,7 +548,7 @@ async function beginOnlineMatch(): Promise<void> {
       // giving up the escape hatch after a single check.
       spectateStallTimer = setInterval(() => {
         if (eliminatedThisOnlineMatch && lastEliminationContent && !matchOverlay.isVisible) {
-          matchOverlay.show(lastEliminationContent);
+          spectateChip.show();
         }
       }, SPECTATE_STALL_MS);
     },

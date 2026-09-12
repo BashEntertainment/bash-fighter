@@ -1668,8 +1668,28 @@ html, body {
 .spectate-chip {
   position: fixed;
   right: 16px;
-  bottom: 16px;
+  /* Clears the .debug-hint line (bottom: 12px, ~14px tall): found by
+     playing production, where the chip landed exactly on top of it. */
+  bottom: 38px;
   z-index: 40;
+}
+
+/* The chip has to read as a button on top of a moving arena, so it carries
+   its own border and backing rather than relying on the plain-text style
+   used inside modals. */
+.spectate-chip .btn {
+  padding: 7px 14px;
+  font-size: 13px;
+  color: var(--ink);
+  background: rgba(14, 14, 14, 0.88);
+  border: 1px solid rgba(232, 230, 223, 0.28);
+  border-radius: 3px;
+}
+
+.spectate-chip .btn:hover,
+.spectate-chip .btn:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .spectate-chip.hidden {

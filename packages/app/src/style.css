@@ -967,6 +967,16 @@ html, body {
   justify-content: center;
 }
 
+/* Win screen (packages/app/src/ui/win-screen.ts): short, fixed-height
+   content that used to top-align like every other .screen and sit hard
+   against the viewport's top edge with a large empty area beneath --
+   unlike the placement overlay (.match-overlay, which centers), this is
+   the only other full-viewport end state and it should read the same
+   way. Centering here matches #timed-brawl-end-screen above. */
+#win-screen {
+  justify-content: center;
+}
+
 /* Two columns of up to 10 rows each, same convention as the HUD sidebar
    (packages/app/src/ui/hud.ts's own two-column card grid) -- all 20
    fighters always fit on screen at once with no scrolling, so the local
@@ -1203,6 +1213,73 @@ html, body {
 
 #net-mode-line.hidden {
   display: none;
+}
+
+/* Waiting screen (packages/app/src/ui/waiting-screen.ts): the composed
+   state a player sees between clicking "Play online" and the lobby
+   filling, replacing what used to be plain black canvas plus the two
+   small connection chips. Sits above the canvas, below those chips
+   (they stay put at bottom-left for every other connection state, so
+   z-index here is lower). Quiet, not a billboard: one wordmark, one
+   mode line, one count, one line of controls, all centered and static
+   -- no motion, no colour beyond the accent already used everywhere
+   else for "notice this". */
+.waiting-screen {
+  position: absolute;
+  inset: 0;
+  z-index: 15;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  background: var(--bg);
+  text-align: center;
+  padding: 24px;
+}
+
+.waiting-screen.hidden {
+  display: none;
+}
+
+.waiting-wordmark {
+  font-size: 40px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  border-bottom: 3px solid var(--accent);
+  padding-bottom: 8px;
+}
+
+.waiting-mode {
+  font-size: 15px;
+  color: #c8912a;
+}
+
+.waiting-mode.hidden {
+  display: none;
+}
+
+.waiting-count {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  color: var(--ink-dim);
+}
+
+.waiting-hint {
+  max-width: 480px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink-dim);
+}
+
+@media (max-width: 480px) {
+  .waiting-wordmark {
+    font-size: 30px;
+  }
+  .waiting-hint {
+    max-width: 92vw;
+  }
 }
 
 /* Win screen headline: the wordmark's weight without borrowing the

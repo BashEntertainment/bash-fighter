@@ -248,6 +248,22 @@ export class NetMatch {
     this.characterId = characterId;
     this.stopped = false;
     this.reconnectAttempt = 0;
+    // Clicking "Play online" (or "Play again") is always an explicit,
+    // fresh request for a live or forming lobby -- never an attempt to
+    // get back into whatever this tab's sessionStorage happens to still
+    // be holding. A leftover token here is not a sign the player wants
+    // back into that seat; it is a leftover from a prior session that
+    // never got the chance to clear it itself (e.g. the socket died
+    // without a matchEnd/eliminated message ever arriving to run the
+    // cleanup in handleControl). Offering it here is exactly how a brand
+    // new join lands straight on an already-finished match's result
+    // screen (production, 2026-09-11: server logs
+    // `[matchEnd] {"path":"resume-into-ended"}`) instead of a new lobby.
+    // Automatic mid-match reconnection after an accidental drop does NOT
+    // go through this method -- scheduleReconnect() calls openSocket()
+    // directly and keeps using whatever token this session has live --
+    // so that recovery path is untouched by this clear.
+    this.setResumeToken(null);
     this.events.onStateChange?.('connecting');
     this.openSocket();
   }

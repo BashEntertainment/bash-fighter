@@ -16,6 +16,7 @@ import { ControlsHint } from './ui/controls-hint.ts';
 import { MoveReferencePanel } from './ui/move-reference-panel.ts';
 import { SettingsPanel } from './ui/settings-panel.ts';
 import { TouchControls } from './ui/touch-controls.ts';
+import { WaitingScreen } from './ui/waiting-screen.ts';
 import {
   isTouchCapable,
   loadPersistedBindings,
@@ -168,6 +169,8 @@ const netModeLine = document.createElement('div');
 netModeLine.id = 'net-mode-line';
 netModeLine.className = 'hidden';
 appRoot.appendChild(netModeLine);
+
+const waitingScreen = new WaitingScreen(appRoot);
 
 function setNetStatus(state: ConnectionState, detail?: string): void {
   netStatus.classList.remove('hidden');
@@ -394,6 +397,12 @@ async function beginOnlineMatch(): Promise<void> {
     onStateChange: (state, detail) => {
       setNetStatus(state, detail);
       if (state !== 'waiting') netModeLine.classList.add('hidden');
+      // The composed waiting screen (packages/app/src/ui/waiting-screen.ts)
+      // owns this same moment: show it exactly while 'waiting', hide it for
+      // every other state (connecting, in-match, disconnected, etc.) so it
+      // never sits on top of the actual match once it starts.
+      if (state === 'waiting') waitingScreen.show();
+      else waitingScreen.hide();
       if (state === 'disconnected' || state === 'error') {
         matchOverlay.show({
           title: state === 'error' ? 'Could not reach the match server' : 'Disconnected from the match',
@@ -421,6 +430,9 @@ async function beginOnlineMatch(): Promise<void> {
       } else {
         netModeLine.classList.add('hidden');
       }
+      waitingScreen.setMode(modeName);
+      waitingScreen.setCount(players, capacity, countdownTicks);
+      waitingScreen.show();
     },
     onMatchOver: (winnerIndex, resolved, leaderboard, settings) => {
       clearSpectateStallTimer();

@@ -37,7 +37,7 @@ export class WinScreen {
       this.headline.textContent = 'Nobody survived';
       this.headline.style.color = '';
       this.headline.style.borderBottomColor = '#666';
-      this.subtitle.textContent = 'Both fighters went out on the same frame.';
+      this.subtitle.textContent = 'Everyone went out on the same frame.';
     } else {
       const won = localSlot !== undefined && localSlot >= 0 && localSlot === winnerIndex;
       const colour = PLAYER_HEX[winnerIndex % PLAYER_HEX.length] as string;

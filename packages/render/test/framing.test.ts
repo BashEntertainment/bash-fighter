@@ -135,3 +135,46 @@ test('an already-viewport-matching aspect box is returned essentially unchanged'
   assert.ok(Math.abs(floor.minY - -FALL_HEADROOM_WORLD) < 1e-6);
   assert.ok(Math.abs(floor.maxY - JUMP_HEADROOM_WORLD) < 1e-6);
 });
+
+test('dead-space-below-floor fix 2026-09-12: below-ground band is a small minority of the framed box, not ~30%+', () => {
+  // Regression pin for the reported defect (wide dark band under the
+  // floor eating a fifth-plus of the viewport): for a flat single
+  // platform the raw box is exactly FALL_HEADROOM_WORLD below the
+  // ground and JUMP_HEADROOM_WORLD above it, so the below-ground share
+  // of the *raw* (pre-aspect-padding) vertical span must be small.
+  const stage = flatStage();
+  const floor = computeFramingFloor(stage, 1280, 720);
+  const belowGround = 0 - floor.minY; // ground is at world y=0
+  const spanY = floor.maxY - floor.minY;
+  assert.ok(belowGround / spanY < 0.2, `below-ground share ${belowGround / spanY} should be well under the old ~31%`);
+  // And the constants themselves must keep fall < jump, with fall a
+  // small minority of their sum -- this is what actually moves the
+  // ground down the screen (see framing.ts's headroom comment).
+  assert.ok(FALL_HEADROOM_WORLD < JUMP_HEADROOM_WORLD);
+  assert.ok(FALL_HEADROOM_WORLD / (FALL_HEADROOM_WORLD + JUMP_HEADROOM_WORLD) < 0.2);
+});
+
+test('dead-space-below-floor fix 2026-09-12: multi-height stage (battle-royale-20-like) still keeps the below-ground band small', () => {
+  // battle-royale-20's real geometry: ground at y=0, platforms up to
+  // y=160, spread wide (720 world units) versus a 1280x720 viewport.
+  // Reproduces the live-play measurement (~20%+ dead space before this
+  // fix) as a permanent regression test.
+  const stage: FramingStageBounds = {
+    platforms: [
+      { minX: -480, maxX: 480, y: 0 },
+      { minX: -360, maxX: -220, y: 70 },
+      { minX: 220, maxX: 360, y: 70 },
+      { minX: -70, maxX: 70, y: 110 },
+      { minX: -180, maxX: -100, y: 160 },
+      { minX: 100, maxX: 180, y: 160 },
+    ],
+    blastMinX: -620,
+    blastMaxX: 620,
+    blastMinY: -260,
+    blastMaxY: 520,
+  };
+  const floor = computeFramingFloor(stage, 1280, 720);
+  const belowGround = 0 - floor.minY;
+  const spanY = floor.maxY - floor.minY;
+  assert.ok(belowGround / spanY < 0.15, `below-ground share ${belowGround / spanY} should be a small minority of the frame`);
+});

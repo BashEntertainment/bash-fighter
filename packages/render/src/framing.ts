@@ -25,8 +25,26 @@ export interface FramingStageBounds {
 // a little under 200 world units above a jump's start), not guessed --
 // rounded up for headroom. This is presentation framing only; it never
 // changes where a fighter can actually stand or die.
-export const JUMP_HEADROOM_WORLD = 200;
-export const FALL_HEADROOM_WORLD = 90;
+// PRESENTATION FIX (dead-space-below-floor pass 2026-09-12, see wiki
+// "Camera Dead Space Below Floor Fix 2026-09-12"): the fall:jump split
+// below used to be 90:200, i.e. every framed box reserved a fall-headroom
+// band that was ~30% of the *raw* headroom span (before per-stage
+// platform-height padding stretches maxY further) purely below the
+// ground -- on stages/moments where nothing is actually down there
+// (fighters that fall are gone in well under a second), this read on
+// screen as a dead, wasted band under the floor (measured: ~18-25% of
+// viewport height across battle-royale-20, the-foundry and a shrunk
+// late-match arena). The sum (290 world units) is left exactly the same
+// -- so overall zoom/scale and everything the aspect-padding step in
+// computeFramingFloor does with it is unaffected -- only how that fixed
+// budget is split between "show a hard landing below the ground" and
+// "show a rising jump above it" changes. 40 world units is still enough
+// to see a fighter's fall/spike below the platform before they leave the
+// blast rect (falls are the fast, brief case; the full blast-zone clamp
+// two steps below still shows however much further a knocked-out
+// fighter actually falls, this is only the *minimum* reserved band).
+export const JUMP_HEADROOM_WORLD = 250;
+export const FALL_HEADROOM_WORLD = 40;
 
 /** The camera's "always show at least this much" floor used to be the
  * *entire* blast zone -- a battle-royale arena's blast zone is sized with

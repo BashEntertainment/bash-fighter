@@ -170,7 +170,7 @@ netModeLine.id = 'net-mode-line';
 netModeLine.className = 'hidden';
 appRoot.appendChild(netModeLine);
 
-const waitingScreen = new WaitingScreen(appRoot);
+const waitingScreen = new WaitingScreen(appRoot, touchCapable);
 
 function setNetStatus(state: ConnectionState, detail?: string): void {
   netStatus.classList.remove('hidden');

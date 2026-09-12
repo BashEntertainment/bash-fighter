@@ -915,6 +915,31 @@ html, body {
   font-size: 8px;
 }
 
+/* Found in the phone-width pass, 2026-09-12: the local player's "YOU"
+   badge (.hud-card.is-you::before, an absolutely positioned overlay
+   meant for the roomier non-dense card) sits top:2px/right:6px -- inside
+   a dense card that is a single ~14px-tall row, that lands directly on
+   top of the percent readout, rendering as something like "Y9%" with
+   both the tag and the fighter's actual damage unreadable. The dense
+   card has its own two-row grid already, so give "YOU" a real cell in
+   that grid (the end of the stocks row, which has room) instead of an
+   overlay, rather than trying to nudge an absolute position that will
+   only go back to colliding the next time column widths change. */
+.hud-list.dense .hud-card.is-you::before {
+  content: none;
+}
+
+.hud-list.dense .hud-card.is-you .stocks {
+  display: flex;
+  justify-content: space-between;
+}
+
+.hud-list.dense .hud-card.is-you .stocks::after {
+  content: 'YOU';
+  color: var(--ink);
+  letter-spacing: 0.1em;
+}
+
 .hud-card {
   background: rgba(20, 23, 27, 0.85);
   border-left: 3px solid var(--ink-dim);

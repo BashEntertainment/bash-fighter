@@ -4,9 +4,22 @@ Bash Fighter is an open-source (AGPL-3.0), web-based platform fighter
 built for chaotic 20-player free-for-all matches. Before your first pull
 request, read [`CLA.md`](./CLA.md): contributions require agreeing to a
 Contributor License Agreement. It is a licence grant, not a copyright
-assignment — you keep ownership of what you write. The signing mechanism
-is not yet built; until it is, a maintainer will follow up on your first
-PR with instructions.
+assignment — you keep ownership of what you write.
+
+**Signing the CLA (first PR only):** add one line to
+[`CLA-SIGNATURES.md`](./CLA-SIGNATURES.md), in your own pull request:
+
+```
+- @your-github-username: I have read and agree to the Bash Fighter CLA (CLA.md).
+```
+
+A `CLA Check` GitHub Actions job checks this automatically on every PR and
+is a required status: it fails, and comments with these exact instructions,
+until your line is in `CLA-SIGNATURES.md`. If you're a first-time
+contributor from a fork, GitHub may hold that workflow run for a
+maintainer to approve before it runs at all (you'll see "action_required" —
+that's normal, not a rejection) — add the signature line anyway, right
+away, so the check passes as soon as it runs.
 
 See [`README.md`](./README.md) for the package layout and
 [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) for the technical design.

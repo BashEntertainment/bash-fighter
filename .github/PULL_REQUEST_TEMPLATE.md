@@ -1,3 +1,11 @@
+## CLA
+
+- [ ] I have added my line to [`CLA-SIGNATURES.md`](../CLA-SIGNATURES.md)
+      (first PR only — see [`CONTRIBUTING.md`](../CONTRIBUTING.md) and
+      [`CLA.md`](../CLA.md)). The `CLA Check` job will fail until this is
+      done; if your run shows "action_required" a maintainer needs to
+      approve it first, but you should still add the line now.
+
 ## What this changes
 
 A short description of the change and why it's needed. Link the issue it

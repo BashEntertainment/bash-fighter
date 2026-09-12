@@ -1,0 +1,81 @@
+name: CLA Check
+
+# Runs on pull_request_target (not pull_request) so it has a writable
+# GITHUB_TOKEN even for pull requests opened from forks by first-time
+# contributors, whose workflow runs otherwise land in `action_required`
+# and never execute without a maintainer clicking "Approve and run"
+# every single time. We never check out or execute the PR head's code —
+# we only read one file's content from the head commit via the GitHub
+# API (a data read, not a code execution), so running untrusted PRs
+# through this trigger is safe.
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize]
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  cla:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check for a CLA signature in CLA-SIGNATURES.md
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          set -euo pipefail
+          echo "Checking CLA-SIGNATURES.md at $HEAD_SHA for @$AUTHOR"
+
+          CONTENT=$(gh api "repos/$REPO/contents/CLA-SIGNATURES.md?ref=$HEAD_SHA" --jq .content | base64 -d || true)
+
+          if printf '%s\n' "$CONTENT" | grep -Ei "^- @${AUTHOR}: .*agree.*CLA" > /dev/null; then
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Comment with instructions if not signed
+        if: steps.check.outputs.signed == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          set -euo pipefail
+          MARKER="<!-- cla-check-comment -->"
+
+          EXISTING=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments" --paginate --jq \
+            '.[] | select(.body | contains("cla-check-comment")) | .id' | head -n1)
+
+          BODY="$MARKER
+          Thanks for the pull request, @$AUTHOR! Before this can be merged, you need to
+          agree to the Bash Fighter Contributor Licence Agreement ([CLA.md](../blob/main/CLA.md)).
+
+          Add this exact line to the end of the \"Signed\" list in
+          [\`CLA-SIGNATURES.md\`](../blob/main/CLA-SIGNATURES.md), in this same pull request,
+          then push the change:
+
+          \`\`\`
+          - @$AUTHOR: I have read and agree to the Bash Fighter CLA (CLA.md).
+          \`\`\`
+
+          You only need to do this once — it covers all your future contributions. The
+          \`CLA Check\` status below will turn green automatically once the line is in."
+
+          if [ -n "$EXISTING" ]; then
+            gh api "repos/$REPO/issues/comments/$EXISTING" -X PATCH -f body="$BODY" > /dev/null
+          else
+            gh api "repos/$REPO/issues/$PR_NUMBER/comments" -X POST -f body="$BODY" > /dev/null
+          fi
+
+      - name: Fail if not signed
+        if: steps.check.outputs.signed == 'false'
+        run: |
+          echo "CLA not signed yet for this PR's author. See the comment posted on the PR."
+          exit 1

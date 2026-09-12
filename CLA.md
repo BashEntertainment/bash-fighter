@@ -53,10 +53,27 @@ draft modelled on common Apache-style CLA and Harmony licence-grant
 patterns, intended to be checked by someone qualified before the project
 starts accepting a large volume of outside pull requests.
 
-The **signing mechanism is not yet decided or built** — likely an
-automated bot that comments on a contributor's first pull request (for
-example CLA Assistant or an equivalent GitHub App), but this has not been
-set up. Until it exists, a maintainer will follow up manually on
-first-time PRs with instructions. If you are opening a PR before this
-process exists, opening it does not itself constitute agreement — a
-maintainer will tell you what's needed before it can be merged.
+## How you sign
+
+Signing is a one-line entry in [`CLA-SIGNATURES.md`](./CLA-SIGNATURES.md),
+added by you in your own pull request:
+
+```
+- @your-github-username: I have read and agree to the Bash Fighter CLA (CLA.md).
+```
+
+You only need to do this once — it covers every future contribution from
+that GitHub account. The `CLA Check` GitHub Actions workflow reads
+`CLA-SIGNATURES.md` on every pull request; if your username isn't listed
+with that line, it comments on your PR with these exact instructions and
+fails a required check, so a PR cannot be merged without this step. There
+is no separate account to create and nothing to install — it's a plain
+text file in this repository.
+
+Note for maintainers: a PR from a first-time outside contributor makes
+its `CLA Check` run land in GitHub's `action_required` queue until a
+maintainer clicks "Approve and run workflows" once for that PR. Until
+that click happens, the check simply hasn't run yet — it is not a pass,
+and the PR template and this document both tell the contributor what to
+do regardless, so the requirement is visible even before the workflow has
+executed.

@@ -120,6 +120,14 @@ export interface LobbyMessage {
   /** Ticks until the match starts anyway, or -1 if not counting down. */
   countdownTicks: number;
   names: string[];
+  /** Plain-language name of the mode this lobby's match will run, e.g.
+   *  "Battle Royale — last fighter standing wins" or "Timed Brawl — most
+   *  knockouts in 3 minutes wins" (2026-09-11, mode rotation launch --
+   *  see server/src/mode-rotation.ts's modeDisplayName). Never the raw
+   *  internal identifier ('timedKO'/'battleRoyale'): a player must be
+   *  told what they are about to play in words, before it matters.
+   *  Optional so an older server that predates rotation still parses. */
+  modeName?: string;
 }
 
 export interface MatchStartMessage {

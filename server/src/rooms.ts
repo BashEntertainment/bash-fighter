@@ -5,6 +5,7 @@ import { Match, TICK_HZ, seedFromMatchId, type MatchEvents } from './match.ts';
 import { botName } from '@bash-fighter/sim/src/ai/bot.ts';
 import { seedRng, nextBounded } from '@bash-fighter/sim/src/math/prng.ts';
 import { ALL_CHARACTERS } from '@bash-fighter/content/src/characters.ts';
+import { decideMatchMode, MODE_ROTATION_CADENCE, MODE_ROTATION_DISABLED } from './mode-rotation.ts';
 
 export const DEFAULT_CAPACITY = 20;
 export const DEFAULT_MINIMUM = 2;
@@ -107,8 +108,25 @@ export class RoomManager {
   joinLobby(name: string, characterId?: string): { match: Match; slot: number } {
     let freshMatch = false;
     if (!this.filling || this.filling.phase !== 'lobby') {
+      const matchNumber = this.nextId;
       const id = `m${this.nextId++}`;
       const match = new Match(id, this.capacity, this.minimum, this.makeEvents(id));
+      // Mode rotation (2026-09-11, Timed Brawl launch, see
+      // server/src/mode-rotation.ts): decided once per created match, not
+      // per connecting player -- every seat that joins this match sees
+      // the same mode. Logged here, at decision time, so a journalctl
+      // read confirms the split independent of whether/when the match
+      // ever starts.
+      const decision = decideMatchMode(matchNumber);
+      match.plannedWinCondition = decision.winCondition;
+      match.plannedTimeLimitTicks = decision.timeLimitTicks;
+      console.log(`[modeRotation] ${JSON.stringify({
+        matchId: id,
+        matchNumber,
+        cadence: MODE_ROTATION_CADENCE,
+        disabled: MODE_ROTATION_DISABLED,
+        winCondition: decision.winCondition,
+      })}`);
       this.matches.set(id, match);
       this.filling = match;
       freshMatch = true;

@@ -158,6 +158,17 @@ netStatus.id = 'net-status';
 netStatus.className = 'hidden';
 appRoot.appendChild(netStatus);
 
+// Mode line (2026-09-11, Timed Brawl mode rotation): shown alongside the
+// waiting-lobby status so a player knows which mode they are about to
+// play before it matters -- see server/src/mode-rotation.ts's
+// modeDisplayName, whose plain-language text (never the internal
+// 'timedKO'/'battleRoyale' identifier) is broadcast in LobbyMessage.modeName
+// and rendered here verbatim.
+const netModeLine = document.createElement('div');
+netModeLine.id = 'net-mode-line';
+netModeLine.className = 'hidden';
+appRoot.appendChild(netModeLine);
+
 function setNetStatus(state: ConnectionState, detail?: string): void {
   netStatus.classList.remove('hidden');
   const label: Record<ConnectionState, string> = {
@@ -382,6 +393,7 @@ async function beginOnlineMatch(): Promise<void> {
   const net = new NetMatch(serverUrl(), {
     onStateChange: (state, detail) => {
       setNetStatus(state, detail);
+      if (state !== 'waiting') netModeLine.classList.add('hidden');
       if (state === 'disconnected' || state === 'error') {
         matchOverlay.show({
           title: state === 'error' ? 'Could not reach the match server' : 'Disconnected from the match',
@@ -400,9 +412,15 @@ async function beginOnlineMatch(): Promise<void> {
         matchOverlay.hide();
       }
     },
-    onLobby: (players, capacity, countdownTicks) => {
+    onLobby: (players, capacity, countdownTicks, modeName) => {
       const countdown = countdownTicks >= 0 ? ` — starting in ${Math.ceil(countdownTicks / 60)}s` : '';
       setNetStatus('waiting', `${players}/${capacity} players${countdown}`);
+      if (modeName) {
+        netModeLine.textContent = modeName;
+        netModeLine.classList.remove('hidden');
+      } else {
+        netModeLine.classList.add('hidden');
+      }
     },
     onMatchOver: (winnerIndex, resolved, leaderboard, settings) => {
       clearSpectateStallTimer();

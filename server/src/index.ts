@@ -20,6 +20,7 @@ import {
 } from '@bash-fighter/net/src/protocol.ts';
 import { RoomManager, DEFAULT_CAPACITY, DEFAULT_MINIMUM } from './rooms.ts';
 import { tickMetricsSnapshot } from './tick-metrics.ts';
+import { modeDisplayName } from './mode-rotation.ts';
 import { SNAPSHOT_EVERY_N_TICKS, type Match } from './match.ts';
 
 export interface ServerOptions {
@@ -155,6 +156,7 @@ function isSpectatorConn(conn: ClientConn, match: Match): boolean {
 const SPECTATOR_SNAPSHOT_DIVISOR = 2;
 
 function broadcastLobby(match: Match): void {
+  const modeName = modeDisplayName(match.effectiveWinCondition(), match.effectiveTimeLimitTicks());
   const msg: ServerControlMessage = {
     t: 'lobby',
     players: match.filledSlots,
@@ -162,6 +164,7 @@ function broadcastLobby(match: Match): void {
     minimum: match.minimum,
     countdownTicks: match.countdownTicksRemaining,
     names: match.seats.map((s) => s.name),
+    modeName,
   };
   for (const cid of watcherSet(match.id)) {
     const c = clients.get(cid);

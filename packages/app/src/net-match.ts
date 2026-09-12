@@ -89,7 +89,7 @@ function saveResumeToken(token: string | null): void {
 
 export interface NetMatchEvents {
   onStateChange?(state: ConnectionState, detail?: string): void;
-  onLobby?(players: number, capacity: number, countdownTicks: number): void;
+  onLobby?(players: number, capacity: number, countdownTicks: number, modeName?: string): void;
   /** leaderboard is slots best-to-worst (server's authoritative
    * sim.getLeaderboard()) and settings is this match's resolved
    * MatchSettings -- both needed to tell a Timed Brawl finish from a
@@ -366,7 +366,7 @@ export class NetMatch {
         break;
       case 'lobby':
         this.names = msg.names ?? [];
-        this.events.onLobby?.(msg.players, msg.capacity, msg.countdownTicks);
+        this.events.onLobby?.(msg.players, msg.capacity, msg.countdownTicks, msg.modeName);
         break;
       case 'matchStart':
         this.startMatch(msg.numFighters, msg.seed, msg.slot, msg.characterIds, msg.arenaId, msg.names, msg.settings);

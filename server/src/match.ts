@@ -2,7 +2,7 @@
 // or spectating it. Matches are fully isolated: no shared mutable state
 // between matches, no global game instance.
 import { randomBytes } from 'node:crypto';
-import { Sim, makeInputFrame, type InputFrame, type MatchSettings } from '@bash-fighter/sim/src/index.ts';
+import { Sim, makeInputFrame, type InputFrame, type MatchSettings, type WinCondition } from '@bash-fighter/sim/src/index.ts';
 import { BotController, BotDifficulty, deriveBotSeed, type BotDifficultyValue } from '@bash-fighter/sim/src/ai/bot.ts';
 import { createMatchSim, resolveCharacterId, DEFAULT_CHARACTER_ID, pickArenaId } from '@bash-fighter/content/src/index.ts';
 import { SNAPSHOT_HZ, dedupeName } from '@bash-fighter/net/src/protocol.ts';
@@ -167,6 +167,33 @@ export class Match {
   // actually given, rather than re-deriving it from env. See
   // botDifficultyFromEnv().
   botDifficulty: BotDifficultyValue | null = null;
+
+  /** Mode this match will run, decided by RoomManager at match-creation
+   * time (server/src/mode-rotation.ts) -- before start(), so the lobby
+   * message can tell a waiting player the real mode instead of the
+   * eventual default. Undefined means "let start() fall back to
+   * MATCH_WIN_CONDITION / battleRoyale", which keeps every existing test
+   * that constructs a Match directly (without going through
+   * RoomManager's rotation) working unchanged. */
+  plannedWinCondition?: WinCondition;
+  plannedTimeLimitTicks?: number;
+
+  /** What start() will actually pick, computable before start() has run
+   * (needed for the lobby message: a waiting player must be told the
+   * real mode, not guess it) -- same precedence start() itself applies:
+   * an explicit MATCH_WIN_CONDITION env pin wins, then plannedWinCondition
+   * from rotation, then the sim default (battleRoyale). */
+  effectiveWinCondition(): WinCondition {
+    const override = process.env.MATCH_WIN_CONDITION;
+    if (override === 'battleRoyale' || override === 'timedKO' || override === 'stocks') return override;
+    return this.plannedWinCondition ?? 'battleRoyale';
+  }
+
+  effectiveTimeLimitTicks(): number | undefined {
+    const timeLimitOverride = process.env.MATCH_TIME_LIMIT_TICKS;
+    if (timeLimitOverride) return Number(timeLimitOverride);
+    return this.plannedTimeLimitTicks;
+  }
 
   /** Win condition of the currently-running (or most recently run) sim,
    * for the [matchEnd] production log (2026-09-11, Timed Brawl). null
@@ -407,9 +434,19 @@ export class Match {
     // pattern as everything else here; the systemd unit does not set it
     // in production, so this is a deliberate opt-in only, e.g. for a
     // dedicated Timed Brawl rollout or this task's own live verification.
+    // An explicit MATCH_WIN_CONDITION env var is a manual pin (used by
+    // tests, and available as an operator override) and takes priority
+    // over rotation. Otherwise plannedWinCondition -- set by
+    // RoomManager's mode rotation, see server/src/mode-rotation.ts --
+    // decides. Falls back to the sim's own default (battleRoyale) if
+    // neither is present (e.g. a Match built directly, bypassing
+    // RoomManager, with no env override).
     const winConditionOverride = process.env.MATCH_WIN_CONDITION;
     if (winConditionOverride === 'battleRoyale' || winConditionOverride === 'timedKO' || winConditionOverride === 'stocks') {
       settingsOverride.winCondition = winConditionOverride;
+    } else if (this.plannedWinCondition) {
+      settingsOverride.winCondition = this.plannedWinCondition;
+      if (this.plannedTimeLimitTicks) settingsOverride.timeLimitTicks = this.plannedTimeLimitTicks;
     }
     const timeLimitOverride = process.env.MATCH_TIME_LIMIT_TICKS;
     if (timeLimitOverride) settingsOverride.timeLimitTicks = Number(timeLimitOverride);

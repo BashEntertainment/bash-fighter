@@ -18,24 +18,35 @@
 // longer also reaches the game as a movement/action input. A key with focus
 // resting on the game surface (the body, canvas, or any non-control element)
 // is completely unaffected and drives the game exactly as before.
-const FOCUSABLE_CONTROL_TAGS = new Set(['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA']);
+// Two different rules, because a button and a text field deserve different
+// treatment (John, 2026-09-12): swallowing *every* key while a button holds
+// focus would be a worse bug than the one being fixed -- a player who clicks
+// the mute button with the mouse leaves it focused, and would then find the
+// whole keyboard dead until they clicked the arena again. So for buttons and
+// selects only the activation keys are withheld, since those are the only
+// ones the browser also consumes. Text entry is different: while a name field
+// or any editable element has focus, typing must never drive the fighter.
+const ACTIVATION_CONTROL_TAGS = new Set(['BUTTON', 'SELECT']);
+const TEXT_ENTRY_TAGS = new Set(['INPUT', 'TEXTAREA']);
+const ACTIVATION_CODES = new Set(['Space', 'Enter', 'NumpadEnter']);
 
 // Duck-typed on purpose, not `target instanceof HTMLElement`: this file has
 // no DOM lib dependency beyond KeyboardEvent, and staying duck-typed keeps
 // it testable under plain Node (see packages/input/test/keyboard.test.ts),
 // matching the fake-DOM pattern used elsewhere in this repo (there is no
 // jsdom here -- see touch-controls.test.ts).
-function isFocusableControl(target: EventTarget | null): boolean {
+export function shouldIgnoreKeydown(target: EventTarget | null, code: string): boolean {
   const el = target as { tagName?: string; isContentEditable?: boolean } | null;
   if (!el || typeof el.tagName !== 'string') return false;
-  if (FOCUSABLE_CONTROL_TAGS.has(el.tagName)) return true;
-  return el.isContentEditable === true;
+  if (TEXT_ENTRY_TAGS.has(el.tagName) || el.isContentEditable === true) return true;
+  if (ACTIVATION_CONTROL_TAGS.has(el.tagName)) return ACTIVATION_CODES.has(code);
+  return false;
 }
 
 export class KeyboardSource {
   private readonly held = new Set<string>();
   private readonly onDown = (e: KeyboardEvent): void => {
-    if (isFocusableControl(e.target)) return;
+    if (shouldIgnoreKeydown(e.target, e.code)) return;
     this.held.add(e.code);
   };
   private readonly onUp = (e: KeyboardEvent): void => {

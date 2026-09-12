@@ -23,6 +23,11 @@ class FakeButton {
   isContentEditable = false;
 }
 
+class FakeTextField {
+  tagName = 'INPUT';
+  isContentEditable = false;
+}
+
 class FakeGameSurface {
   tagName = 'DIV';
   isContentEditable = false;
@@ -113,4 +118,41 @@ test('KeyboardSource: detach stops both listeners', () => {
 
   fireDown(win, 'Space', new FakeGameSurface());
   assert.equal(source.isHeld('Space'), false);
+});
+
+// Narrowed after review (John, 2026-09-12): swallowing *every* key while a
+// button holds focus is a worse defect than the double-fire it fixed -- click
+// the mute button with a mouse and the whole keyboard would go dead until you
+// clicked the arena again. Only the keys the browser itself consumes as an
+// activation are withheld.
+test('KeyboardSource: movement keys still work while a button holds focus', () => {
+  const win = new FakeWindow();
+  const source = new KeyboardSource();
+  source.attach(win as unknown as Window);
+
+  fireDown(win, 'KeyD', new FakeButton());
+  assert.equal(source.isHeld('KeyD'), true, 'a mouse click leaving a button focused must not kill movement');
+
+  fireDown(win, 'KeyF', new FakeButton());
+  assert.equal(source.isHeld('KeyF'), true, 'attack must still reach the game');
+});
+
+test('KeyboardSource: Enter on a focused button is withheld like Space', () => {
+  const win = new FakeWindow();
+  const source = new KeyboardSource();
+  source.attach(win as unknown as Window);
+
+  fireDown(win, 'Enter', new FakeButton());
+  assert.equal(source.isHeld('Enter'), false);
+});
+
+test('KeyboardSource: typing in a text field never reaches the game', () => {
+  const win = new FakeWindow();
+  const source = new KeyboardSource();
+  source.attach(win as unknown as Window);
+
+  for (const code of ['KeyD', 'KeyF', 'Space']) {
+    fireDown(win, code, new FakeTextField());
+    assert.equal(source.isHeld(code), false, `${code} typed into a name field must not drive the fighter`);
+  }
 });

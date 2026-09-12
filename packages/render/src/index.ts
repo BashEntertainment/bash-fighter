@@ -20,7 +20,7 @@ import {
   type BadgeCandidate,
   type BodyBox,
 } from './badge-layout.ts';
-import { computeFramingFloor, computePopulationAwareFramingFloor } from './framing.ts';
+import { computePopulationAwareFramingFloor } from './framing.ts';
 
 export { RenderItemTypeId } from './item-sprite.ts';
 export { EffectsLayer, type HitEffectInput, setReducedMotion, isReducedMotion } from './effects.ts';
@@ -143,13 +143,10 @@ export interface RenderFrame {
    * the app layer only tells it a strong hit happened via hitEffects. */
 }
 
-// Camera framing-floor geometry lives in framing.ts now (extracted so it
-// can be unit-tested without pulling in Pixi/DOM -- see
-// test/framing.test.ts). framingFloor() here is a thin adapter that
-// hands stage.ts's StageBounds to computeFramingFloor() unchanged.
-function framingFloor(stage: StageBounds, viewWidth: number, viewHeight: number): ArenaBounds {
-  return computeFramingFloor(stage, viewWidth, viewHeight);
-}
+// Camera framing-floor geometry lives in framing.ts (extracted so it can be
+// unit-tested without pulling in Pixi/DOM -- see test/framing.test.ts). The
+// old framingFloor() adapter here was dropped once the population-aware
+// variant became the only caller.
 
 // Fighters spread by roughly a screen-width during normal play; a
 // paddingWorld a bit smaller than the arena keeps the baseline "whole

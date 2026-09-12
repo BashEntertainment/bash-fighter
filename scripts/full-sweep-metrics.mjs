@@ -173,7 +173,14 @@ console.log('\n=== Novice survival on EASY (passive human, 20-bot EASY match) ==
 for (const arenaEntry of ALL_ARENAS) {
   for (let s = 0; s < 5; s++) {
     const seed = 300000 + s * 131 + arenaEntry.id.length;
-    const sim = new Sim(seed, N);
+    // Diagnosed 2026-09-11 (docs/MEASUREMENT.md): this used to call
+    // `new Sim(seed, N)` with no characters, so the 19 bots here could
+    // never actually attack the novice human -- this reading of "does a
+    // passive human survive" was measuring survival against bots with no
+    // moves, not against real bots. Give it the same roster production
+    // gives a real match.
+    const characters = assignServerCharacters(seed, N, new Set([0]));
+    const sim = new Sim(seed, N, characters);
     const bots = Array.from({ length: N }, (_, i) => (i === 0 ? null : new BotController(i, BotDifficulty.EASY, deriveBotSeed(seed, i))));
     const idle = makeInputFrame(0, 0, 0);
     let elimTick = null;

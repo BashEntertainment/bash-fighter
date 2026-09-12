@@ -241,6 +241,87 @@ a real remaining difference. This residual is roughly an order of
 magnitude smaller than the gap this fix closes and does not change the
 root-cause finding above.
 
+## Closing the hole, 2026-09-11 follow-up
+
+The fix above closed the bug in the two callers that had it, but did
+nothing to stop a third script or test from making the same mistake:
+`createMatchSim(seed, N, {}, undefined, arenaId)` compiled fine and
+silently gave every seat the moveless stub again. Closed that off:
+
+- `packages/content/src/match-sim.ts`'s `createMatchSim` now requires a
+  `characters: readonly CharacterData[]` argument -- no `?`, no default --
+  and throws a `RangeError` if its length doesn't match `numFighters`
+  (matching the check `Sim` itself already does one level down).
+- **Chose "make it mandatory" over "default it to a seeded ALL_CHARACTERS
+  draw living in packages/content."** The alternative -- moving
+  `scripts/lib/bot-character-assignment.mjs`'s mirror of
+  `server/src/rooms.ts`'s bot-fill draw into packages/content and using it
+  as `createMatchSim`'s default -- would have created a second
+  implementation of "how bots get characters" that a real caller could
+  still end up depending on instead of the server's actual logic, and that
+  can drift from `server/src/rooms.ts` exactly the way the two mirrors in
+  this file already partially did (the assignment says changes to
+  `server/` should be avoided, so nothing here could make `rooms.ts`
+  delegate to a shared function to guarantee they can't drift). Requiring
+  the argument means there is still exactly one place that decides bot
+  characters for a real match -- `server/src/rooms.ts` -- and
+  `createMatchSim` cannot be called without its caller consciously
+  supplying characters, sourced from wherever is correct for that caller
+  (the server's own `resolveCharacterId` resolution, or, for scripts that
+  want production-faithful offline numbers, the explicit, deliberately
+  separate mirror in `scripts/lib/bot-character-assignment.mjs`). A caller
+  that genuinely wants the moveless stub -- realistically only
+  packages/sim's own physics-only unit tests -- still gets it by calling
+  `Sim`'s constructor directly and omitting `characters` there, where that
+  default is defined, commented, and package-internal; `createMatchSim`,
+  the sanctioned cross-package builder, no longer accepts it implicitly.
+- Checked every existing caller: none relied on `createMatchSim`'s old
+  default. `server/src/match.ts`, `packages/app/src/match.ts`,
+  `packages/app/src/net-match.ts`, and both already-fixed scripts all
+  already passed real characters; `packages/app/test/local-crowd-bots.test.ts`
+  and `packages/app/test/local-vs-server-sim-equivalence.test.ts` pass
+  `undefined` for the *settings* argument (unaffected, still defaults to
+  `{}`) and real characters for the *characters* argument, so neither
+  needed a change. Nothing broke.
+- Also fixed `scripts/full-sweep-metrics.mjs`'s separate "novice survival"
+  section, which called `new Sim(seed, N)` directly (bypassing
+  `createMatchSim` entirely, so the new mandatory-argument check didn't
+  catch it) with the same moveless-bot bug: it was asking "does a passive
+  human survive 20 bots" while those 20 bots could not physically attack
+  the human. Now draws the same seeded roster as the rest of the file
+  (human's own seat still gets `PLACEHOLDER_CHARACTER`, matching a human
+  with no explicit character pick). Re-run with real bots: the novice
+  survives 10-27s in 24/25 sampled seeds across all 5 arenas (one seed on
+  `the-undercroft` survives the full match) -- markedly different from
+  what the file's stale prior claim of "unaffected" would have implied,
+  and a genuine, previously-invisible finding about how fast a passive
+  new player currently dies to real combat. That is a game-balance
+  question this follow-up did not chase further (out of scope: this pass
+  is about the harness construction bug, not first-match difficulty,
+  which already has its own history -- see the linked pages on that
+  topic); flagging it honestly here rather than either fixing it
+  unreviewed or burying it.
+- New permanent regression test:
+  `packages/content/test/match-sim.test.ts`. It builds a real 20-fighter
+  match through `createMatchSim` with a real drawn roster and asserts
+  every character used has a non-empty `moves` array (the property whose
+  absence caused this entire multi-week-looking discrepancy); a second
+  test asserts the length-mismatch `RangeError`; a third is a
+  never-executed, `@ts-expect-error`-guarded call that fails
+  `npm run typecheck` if `characters` is ever made optional again. This
+  is the test that would have caught the original bug on day one -- it
+  fails immediately and loudly the moment any real match, offline or
+  production-shaped, is built with a fighter that cannot attack.
+
+**Gates after this change:** `npm test` 526/526 (525 pre-existing + the 3
+new cases in `match-sim.test.ts`, none regressed), `npm run test:server`
+18/18, `npm run lint` clean, `npm run typecheck` clean (only the
+pre-existing `packages/app/src/net-match.ts` /
+`packages/app/test/timed-brawl.test.ts` errors from a sibling agent's
+in-progress work, unrelated to and unaffected by this change). No golden
+hash changed -- this touched only `createMatchSim`'s TypeScript signature
+and two scripts' call sites, never `Sim`'s behavior.
+
 ## What this harness cannot measure at all
 
 - Real human aim, reaction time, or decision-making — the human-analog

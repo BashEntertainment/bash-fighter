@@ -106,6 +106,12 @@ html, body {
   font-size: 16px;
   color: var(--ink-dim);
   font-weight: 400;
+  /* When this wraps to multiple lines (e.g. at phone width, or a long
+     winner name), its shrink-to-fit width clamps to the container's
+     full available width, so without an explicit centre the wrapped
+     lines sit flush against the left edge under a centred headline --
+     found on the Stocks win screen at 390px, 2026-09-12. */
+  text-align: center;
 }
 
 .wordmark {

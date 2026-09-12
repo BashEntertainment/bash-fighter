@@ -68,10 +68,29 @@ export function resolveMatchSettings(partial: Partial<MatchSettings> = {}): Matc
   const base: MatchSettings = {
     ...DEFAULT_MATCH_SETTINGS,
     winCondition,
-    arenaShrink: partial.arenaShrink ?? winCondition === 'battleRoyale',
+    // 'stocks' shrinks the arena too (2026-09-12 measurement, see wiki
+    // "Stocks Mode" page): with respawns keeping most of the field alive
+    // for most of the match, the population-aware safe-extents term in
+    // arena-shrink.ts barely engages, so without shrink a 20-fighter
+    // stocks match measured as UNRESOLVED at a 5-6 minute ceiling in
+    // every trial. Turning shrink on for stocks (like battleRoyale) is
+    // what actually forces the tick-driven hard-margin closure to do its
+    // job of guaranteeing resolution.
+    arenaShrink: partial.arenaShrink ?? (winCondition === 'battleRoyale' || winCondition === 'stocks'),
     startingStocks:
       partial.startingStocks ??
-      (winCondition === 'battleRoyale' ? 1 : winCondition === 'stocks' ? 3 : 1),
+      (winCondition === 'battleRoyale' ? 1 : winCondition === 'stocks' ? 2 : 1),
+    // 'stocks' needs the tick-driven full-closure clock to arrive much
+    // sooner than battleRoyale's 8-minute value: with lives being spent
+    // instead of single eliminations, the population-aware shrink term
+    // stays wide almost the whole match, so this is the only thing that
+    // guarantees the match ends. 3 minutes (10800 ticks) was measured
+    // (scripts/stocks-metrics.mjs) to resolve reliably at 2 starting
+    // stocks; battleRoyale's 8-minute value left every stocks trial
+    // unresolved at a 5-6 minute ceiling.
+    shrinkFullyClosedTick:
+      partial.shrinkFullyClosedTick ??
+      (winCondition === 'stocks' ? 60 * 60 * 3 : DEFAULT_MATCH_SETTINGS.shrinkFullyClosedTick),
   };
   const resolved: MatchSettings = { ...base, ...partial };
   if (winCondition === 'battleRoyale') resolved.startingStocks = 1;

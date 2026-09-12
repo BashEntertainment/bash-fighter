@@ -665,6 +665,10 @@ async function beginMatch(): Promise<void> {
   // unconditional default with neither present.
   const __DEBUG_MODE_PARAM = __DEBUG_PARAMS.get('mode');
   const __DEBUG_TIME_LIMIT_PARAM = __DEBUG_PARAMS.get('timeLimit');
+  // ?mode=stocks&stocks=<n> drives the same local harness through Stocks
+  // instead -- see docs/LOCAL_CROWD_TESTING.md. ?stocks=<n> overrides the
+  // starting life count (default: the sim's own stocks default, 2).
+  const __DEBUG_STOCKS_PARAM = __DEBUG_PARAMS.get('stocks');
   const localSettingsOverride: Partial<MatchSettings> | undefined =
     __DEBUG_MODE_PARAM === 'timedKO'
       ? {
@@ -673,7 +677,14 @@ async function beginMatch(): Promise<void> {
             ? { timeLimitTicks: Math.round(Number(__DEBUG_TIME_LIMIT_PARAM) * 60) }
             : {}),
         }
-      : undefined;
+      : __DEBUG_MODE_PARAM === 'stocks'
+        ? {
+            winCondition: 'stocks',
+            ...(Number.isFinite(Number(__DEBUG_STOCKS_PARAM))
+              ? { startingStocks: Math.round(Number(__DEBUG_STOCKS_PARAM)) }
+              : {}),
+          }
+        : undefined;
   const localMatch: Match = new Match(canvasRoot, localCharacters, localSeed, {
     onMatchOver: (winnerIndex, leaderboard, settings) => {
       hud.hide();

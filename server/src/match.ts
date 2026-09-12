@@ -177,6 +177,7 @@ export class Match {
    * RoomManager's rotation) working unchanged. */
   plannedWinCondition?: WinCondition;
   plannedTimeLimitTicks?: number;
+  plannedStartingStocks?: number;
 
   /** What start() will actually pick, computable before start() has run
    * (needed for the lobby message: a waiting player must be told the
@@ -193,6 +194,12 @@ export class Match {
     const timeLimitOverride = process.env.MATCH_TIME_LIMIT_TICKS;
     if (timeLimitOverride) return Number(timeLimitOverride);
     return this.plannedTimeLimitTicks;
+  }
+
+  effectiveStartingStocks(): number | undefined {
+    const stocksOverride = process.env.MATCH_STARTING_STOCKS;
+    if (stocksOverride) return Number(stocksOverride);
+    return this.plannedStartingStocks;
   }
 
   /** Win condition of the currently-running (or most recently run) sim,
@@ -447,9 +454,12 @@ export class Match {
     } else if (this.plannedWinCondition) {
       settingsOverride.winCondition = this.plannedWinCondition;
       if (this.plannedTimeLimitTicks) settingsOverride.timeLimitTicks = this.plannedTimeLimitTicks;
+      if (this.plannedStartingStocks) settingsOverride.startingStocks = this.plannedStartingStocks;
     }
     const timeLimitOverride = process.env.MATCH_TIME_LIMIT_TICKS;
     if (timeLimitOverride) settingsOverride.timeLimitTicks = Number(timeLimitOverride);
+    const stocksOverride = process.env.MATCH_STARTING_STOCKS;
+    if (stocksOverride) settingsOverride.startingStocks = Number(stocksOverride);
     this.sim = createMatchSim(this.seed, this.seats.length, settingsOverride, characters, this.arenaId);
     this.lastPercent = new Array(this.seats.length).fill(0);
     this.lastDamageTick = new Array(this.seats.length).fill(-Match.COMBAT_WINDOW_TICKS - 1);

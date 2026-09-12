@@ -156,7 +156,7 @@ function isSpectatorConn(conn: ClientConn, match: Match): boolean {
 const SPECTATOR_SNAPSHOT_DIVISOR = 2;
 
 function broadcastLobby(match: Match): void {
-  const modeName = modeDisplayName(match.effectiveWinCondition(), match.effectiveTimeLimitTicks());
+  const modeName = modeDisplayName(match.effectiveWinCondition(), match.effectiveTimeLimitTicks(), match.effectiveStartingStocks());
   const msg: ServerControlMessage = {
     t: 'lobby',
     players: match.filledSlots,

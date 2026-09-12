@@ -45,6 +45,14 @@ nothing to `?online`/the server path):
 - `&timeLimit=<seconds>` — with `&mode=timedKO`, shortens (or lengthens)
   the match clock for a faster QA loop instead of the mode's normal
   default. Ignored without `&mode=timedKO`.
+- `&mode=stocks` — runs Stocks (2 lives each by default, respawn until
+  your stocks run out, then permanent elimination; last fighter with
+  stocks remaining wins) instead of Battle Royale, same rationale as
+  `&mode=timedKO` above: it's the only way to see the Stocks HUD/end
+  screen with a full 20-fighter field locally.
+- `&stocks=<n>` — with `&mode=stocks`, overrides the starting life count
+  (production default: 2, see `docs/MATCH_MODES.md` for why). Ignored
+  without `&mode=stocks`.
 
 Example for a reproducible crowd match on a specific stage:
 

@@ -68,13 +68,21 @@ function decideBotInput(
 /** Build the fixture by actually running a scripted bot match to
  * completion. Deterministic: same seed, same characters, same bot logic
  * always produces the same recorded InputFrame[][]. */
-export const REPLAY_SETTINGS = { winCondition: 'stocks' as const, startingStocks: 3 };
+export const REPLAY_SETTINGS = {
+  winCondition: 'stocks' as const,
+  startingStocks: 3,
+  // Pinned explicitly (2026-09-12, Stocks mode launch) so this fixture's
+  // golden hashes stay byte-identical regardless of what the production
+  // 'stocks' mode defaults become -- see match-settings.ts and
+  // docs/MATCH_MODES.md. Values are the pre-2026-09-12 defaults: no arena
+  // shrink, 8-minute closure tick (irrelevant with shrink off, kept for
+  // clarity).
+  arenaShrink: false,
+  shrinkFullyClosedTick: 60 * 60 * 8,
+};
 
 export function buildReplayInputStream(): InputFrame[][] {
-  const sim = new Sim(REPLAY_SEED, 2, REPLAY_CHARACTERS, undefined, {
-    winCondition: 'stocks',
-    startingStocks: 3,
-  });
+  const sim = new Sim(REPLAY_SEED, 2, REPLAY_CHARACTERS, undefined, REPLAY_SETTINGS);
   const frames: InputFrame[][] = [];
   for (let t = 0; t < MAX_TICKS; t++) {
     const f0 = sim.getFighter(0);

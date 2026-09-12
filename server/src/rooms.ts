@@ -120,6 +120,7 @@ export class RoomManager {
       const decision = decideMatchMode(matchNumber);
       match.plannedWinCondition = decision.winCondition;
       match.plannedTimeLimitTicks = decision.timeLimitTicks;
+      match.plannedStartingStocks = decision.startingStocks;
       console.log(`[modeRotation] ${JSON.stringify({
         matchId: id,
         matchNumber,

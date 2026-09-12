@@ -1,21 +1,40 @@
-// Server-side mode rotation (2026-09-11, Timed Brawl launch): decides,
-// per created match (not per connection -- a match's mode must be fixed
-// for every seat that joins it), whether that match runs Timed Brawl or
-// stays on the Last Fighter Standing (battleRoyale) default.
+// Server-side mode rotation (2026-09-11, Timed Brawl launch; extended
+// 2026-09-12 to add Stocks). Decides, per created match (not per
+// connection -- a match's mode must be fixed for every seat that joins
+// it), which of the three modes that match runs.
 //
 // Deliberately a single small pure function, unit-testable without a
-// server or a websocket: given a 1-based match sequence number, cadence,
-// and disabled flag, it returns the mode -- no side effects, no clock.
+// server or a websocket: given a 1-based match sequence number and a
+// rotation sequence, it returns the mode -- no side effects, no clock.
 // RoomManager calls this once per fresh match and logs the result; Match
 // just receives the already-decided mode.
 import type { WinCondition } from '@bash-fighter/sim/src/index.ts';
 
-/** Every Nth match created runs Timed Brawl; the rest run the Battle
- *  Royale default. Configurable so ops can change the split without a
- *  redeploy. Must be >= 1 (a value of 1 would make every match Timed
- *  Brawl -- allowed, but the default keeps Battle Royale the headline
- *  experience at a 2-in-3 majority). */
-export const MODE_ROTATION_CADENCE = Math.max(1, Number(process.env.MATCH_MODE_ROTATION_CADENCE ?? 3));
+/** The rotation shape shipped 2026-09-12: Battle Royale twice, then Timed
+ *  Brawl, then Stocks, repeating -- Battle Royale stays the headline
+ *  experience at a 2-in-4 majority, and the two newer modes each get a
+ *  clean 1-in-4 slot rather than competing for the same "every Nth"
+ *  cadence slot Timed Brawl used alone before Stocks existed.
+ *  Configurable via MATCH_MODE_ROTATION as a comma-separated list of
+ *  'battleRoyale'|'timedKO'|'stocks' so ops can change the split, or
+ *  remove a mode entirely, without a redeploy. */
+const DEFAULT_ROTATION: WinCondition[] = ['battleRoyale', 'battleRoyale', 'timedKO', 'stocks'];
+
+function parseRotation(raw: string | undefined): WinCondition[] {
+  if (!raw) return DEFAULT_ROTATION;
+  const parts = raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s): s is WinCondition => s === 'battleRoyale' || s === 'timedKO' || s === 'stocks');
+  return parts.length > 0 ? parts : DEFAULT_ROTATION;
+}
+
+export const MODE_ROTATION: WinCondition[] = parseRotation(process.env.MATCH_MODE_ROTATION);
+
+/** Kept for backward compatibility with the pre-Stocks single-mode
+ *  cadence knob and existing tests/docs that reference it: the rotation
+ *  length itself now IS the cadence. */
+export const MODE_ROTATION_CADENCE = MODE_ROTATION.length;
 
 /** Kill switch: set truthy to disable rotation entirely and pin
  *  production to the pre-rotation behaviour (every match uses the
@@ -36,41 +55,73 @@ export const MODE_ROTATION_DISABLED = /^(1|true|yes)$/i.test(process.env.MATCH_M
  *  natural length. */
 export const TIMED_BRAWL_TIME_LIMIT_TICKS = 60 * 60 * 3;
 
+/** Stocks' starting-life count in the rotation. 2 lives, chosen from a
+ *  measurement (scripts/stocks-metrics.mjs, 2026-09-12), not taste: a
+ *  full 20-fighter HARD-bot stocks match with 2 vs. 3 starting stocks
+ *  resolved at almost the same median length (~224s vs. ~236s, 4 trials
+ *  each) once the mode-specific 3-minute shrink hard-margin (see
+ *  match-settings.ts) was added, because that backstop -- not the stock
+ *  count -- is what actually bounds match length; population-based
+ *  arena narrowing barely engages while respawns keep ~20 fighters alive
+ *  most of the match. Since stock count does not buy shorter matches
+ *  here, 2 was chosen over 3 as the leaner, faster-reading option the
+ *  owner asked to prefer absent a reason to do otherwise.
+ */
+export const STOCKS_STARTING_STOCKS = 2;
+
 export interface ModeDecision {
   winCondition: WinCondition;
   /** Only set when winCondition is 'timedKO'; undefined otherwise so
-   *  callers don't accidentally apply a time limit to battleRoyale. */
+   *  callers don't accidentally apply a time limit to another mode. */
   timeLimitTicks?: number;
+  /** Only set when winCondition is 'stocks'. */
+  startingStocks?: number;
 }
 
 /** Pure decision function: given the 1-based sequence number of the match
  *  being created (RoomManager's nextId at creation time, before
  *  increment), returns which mode it should run. Deterministic: the same
- *  (matchNumber, cadence, disabled) always returns the same answer, so
- *  this is testable without any timers or randomness, and the split is
- *  exactly "1 in cadence", not merely probabilistic. */
+ *  (matchNumber, rotation, disabled) always returns the same answer, so
+ *  this is testable without any timers or randomness -- the rotation is
+ *  a fixed repeating sequence, not merely probabilistic.
+ *
+ *  The `cadence` parameter is kept for backward compatibility with
+ *  existing call sites and tests: when given explicitly (not the
+ *  default), it selects a plain "every Nth match is timedKO, the rest
+ *  battleRoyale" two-mode rotation, matching the pre-Stocks behaviour,
+ *  so callers that only care about the two-mode split are unaffected by
+ *  the new default four-slot rotation. */
 export function decideMatchMode(
   matchNumber: number,
-  cadence: number = MODE_ROTATION_CADENCE,
+  cadenceOrRotation: number | WinCondition[] = MODE_ROTATION,
   disabled: boolean = MODE_ROTATION_DISABLED,
 ): ModeDecision {
-  if (!disabled && matchNumber % cadence === 0) {
-    return { winCondition: 'timedKO', timeLimitTicks: TIMED_BRAWL_TIME_LIMIT_TICKS };
+  if (disabled) return { winCondition: 'battleRoyale' };
+  if (typeof cadenceOrRotation === 'number') {
+    const cadence = Math.max(1, cadenceOrRotation);
+    if (matchNumber % cadence === 0) return { winCondition: 'timedKO', timeLimitTicks: TIMED_BRAWL_TIME_LIMIT_TICKS };
+    return { winCondition: 'battleRoyale' };
   }
-  return { winCondition: 'battleRoyale' };
+  const rotation = cadenceOrRotation.length > 0 ? cadenceOrRotation : DEFAULT_ROTATION;
+  const winCondition = rotation[(matchNumber - 1) % rotation.length] as WinCondition;
+  if (winCondition === 'timedKO') return { winCondition, timeLimitTicks: TIMED_BRAWL_TIME_LIMIT_TICKS };
+  if (winCondition === 'stocks') return { winCondition, startingStocks: STOCKS_STARTING_STOCKS };
+  return { winCondition };
 }
 
 /** Plain-language line shown to players before the match starts (lobby
  *  screen) -- see index item 2: never show the internal identifier
- *  ('timedKO') to a player. Battle Royale is the headline default and
- *  gets a short label; Timed Brawl states its win condition and length
- *  in words a new player understands, matching the format the owner
- *  specified. */
-export function modeDisplayName(winCondition: WinCondition, timeLimitTicks?: number): string {
+ *  ('timedKO'/'stocks') to a player. Battle Royale is the headline
+ *  default and gets a short label; the other two state their win
+ *  condition and any relevant number in words a new player understands. */
+export function modeDisplayName(winCondition: WinCondition, timeLimitTicks?: number, startingStocks?: number): string {
   if (winCondition === 'timedKO') {
     const minutes = Math.round((timeLimitTicks ?? TIMED_BRAWL_TIME_LIMIT_TICKS) / 60 / 60);
     return `Timed Brawl — most knockouts in ${minutes} minutes wins`;
   }
-  if (winCondition === 'stocks') return 'Stocks';
+  if (winCondition === 'stocks') {
+    const lives = startingStocks ?? STOCKS_STARTING_STOCKS;
+    return `Stocks — ${lives} lives each, last fighter standing wins`;
+  }
   return 'Battle Royale — last fighter standing wins';
 }

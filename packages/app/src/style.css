@@ -1637,3 +1637,14 @@ html, body {
   min-width: 8rem;
   text-align: right;
 }
+
+/* Winner colour marker on the win screen: identifies the fighter without
+   colouring a display-size line of text. */
+.winner-dot {
+  display: inline-block;
+  width: 0.5em;
+  height: 0.5em;
+  margin-right: 0.4em;
+  vertical-align: 0.08em;
+  border-radius: 50%;
+}

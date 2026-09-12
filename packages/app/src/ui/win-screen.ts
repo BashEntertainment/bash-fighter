@@ -42,8 +42,17 @@ export class WinScreen {
       const won = localSlot !== undefined && localSlot >= 0 && localSlot === winnerIndex;
       const colour = PLAYER_HEX[winnerIndex % PLAYER_HEX.length] as string;
       const label = nameFor ? nameFor(winnerIndex) : `Fighter ${winnerIndex + 1}`;
-      this.headline.textContent = won ? 'You win' : `${label} won`;
-      this.headline.style.color = colour;
+      // The winner's colour identifies them, but at headline size a whole
+      // sentence in one fighter's hue reads as decoration and fails contrast
+      // for the darker slots. Same rule as the Timed Brawl standings: the
+      // colour is a small marker, the words stay neutral.
+      this.headline.textContent = '';
+      const dot = document.createElement('span');
+      dot.className = 'winner-dot';
+      dot.style.background = colour;
+      this.headline.appendChild(dot);
+      this.headline.appendChild(document.createTextNode(won ? 'You win' : `${label} won`));
+      this.headline.style.color = '';
       this.headline.style.borderBottomColor = colour;
       this.subtitle.textContent = won
         ? 'Last one standing out of twenty.'

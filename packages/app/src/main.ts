@@ -11,7 +11,7 @@ import { SpectatorBanner } from './ui/spectator-banner.ts';
 import { SimMatchAdapter } from './spectator/sim-adapter.ts';
 import { SpectatorController } from './spectator/controller.ts';
 import { NetMatch, type ConnectionState } from './net-match.ts';
-import { MatchOverlay, type MatchOverlayContent } from './ui/match-overlay.ts';
+import { MatchOverlay, SPECTATE_OFFER, type MatchOverlayContent } from './ui/match-overlay.ts';
 import { ControlsHint } from './ui/controls-hint.ts';
 import { MoveReferencePanel } from './ui/move-reference-panel.ts';
 import { SettingsPanel } from './ui/settings-panel.ts';
@@ -488,7 +488,7 @@ async function beginOnlineMatch(): Promise<void> {
       touchControls.hide();
       lastEliminationContent = {
         title: `You finished ${placement} of ${totalFighters}`,
-        message: 'You can jump straight into a new match, or keep watching this one play out.',
+        message: `You can jump straight into a new match${SPECTATE_OFFER}.`,
         actions: [
           { label: 'Play again', onClick: () => void beginOnlineMatch() },
           { label: 'Keep spectating', onClick: () => matchOverlay.hide(), kind: 'plain' },

@@ -13,7 +13,7 @@
 // without a DOM.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { winnerAnnouncementLine } from '../src/ui/match-overlay.ts';
+import { winnerAnnouncementLine, messageAfterMatchEnd, SPECTATE_OFFER } from '../src/ui/match-overlay.ts';
 
 test('winnerAnnouncementLine names the winning slot for a watching spectator', () => {
   // Eliminated 6th, watched slot 16 win: this is the exact case from the
@@ -54,4 +54,17 @@ test('winnerAnnouncementLine still says "you won it" for the local winner even w
   const line = winnerAnnouncementLine(4, 4, () => 'Rook');
   assert.match(line, /you won/i);
   assert.doesNotMatch(line, /Rook/);
+});
+
+test('a match that has ended stops offering to keep watching it', () => {
+  const before = `You can jump straight into a new match${SPECTATE_OFFER}.`;
+  assert.equal(
+    messageAfterMatchEnd(before),
+    'You can jump straight into a new match.',
+    'the keep-watching clause must go once there is nothing left to watch',
+  );
+  // Idempotent, because announceWinner may be called more than once, and
+  // harmless on messages that never carried the offer.
+  assert.equal(messageAfterMatchEnd('You can jump straight into a new match.'), 'You can jump straight into a new match.');
+  assert.equal(messageAfterMatchEnd('This match ended before it finished.'), 'This match ended before it finished.');
 });

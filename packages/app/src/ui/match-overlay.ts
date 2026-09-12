@@ -39,6 +39,23 @@ function slotLabel(slot: number): string {
  * coverage without needing a DOM (see match-overlay.test.ts) -- this is
  * the part that was actually wrong (missing entirely) in the 2026-09-10
  * stranded-spectator bug, not the DOM plumbing around it. */
+/** The clause offering to keep watching the match. Once the match has
+ * ended that offer is false, so announceWinner strips it back out --
+ * which only works if callers use this exact constant to build the
+ * message. Seen live on production 2026-09-11: an eliminated player's
+ * overlay said "or keep watching this one play out" directly above a
+ * single "Play again" button, the Keep spectating action having correctly
+ * been removed. */
+export const SPECTATE_OFFER = ', or keep watching this one play out';
+
+/** Rewrites an eliminated-player message for a match that has ended:
+ * the offer to keep watching no longer applies. Pure, so it is covered
+ * by match-overlay.test.ts. */
+export function messageAfterMatchEnd(message: string): string {
+  if (!message.includes(SPECTATE_OFFER)) return message;
+  return message.replace(SPECTATE_OFFER, '');
+}
+
 export function winnerAnnouncementLine(
   winnerSlot: number | null,
   localSlot: number | null | undefined,
@@ -116,7 +133,8 @@ export class MatchOverlay {
     const already = this.messageEl.dataset.winnerAnnounced === String(winnerSlot);
     if (already) return;
     const line = winnerAnnouncementLine(winnerSlot, localSlot, nameFor);
-    this.messageEl.textContent = `${this.messageEl.textContent} ${line}`.trim();
+    const base = messageAfterMatchEnd(this.messageEl.textContent ?? '');
+    this.messageEl.textContent = `${base} ${line}`.trim();
     this.messageEl.dataset.winnerAnnounced = String(winnerSlot);
     // Once the match has genuinely ended there is nothing left to spectate,
     // so a "Keep spectating" action would dismiss the overlay into a frozen

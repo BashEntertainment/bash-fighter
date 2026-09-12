@@ -143,3 +143,75 @@ export function computeFramingFloor(
 
   return { minX, maxX, minY, maxY };
 }
+
+// Population-aware floor shrink (empty-sky pass 2026-09-12, see wiki
+// "Camera Population Floor 2026-09-12"). computeFramingFloor() above
+// intentionally never lets the camera zoom tighter than the arena's
+// own fought-over footprint -- right for a full 20-fighter lobby, where
+// fighters are naturally spread near that footprint anyway. But late in
+// a match, once most fighters are eliminated, the survivors are often a
+// small cluster far smaller than the *original* arena footprint (the
+// live blast rect shrinks with the collapsing ring, but not down to
+// "wherever the few survivors happen to be" -- it's population/ground
+// derived, not position derived). The result, confirmed by watching
+// live matches: a 2-3 fighter endgame framed inside a floor sized for a
+// much bigger fight, with most of the screen showing empty sky/void.
+//
+// This scales the already-computed floor box down around its own
+// center as living-fighter count drops, so the *minimum* the camera
+// will ever show shrinks with the fight. It does not, by itself, change
+// what fraction of the screen fighters occupy -- computeCamera's own
+// max(fighterSpan, floorSpan) logic still grows the frame back out
+// whenever the actual fighters are more spread out than this scaled
+// floor, so a spread-out 2-fighter chase across a wide stage is framed
+// on the fighters, not clipped to a small box. This only removes
+// *unused* floor headroom, never fighter positions -- every living
+// fighter's position is always still included in computeCamera's own
+// fSpan and therefore always on screen; nothing here can crop a
+// fighter, an incoming attacker, or a hazard off-screen.
+//
+// Constants: no shrink at 6+ living fighters (this is where "spread
+// close to the full arena" starts being the common case in practice --
+// confirmed live, see wiki), tapering linearly down to 45% of the full
+// floor span at 2 fighters (a 55% reduction in each axis, ~80% less
+// area) and held there for the final 1-2. 45% (not lower) is a
+// deliberate floor-on-the-floor: shrinking further starts to risk the
+// same "camera slams in and jitters as two fighters trade a few units
+// of ground" feel the existing paddingWorld/maxScale settings were
+// tuned to avoid, for a readability gain past this point that live
+// testing didn't show clearly justified.
+export const POPULATION_FLOOR_TAPER_START_COUNT = 6;
+export const POPULATION_FLOOR_MIN_COUNT = 2;
+export const POPULATION_FLOOR_MIN_FRAC = 0.45;
+
+export function populationFloorFrac(livingCount: number): number {
+  if (livingCount >= POPULATION_FLOOR_TAPER_START_COUNT) return 1;
+  if (livingCount <= POPULATION_FLOOR_MIN_COUNT) return POPULATION_FLOOR_MIN_FRAC;
+  const t =
+    (livingCount - POPULATION_FLOOR_MIN_COUNT) /
+    (POPULATION_FLOOR_TAPER_START_COUNT - POPULATION_FLOOR_MIN_COUNT);
+  return POPULATION_FLOOR_MIN_FRAC + (1 - POPULATION_FLOOR_MIN_FRAC) * t;
+}
+
+/** Scale an already-computed floor box down around its own center by
+ * `frac` (0..1) on both axes, preserving its aspect ratio (and therefore
+ * not undoing computeFramingFloor's own aspect-ratio padding). */
+export function scaleFramingFloor(floor: ArenaBounds, frac: number): ArenaBounds {
+  const cx = (floor.minX + floor.maxX) / 2;
+  const cy = (floor.minY + floor.maxY) / 2;
+  const halfX = ((floor.maxX - floor.minX) / 2) * frac;
+  const halfY = ((floor.maxY - floor.minY) / 2) * frac;
+  return { minX: cx - halfX, maxX: cx + halfX, minY: cy - halfY, maxY: cy + halfY };
+}
+
+/** Convenience: computeFramingFloor() followed by the population-aware
+ * shrink, in one call -- what render callers should actually use. */
+export function computePopulationAwareFramingFloor(
+  stage: FramingStageBounds,
+  viewWidth: number,
+  viewHeight: number,
+  livingCount: number,
+): ArenaBounds {
+  const floor = computeFramingFloor(stage, viewWidth, viewHeight);
+  return scaleFramingFloor(floor, populationFloorFrac(livingCount));
+}

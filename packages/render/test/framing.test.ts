@@ -185,3 +185,79 @@ test('dead-space-below-floor fix 2026-09-12: multi-height stage (battle-royale-2
   const spanY = floor.maxY - floor.minY;
   assert.ok(belowGround / spanY < 0.19, `below-ground share ${belowGround / spanY} should be a minority of the frame`);
 });
+
+// Population-aware floor shrink (empty-sky pass 2026-09-12).
+import {
+  populationFloorFrac,
+  scaleFramingFloor,
+  computePopulationAwareFramingFloor,
+  POPULATION_FLOOR_TAPER_START_COUNT,
+  POPULATION_FLOOR_MIN_COUNT,
+  POPULATION_FLOOR_MIN_FRAC,
+} from '../src/framing.ts';
+
+test('populationFloorFrac: no shrink at or above the taper-start count', () => {
+  assert.equal(populationFloorFrac(POPULATION_FLOOR_TAPER_START_COUNT), 1);
+  assert.equal(populationFloorFrac(POPULATION_FLOOR_TAPER_START_COUNT + 10), 1);
+  assert.equal(populationFloorFrac(20), 1);
+});
+
+test('populationFloorFrac: held at the minimum fraction at or below the minimum count', () => {
+  assert.equal(populationFloorFrac(POPULATION_FLOOR_MIN_COUNT), POPULATION_FLOOR_MIN_FRAC);
+  assert.equal(populationFloorFrac(1), POPULATION_FLOOR_MIN_FRAC);
+  assert.equal(populationFloorFrac(0), POPULATION_FLOOR_MIN_FRAC);
+});
+
+test('populationFloorFrac: linear taper strictly between the two counts, monotonic', () => {
+  let prev = populationFloorFrac(POPULATION_FLOOR_MIN_COUNT);
+  for (let n = POPULATION_FLOOR_MIN_COUNT + 1; n <= POPULATION_FLOOR_TAPER_START_COUNT; n++) {
+    const frac = populationFloorFrac(n);
+    assert.ok(frac > prev, `frac(${n})=${frac} should exceed frac(${n - 1})=${prev}`);
+    assert.ok(frac <= 1);
+    prev = frac;
+  }
+});
+
+test('scaleFramingFloor: shrinks around the box center, preserving aspect ratio', () => {
+  const box = { minX: -100, maxX: 300, minY: -50, maxY: 150 }; // center (100, 50), span 400x200
+  const scaled = scaleFramingFloor(box, 0.5);
+  assert.equal(scaled.minX, 0);
+  assert.equal(scaled.maxX, 200);
+  assert.equal(scaled.minY, 0);
+  assert.equal(scaled.maxY, 100);
+  // Aspect ratio (2:1) unchanged.
+  assert.equal((scaled.maxX - scaled.minX) / (scaled.maxY - scaled.minY), (box.maxX - box.minX) / (box.maxY - box.minY));
+});
+
+test('scaleFramingFloor: frac=1 is a no-op', () => {
+  const box = { minX: -37, maxX: 211, minY: -19, maxY: 88 };
+  const scaled = scaleFramingFloor(box, 1);
+  assert.equal(scaled.minX, box.minX);
+  assert.equal(scaled.maxX, box.maxX);
+  assert.equal(scaled.minY, box.minY);
+  assert.equal(scaled.maxY, box.maxY);
+});
+
+test('computePopulationAwareFramingFloor: full lobby matches the unscaled floor exactly', () => {
+  const stage = flatStage();
+  const plain = computeFramingFloor(stage, 1280, 720);
+  const populationAware = computePopulationAwareFramingFloor(stage, 1280, 720, 20);
+  const EPS2 = 1e-9;
+  assert.ok(Math.abs(populationAware.minX - plain.minX) < EPS2);
+  assert.ok(Math.abs(populationAware.maxX - plain.maxX) < EPS2);
+  assert.ok(Math.abs(populationAware.minY - plain.minY) < EPS2);
+  assert.ok(Math.abs(populationAware.maxY - plain.maxY) < EPS2);
+});
+
+test('computePopulationAwareFramingFloor: shrinks for a late-match 2-fighter endgame, never inverts', () => {
+  const stage = flatStage();
+  const plain = computeFramingFloor(stage, 1280, 720);
+  const endgame = computePopulationAwareFramingFloor(stage, 1280, 720, 2);
+  assert.ok(endgame.maxX - endgame.minX < plain.maxX - plain.minX);
+  assert.ok(endgame.maxY - endgame.minY < plain.maxY - plain.minY);
+  assert.ok(endgame.minX < endgame.maxX);
+  assert.ok(endgame.minY < endgame.maxY);
+  // Held at the documented floor-on-the-floor fraction.
+  const EPS = 1e-9;
+  assert.ok(Math.abs((endgame.maxX - endgame.minX) / (plain.maxX - plain.minX) - POPULATION_FLOOR_MIN_FRAC) < EPS);
+});

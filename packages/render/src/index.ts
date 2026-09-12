@@ -20,7 +20,7 @@ import {
   type BadgeCandidate,
   type BodyBox,
 } from './badge-layout.ts';
-import { computeFramingFloor } from './framing.ts';
+import { computeFramingFloor, computePopulationAwareFramingFloor } from './framing.ts';
 
 export { RenderItemTypeId } from './item-sprite.ts';
 export { EffectsLayer, type HitEffectInput, setReducedMotion, isReducedMotion } from './effects.ts';
@@ -156,14 +156,26 @@ function framingFloor(stage: StageBounds, viewWidth: number, viewHeight: number)
 // fought-over space" framing as the default rather than the exception.
 // minScale keeps fighters legible even on a wide arena; maxScale stops
 // the camera slamming in when fighters stand still.
-function cameraConfig(stage: StageBounds, viewWidth: number, viewHeight: number): CameraConfig {
+//
+// `livingCount` shrinks the arena floor itself as fighters are
+// eliminated (framing.ts's computePopulationAwareFramingFloor, empty-sky
+// pass 2026-09-12) -- see that function's doc comment for why this can
+// never crop a living fighter off-screen. Defaults to a count high
+// enough to never shrink (full-floor behaviour unchanged) for any
+// caller that doesn't pass one.
+function cameraConfig(
+  stage: StageBounds,
+  viewWidth: number,
+  viewHeight: number,
+  livingCount = 20,
+): CameraConfig {
   return {
     viewWidth,
     viewHeight,
     minScale: 1.6,
     maxScale: 5.5,
     paddingWorld: 20,
-    arena: framingFloor(stage, viewWidth, viewHeight),
+    arena: computePopulationAwareFramingFloor(stage, viewWidth, viewHeight, livingCount),
   };
 }
 
@@ -405,7 +417,7 @@ export class Renderer {
       frame.cameraOverride ??
       computeCamera(
         liveFighters.map((f) => ({ x: f.x, y: f.y })),
-        cameraConfig(stageForDraw, vw, vh),
+        cameraConfig(stageForDraw, vw, vh, liveFighters.length),
       );
 
     // Translate any hit/elimination effects the app layer observed since

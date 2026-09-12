@@ -137,3 +137,4 @@ AGPL-3.0 (see [`LICENSE`](./LICENSE)), with a Contributor License Agreement
 required from contributors — see [`CLA.md`](./CLA.md) for why and for the
 CLA text. The project stays AGPL-3.0; the CLA lets Bash Entertainment also
 offer the game under additional commercial terms.
+<!-- cla test trigger, will be closed -->

@@ -1,13 +1,15 @@
 # Bash Fighter
 
+Play it: https://bashfighter.com/
+
 Bash Fighter is an open-source, web-based platform fighter in the Super
 Smash genre, built for chaotic 20-player free-for-all matches instead of
 the traditional 1v1. It runs in the browser, with a server-authoritative
 match server for online play.
 
 The project is early but live: a 20-player match server runs in
-production at **http://135.181.45.254/** (plain HTTP for now — no TLS
-yet; that needs a domain purchase). Several parts described below are
+production at **https://bashfighter.com/** (HTTPS, with the bare IP
+`http://135.181.45.254/` kept working as a fallback). Several parts described below are
 thinner than they sound. This document describes what actually exists in
 this repository today, not the eventual vision. For the current roster
 of playable characters, see `docs/ARCHITECTURE.md` and
@@ -94,7 +96,7 @@ harness (no server needed), and a "PLAY ONLINE" button that connects to
 the match server above, predicts the local fighter, and reconciles against
 server snapshots. Both use the same deterministic `packages/sim`.
 
-The live production deployment is at http://135.181.45.254/ and runs the
+The live production deployment is at https://bashfighter.com/ and runs the
 match server described above; the "PLAY ONLINE" flow works the same way
 against it as against a local `server` dev instance.
 

@@ -180,6 +180,7 @@ changes before any custom art/animation pass.
   the layout math without a live WebGL context, are welcome — see the
   good-first-issues on GitHub.
 - **Live deployment.** The match server and web client run in production
-  at http://135.181.45.254/ (plain HTTP/WS — no TLS yet, pending a domain
-  purchase), serving real 20-player matches over the public internet.
+  at https://bashfighter.com/ (HTTPS and secure websockets; the bare IP
+  `http://135.181.45.254/` still works as a fallback over plain HTTP),
+  serving real 20-player matches over the public internet.
   This is not a demo; it's the same code in this repository.

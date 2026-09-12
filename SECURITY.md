@@ -2,12 +2,12 @@
 
 ## Current state
 
-Bash Fighter is live in production at **http://135.181.45.254/** — a
+Bash Fighter is live in production at **https://bashfighter.com/** — a
 game client, an authoritative WebSocket match server, and the `/api/*`
-HTTP endpoints backing it, all serving real public traffic. There is no
-TLS yet (plain HTTP/WS; a domain and certificate are pending), so this is
-in scope: report it as a hardening gap, not as a deployment that doesn't
-exist. `packages/sim`, `packages/content`, `packages/render`,
+HTTP endpoints backing it, all serving real public traffic over HTTPS
+(the bare IP `http://135.181.45.254/` still works as a fallback, over
+plain HTTP). This is in scope for reports: hardening gaps in the live
+deployment, not a deployment that doesn't exist. `packages/sim`, `packages/content`, `packages/render`,
 `packages/input`, `packages/net`, and `packages/app` build into the
 client served there; `server/` is what runs as the production process on
 the Hetzner host behind nginx.

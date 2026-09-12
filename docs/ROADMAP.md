@@ -38,8 +38,9 @@ elsewhere and aren't part of the public repo.
   reconciles on snapshots, interpolates remote fighters, shows connection
   state, and reconnects into an in-progress match after a drop.
 - **Live public deployment** — the match server and web client run in
-  production at http://135.181.45.254/ (plain HTTP/WS; TLS pending a
-  domain purchase), serving real 20-player matches over the public
+  production at https://bashfighter.com/ (HTTPS and secure websockets;
+  the bare IP `http://135.181.45.254/` still works as a fallback),
+  serving real 20-player matches over the public
   internet.
 - **Licensing** — AGPL-3.0 (`LICENSE`), with a Contributor License
   Agreement required from contributors (`CLA.md`; signing mechanism not

@@ -636,7 +636,23 @@ export class Sim {
       eliminatedTick: d[base + FighterField.ELIMINATED_TICK] as number,
       placement: d[base + FighterField.PLACEMENT] as number,
       jumpsUsed: d[base + FighterField.JUMPS_USED] as number,
-      inRingDanger: (d[base + FighterField.RING_DAMAGE_TICK] as number) === this.tick,
+      // Presentation-only flag (see the field comment above): "did this
+      // fighter take ring pressure on the tick that was just simulated".
+      // RING_DAMAGE_TICK is written inside checkBlastZone using the
+      // *pre-increment* this.tick (advance() only bumps this.tick at its
+      // very end, line ~917, after every fighter has been updated), but
+      // getFighter() is normally called by app-side code right after
+      // advance() returns -- by then this.tick has already moved to the
+      // next frame. Comparing against the bare current this.tick here
+      // therefore never matched: this flag was always false, silently,
+      // for the entire lifetime of the ring-pressure redesign. Proven via
+      // packages/sim's own eliminationEvents ('ring'/'ring_lethal' causes
+      // fire correctly -- this getter is the only thing that was wrong)
+      // and confirmed live: packages/app's ring-damage audio cue reads
+      // exactly this flag (see match.ts/net-match.ts) and had never once
+      // fired. This is a read-only derived boolean, not a serialized sim
+      // field -- it cannot affect determinism or the replay-hash goldens.
+      inRingDanger: (d[base + FighterField.RING_DAMAGE_TICK] as number) === this.tick - 1,
     };
   }
 

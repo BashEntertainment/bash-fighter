@@ -397,6 +397,13 @@ export class Match {
     return this.currSnapshots;
   }
 
+  /** True once tick() has fired onMatchOver -- see NetMatch.isOver() for
+   * why the hud tick loop in main.ts must check this instead of relying
+   * on a "has it started" flag that never reverts. */
+  isOver(): boolean {
+    return this.over;
+  }
+
   /** Per-slot display names, parallel to NetMatch.displayNames() -- bot
    * seats get botName(slot) (see the constructor), human seats are ''
    * (no local lobby name entry yet). Callers should go through nameFor()

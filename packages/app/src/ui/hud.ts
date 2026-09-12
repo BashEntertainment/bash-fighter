@@ -7,6 +7,7 @@
 // from spectator/types.ts's MatchAdapter once wired up.
 import { fixed as fx, FighterStateId, type FighterSnapshot } from '@bash-fighter/sim';
 import { PALETTE } from '@bash-fighter/render';
+import { survivorsLineText } from './hud-text.ts';
 
 export interface HudFighterExtra {
   eliminated: boolean;
@@ -142,7 +143,7 @@ export class Hud {
         stocksEl.textContent = '●'.repeat(Math.max(0, s.stocks)) || '—';
       }
     }
-    this.survivorsLine.textContent = !timedBrawl && snapshots.length > 2 ? `${survivors} / ${snapshots.length} remaining` : '';
+    this.survivorsLine.textContent = survivorsLineText(survivors, snapshots.length, Boolean(timedBrawl));
     this.survivorsLine.style.display = this.survivorsLine.textContent ? '' : 'none';
   }
 }

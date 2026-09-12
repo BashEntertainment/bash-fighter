@@ -651,6 +651,16 @@ export class NetMatch {
     return this.localSim !== null;
   }
 
+  /** True once the server's matchEnd control message has been processed
+   * (see handleControl's 'matchEnd' case). The HUD tick loop in main.ts
+   * must stop re-showing the HUD once this flips -- see the "stale
+   * survivor counter at match end" fix: onMatchOver's hud.hide() was
+   * being undone on the very next animation frame because the tick loop
+   * only ever checked hasStarted(), which never goes back to false. */
+  isOver(): boolean {
+    return this.over;
+  }
+
   /** This match's resolved settings once matchStart has arrived, or null
    * before that / for the pre-match lobby screens. */
   getMatchSettings(): MatchSettings | null {

@@ -522,7 +522,7 @@ async function beginOnlineMatch(): Promise<void> {
   let announcedStart = false;
   const onlineHudTick = (): void => {
     if (generation !== matchGeneration) return;
-    if (netMatch && netMatch.hasStarted()) {
+    if (netMatch && netMatch.hasStarted() && !netMatch.isOver()) {
       if (!announcedStart) {
         announcedStart = true;
         audio.play('match_start');
@@ -714,7 +714,7 @@ async function beginMatch(): Promise<void> {
 
   const hudTick = (): void => {
     if (generation !== matchGeneration) return;
-    if (match && adapter) {
+    if (match && adapter && !match.isOver()) {
       const extras = Array.from({ length: adapter.fighterCount }, (_, i) => {
         const status = (adapter as SimMatchAdapter).status(i);
         return { eliminated: status.eliminated, placement: status.placement };

@@ -66,7 +66,7 @@ export class TimedBrawlEndScreen {
       this.headline.textContent = 'Time out — tied for first';
     } else {
       const colour = PLAYER_HEX[winnerSlot % PLAYER_HEX.length] as string;
-      const label = nameFor ? nameFor(winnerSlot) : `Fighter ${winnerSlot + 1}`;
+      const label = nameFor ? nameFor(winnerSlot) : `#${winnerSlot + 1}`;
       this.headline.textContent = won ? 'You win' : `${label} won`;
       this.winnerSwatch.style.background = colour;
       this.winnerSwatch.style.display = 'inline-block';

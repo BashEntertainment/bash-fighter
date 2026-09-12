@@ -653,9 +653,9 @@ async function beginMatch(): Promise<void> {
       audio.play('match_end');
       if (isTimedBrawl(settings) && leaderboard) {
         const scores = localMatch.currentSnapshots().map((s, slot) => ({ slot, koCount: s.koCount, deathCount: s.deathCount }));
-        timedBrawlEndScreen.show(winnerIndex, leaderboard, scores, 0);
+        timedBrawlEndScreen.show(winnerIndex, leaderboard, scores, 0, (slot) => localMatch.nameFor(slot));
       } else {
-        winScreen.show(winnerIndex, 0);
+        winScreen.show(winnerIndex, 0, (slot) => localMatch.nameFor(slot));
       }
       match?.stop();
     },
@@ -723,8 +723,8 @@ async function beginMatch(): Promise<void> {
       hud.update(
         match.currentSnapshots(),
         extras,
-        undefined,
-        undefined,
+        0,
+        localMatch.displayNames(),
         isTimedBrawl(localSettings) && localSettings
           ? { clockText: formatClock(ticksRemaining(localMatch.currentTick, localSettings)) }
           : undefined,

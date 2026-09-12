@@ -397,6 +397,22 @@ export class Match {
     return this.currSnapshots;
   }
 
+  /** Per-slot display names, parallel to NetMatch.displayNames() -- bot
+   * seats get botName(slot) (see the constructor), human seats are ''
+   * (no local lobby name entry yet). Callers should go through nameFor()
+   * for the '#N' fallback rather than indexing this directly. */
+  displayNames(): readonly string[] {
+    return this.names;
+  }
+
+  /** A slot's display name, or its slot label ('#N', 1-based) if that
+   * seat has none -- the same fallback rule as NetMatch.nameFor(), kept
+   * in one place per side. */
+  nameFor(slot: number): string {
+    const n = this.names[slot];
+    return n && n.length > 0 ? n : `#${slot + 1}`;
+  }
+
   /** This match's resolved settings, for the Timed Brawl clock/end screen
    * gating in main.ts (see isTimedBrawl in timed-brawl.ts). */
   getMatchSettings(): MatchSettings {

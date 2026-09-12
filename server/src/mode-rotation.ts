@@ -29,7 +29,23 @@ function parseRotation(raw: string | undefined): WinCondition[] {
   return parts.length > 0 ? parts : DEFAULT_ROTATION;
 }
 
-export const MODE_ROTATION: WinCondition[] = parseRotation(process.env.MATCH_MODE_ROTATION);
+// Back-compat: production already carries MATCH_MODE_ROTATION_CADENCE=3
+// from the pre-Stocks Timed Brawl launch (2026-09-11). If the new
+// MATCH_MODE_ROTATION list env var is not set but the old cadence env
+// var is, honour it by building the equivalent plain two-mode rotation
+// (every Nth match is timedKO, the rest battleRoyale) rather than
+// silently ignoring an operator's existing config.
+function rotationFromLegacyCadence(raw: string | undefined): WinCondition[] | null {
+  if (!raw) return null;
+  const cadence = Number(raw);
+  if (!Number.isFinite(cadence) || cadence < 1) return null;
+  return Array.from({ length: Math.round(cadence) }, (_, i) => (i === Math.round(cadence) - 1 ? 'timedKO' : 'battleRoyale'));
+}
+
+export const MODE_ROTATION: WinCondition[] =
+  process.env.MATCH_MODE_ROTATION !== undefined
+    ? parseRotation(process.env.MATCH_MODE_ROTATION)
+    : rotationFromLegacyCadence(process.env.MATCH_MODE_ROTATION_CADENCE) ?? DEFAULT_ROTATION;
 
 /** Kept for backward compatibility with the pre-Stocks single-mode
  *  cadence knob and existing tests/docs that reference it: the rotation

@@ -236,6 +236,13 @@ export class Match {
    *  of elimination = combat; otherwise boundary/other). */
   private lastPercent: number[] = [];
   private lastDamageTick: number[] = [];
+  /** Per-slot death-count tracking so a stock-consuming death (stocks mode
+   *  only: respawns without eliminating) can be logged exactly once, the
+   *  moment DEATH_COUNT increments without ELIMINATED being set. Stocks
+   *  mode was previously unverifiable from production logs: the server
+   *  only ever logged 'elimination' (stocks exhausted), so a death that
+   *  merely burned a stock and respawned left no trace at all. */
+  private lastDeathCount: number[] = [];
   private matchStartedAtTick = 0;
   private static readonly COMBAT_WINDOW_TICKS = 60;
   countdownTicksRemaining = -1;
@@ -463,6 +470,7 @@ export class Match {
     this.sim = createMatchSim(this.seed, this.seats.length, settingsOverride, characters, this.arenaId);
     this.lastPercent = new Array(this.seats.length).fill(0);
     this.lastDamageTick = new Array(this.seats.length).fill(-Match.COMBAT_WINDOW_TICKS - 1);
+    this.lastDeathCount = new Array(this.seats.length).fill(0);
     this.matchStartedAtTick = this.tick;
     const difficulty = botDifficultyFromEnv();
     this.botDifficulty = difficulty;
@@ -531,6 +539,39 @@ export class Match {
       const pct = snap.percent;
       if (pct > this.lastPercent[seat.slot]) this.lastDamageTick[seat.slot] = this.tick;
       this.lastPercent[seat.slot] = pct;
+      // Stocks-mode ground truth (2026-09-12): a death that only consumes a
+      // stock (DEATH_COUNT increments, ELIMINATED does not get set) was
+      // logged nowhere before this, making Stocks mode unverifiable from
+      // production logs. Only stocks mode ever reaches this branch: in
+      // battleRoyale startingStocks is forced to 1 so the first death always
+      // eliminates, and timedKO enables respawns so ELIMINATED is never set
+      // there either -- gating on winCondition === 'stocks' anyway keeps
+      // this from ever firing outside the one mode it means something for.
+      if (this.winCondition === 'stocks' && !snap.eliminated && snap.deathCount > this.lastDeathCount[seat.slot]) {
+        const ev = sim.eliminationEvents.find((e) => e.fighterIndex === seat.slot);
+        const cause = ev ? ev.cause : 'unknown';
+        const attacker = ev ? ev.attacker : -1;
+        // Read percentAtDeath off the elimination event, not snap.percent:
+        // by the time this tick's getFighter() runs, checkBlastZone has
+        // already reset PERCENT to 0 for the new life on the respawn path
+        // (see sim.ts), so snap.percent here is always 0 and would silently
+        // misreport every stockLoss's percent as zero.
+        const percentAtDeath = ev ? ev.percentAtDeath : pct;
+        const matchAgeSec = ((this.tick - this.matchStartedAtTick) / 60).toFixed(1);
+        console.log(JSON.stringify({
+          evt: 'stockLoss',
+          matchId: this.id,
+          slot: seat.slot,
+          isBot: seat.isBot,
+          tick: this.tick,
+          matchAgeSec,
+          percentAtDeath,
+          cause,
+          attacker,
+          stocksRemaining: snap.stocks,
+        }));
+      }
+      this.lastDeathCount[seat.slot] = snap.deathCount;
       if (snap.eliminated) {
         seat.eliminated = true;
         // Deliberately NOT calling releaseSeat/nulling the token here.

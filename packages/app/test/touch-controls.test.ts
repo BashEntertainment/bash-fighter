@@ -19,7 +19,10 @@
 // touch-controls.ts.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { BUTTON_ATTACK, BUTTON_JUMP, BUTTON_SPECIAL } from '@bash-fighter/sim';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+import { BUTTON_ATTACK, BUTTON_JUMP, BUTTON_SPECIAL, BUTTON_SHIELD } from '@bash-fighter/sim';
 
 class FakeRect {
   left: number;
@@ -67,6 +70,26 @@ class FakePointerEvent extends Event {
 }
 (globalThis as unknown as { PointerEvent?: unknown }).PointerEvent =
   (globalThis as unknown as { PointerEvent?: unknown }).PointerEvent ?? FakePointerEvent;
+
+// Node has no KeyboardEvent global; same fake-element rationale as
+// FakePointerEvent above -- real EventTarget dispatch semantics, only
+// the DOM classes are faked (issue #27 keyboard activation tests).
+class FakeKeyboardEvent extends Event {
+  key: string;
+  repeat: boolean;
+  constructor(type: string, init: { key: string; repeat?: boolean; bubbles?: boolean; cancelable?: boolean }) {
+    super(type, { bubbles: init.bubbles, cancelable: init.cancelable });
+    this.key = init.key;
+    this.repeat = init.repeat ?? false;
+  }
+}
+(globalThis as unknown as { KeyboardEvent?: unknown }).KeyboardEvent =
+  (globalThis as unknown as { KeyboardEvent?: unknown }).KeyboardEvent ?? FakeKeyboardEvent;
+
+function fireKey(el: FakeElement, type: 'keydown' | 'keyup', key: string, opts: { repeat?: boolean } = {}): void {
+  const ev = new FakeKeyboardEvent(type, { key, repeat: opts.repeat ?? false, bubbles: true, cancelable: true });
+  el.dispatchEvent(ev);
+}
 
 class FakeElement extends EventTarget {
   tagName = 'DIV';
@@ -119,6 +142,12 @@ function installFakeDom(): { restore: () => void } {
   };
 }
 
+
+function getButtonsRow(tc: { root: unknown }): FakeElement {
+  const buttonsRow = (tc.root as FakeElement).children[1];
+  if (!buttonsRow) throw new Error('test setup: expected a second child (buttons row) on TouchControls.root');
+  return buttonsRow;
+}
 
 function findButton(buttons: FakeElement[], name: string): FakeElement {
   const btn = buttons.find((b) => b.className.includes(name));
@@ -314,4 +343,127 @@ test('two fingers on two different buttons at once both register, and releasing 
   } finally {
     dom.restore();
   }
+});
+
+// -- Keyboard accessibility (issue #27): the action buttons are real
+// <button> elements now, so Enter/Space on a focused button must drive
+// the exact same source state a finger does -- held while the key is
+// held (shield is a hold, not a tap), cleared on release.
+
+test('holding Enter on a focused action button holds it, keyup releases it', async () => {
+  const dom = installFakeDom();
+  try {
+    const TouchControls = await loadTouchControls();
+    const parent = new FakeElement();
+    const tc = new TouchControls(parent as unknown as HTMLElement);
+    const shieldBtn = findButton(getButtonsRow(tc).children, 'shield');
+
+    fireKey(shieldBtn, 'keydown', 'Enter');
+    assert.ok((tc.source.poll().buttons & BUTTON_SHIELD) !== 0, 'Enter keydown must hold shield like a finger press');
+
+    fireKey(shieldBtn, 'keyup', 'Enter');
+    assert.equal(tc.source.poll().buttons & BUTTON_SHIELD, 0, 'Enter keyup must release shield');
+    assert.ok(!tc.source.isActive(), 'no pointers down after keyboard release');
+  } finally {
+    dom.restore();
+  }
+});
+
+test('Space activates too, and key auto-repeat never double-registers or leaks a stuck press', async () => {
+  const dom = installFakeDom();
+  try {
+    const TouchControls = await loadTouchControls();
+    const parent = new FakeElement();
+    const tc = new TouchControls(parent as unknown as HTMLElement);
+    const attackBtn = findButton(getButtonsRow(tc).children, 'attack');
+
+    fireKey(attackBtn, 'keydown', ' ');
+    assert.ok((tc.source.poll().buttons & BUTTON_ATTACK) !== 0, 'Space keydown must hold attack');
+
+    // Holding the key fires repeating keydowns; each must be a no-op so
+    // one keyup clears the press cleanly (no duplicate/stuck state).
+    for (let i = 0; i < 5; i++) fireKey(attackBtn, 'keydown', ' ', { repeat: true });
+    assert.ok((tc.source.poll().buttons & BUTTON_ATTACK) !== 0, 'repeat keydowns must not disturb the held press');
+
+    fireKey(attackBtn, 'keyup', ' ');
+    assert.equal(tc.source.poll().buttons & BUTTON_ATTACK, 0, 'one Space keyup must fully clear attack after repeats');
+  } finally {
+    dom.restore();
+  }
+});
+
+test('focus leaving while a key is held releases the button -- no stuck-on action (keyboard pointercancel)', async () => {
+  const dom = installFakeDom();
+  try {
+    const TouchControls = await loadTouchControls();
+    const parent = new FakeElement();
+    const tc = new TouchControls(parent as unknown as HTMLElement);
+    const jumpBtn = findButton(getButtonsRow(tc).children, 'jump');
+
+    fireKey(jumpBtn, 'keydown', 'Enter');
+    assert.ok((tc.source.poll().buttons & BUTTON_JUMP) !== 0, 'sanity: keyboard press registered');
+
+    // Tab away / focus jumps elsewhere: the keyup would land on another
+    // element, so blur must release the held button on its own.
+    jumpBtn.dispatchEvent(new Event('blur'));
+    assert.equal(tc.source.poll().buttons & BUTTON_JUMP, 0, 'blur while held must release jump');
+    assert.ok(!tc.source.isActive(), 'no phantom pointer left active after blur');
+  } finally {
+    dom.restore();
+  }
+});
+
+test('a finger and the keyboard can hold the same button; releasing one leaves the other held', async () => {
+  const dom = installFakeDom();
+  try {
+    const TouchControls = await loadTouchControls();
+    const parent = new FakeElement();
+    const tc = new TouchControls(parent as unknown as HTMLElement);
+    const specialBtn = findButton(getButtonsRow(tc).children, 'special');
+
+    firePointer(specialBtn, 'pointerdown', { pointerId: 71 });
+    fireKey(specialBtn, 'keydown', 'Enter');
+    assert.ok((tc.source.poll().buttons & BUTTON_SPECIAL) !== 0, 'both sources hold special');
+
+    fireKey(specialBtn, 'keyup', 'Enter');
+    assert.ok((tc.source.poll().buttons & BUTTON_SPECIAL) !== 0, 'finger still holds special after keyboard release');
+
+    firePointer(specialBtn, 'pointerup', { pointerId: 71 });
+    assert.equal(tc.source.poll().buttons & BUTTON_SPECIAL, 0, 'special clears once the last holder lets go');
+  } finally {
+    dom.restore();
+  }
+});
+
+test('non-activation keys (Tab, game keys) do not press the button', async () => {
+  const dom = installFakeDom();
+  try {
+    const TouchControls = await loadTouchControls();
+    const parent = new FakeElement();
+    const tc = new TouchControls(parent as unknown as HTMLElement);
+    const attackBtn = findButton(getButtonsRow(tc).children, 'attack');
+
+    for (const key of ['Tab', 'a', 'Shift', 'Escape']) {
+      fireKey(attackBtn, 'keydown', key);
+      fireKey(attackBtn, 'keyup', key);
+    }
+    assert.equal(tc.source.poll().buttons, 0, 'only Enter/Space may drive button state');
+    assert.ok(!tc.source.isActive());
+  } finally {
+    dom.restore();
+  }
+});
+
+// Source pin: the accessibility fix is a real <button type="button">
+// element, not a div with role="button" -- the fake DOM above cannot
+// see the tag name, so pin the construction directly (same technique
+// as ring-damage-and-match-end-audio.test.ts).
+const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/ui/touch-controls.ts'), 'utf8');
+
+test('makeButton builds a real <button type="button"> (issue #27)', () => {
+  assert.match(src, /document\.createElement\('button'\)/, 'action buttons must be real <button> elements');
+  assert.match(src, /btn\.type = 'button'/, 'type="button" so Enter/Space/submit semantics stay form-safe');
+  assert.doesNotMatch(src, /document\.createElement\('div'\);\s*\n\s*btn\.className = `touch-btn/, 'the old div construction must be gone');
+  assert.match(src, /addEventListener\('keydown'/, 'keyboard activation must be wired');
+  assert.match(src, /addEventListener\('blur'/, 'blur release must be wired (no stuck-on action)');
 });

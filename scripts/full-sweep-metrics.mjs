@@ -13,6 +13,7 @@ import { ALL_ARENAS } from '../packages/content/src/arenas.ts';
 import { ALL_CHARACTERS } from '../packages/content/src/characters.ts';
 import * as fx from '../packages/sim/src/math/fixed.ts';
 import { DEFAULT_MATCH_SETTINGS } from '../packages/sim/src/match-settings.ts';
+import { assignServerCharacters } from './lib/bot-character-assignment.mjs';
 
 // Anti-drift guard (task #28195): this harness constructs `new Sim(...)`
 // with no settings override, so it always inherits DEFAULT_MATCH_SETTINGS
@@ -116,9 +117,16 @@ for (const arenaEntry of ALL_ARENAS) {
     const results = [];
     for (let s = 0; s < SEEDS; s++) {
       const seed = 200000 + s * 7919 + arenaEntry.id.length * 13 + diffName.length;
-      // main table uses uniform DEFAULT_CHARACTER (undefined) to stay comparable
-      // with prior measurements; per-character survival is measured separately below.
-      results.push({ ...runMatch(arenaEntry, seed, diffVal, undefined), chars: Array.from({length:N},()=> 'default') });
+      // Diagnosed 2026-09-11 (docs/MEASUREMENT.md): the previous
+      // uniform-DEFAULT_CHARACTER (undefined) choice here was NOT neutral --
+      // DEFAULT_CHARACTER has moves: [], so every one of these 20 bots was
+      // physically unable to land an attack, at any difficulty, regardless
+      // of AI tuning. This is the real cause of the ~0% combat / ~97-100%
+      // ring split this table used to report. Use the same seeded
+      // ALL_CHARACTERS roster draw server/src/rooms.ts's bot-fill gives
+      // production bots, all-bot (no protected human seat here).
+      const chars = assignServerCharacters(seed, N);
+      results.push({ ...runMatch(arenaEntry, seed, diffVal, chars), chars: chars.map((c) => c.name) });
     }
     const durations = results.map((r) => r.durationSec).sort((a, b) => a - b);
     const oneSurvivor = results.filter((r) => r.survivors === 1).length;

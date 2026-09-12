@@ -77,46 +77,169 @@ Correction" — HARD run for comparison), default parameters, `ceilingTicks=3600
 | elimination cause split | knockout 72.2%, ring 18.0%, fall 9.8%, ring_lethal 0% | knockout 0%, ring 98%, fall 2%, ring_lethal 0% | knockout 0%, ring 96.7%, fall 3.3%, ring_lethal 0% |
 | percent-at-death | min 3.0, median 106.4, max 205.4 | min 0, p25 0, median 10, p75 18, max 78.7 | min 0, median 7, p75 14.6, max 58.5 |
 
-## Honest verdict
+## Root cause found and fixed, 2026-09-11
 
-**The harness's plumbing is trustworthy; the numbers it currently produces
-are not, and the disagreement is real and large, not a rounding difference.**
+**The gap was a harness defect, not a sim/bot-AI defect, and it is now fixed.**
 
-Specifically:
-- Match duration and human-elimination-time are **off by roughly 5-10x**
-  (harness matches run 8-10 minutes; production matches resolve in 40s-2min).
-- The elimination-cause split is **inverted**: production is dominated by
-  genuine knockouts (72%); the harness — at both EASY and HARD bot difficulty
-  — produces almost none (0%), with matches instead dragging out until the
-  ring-shrink backstop kills everyone.
-- This is not a bug introduced by this harness. A plain 20-bot-no-human
-  match, run through `full-sweep-metrics.mjs` unmodified with the same
-  corrected ceiling, shows the identical pattern (0% combat share across
-  every arena/difficulty combination tested during this pass) — see that
-  script's own `combat=0%` rows. The human-analog controller did not cause
-  this; it inherited it.
-- Root cause is NOT diagnosed here — that is a sim/bot-AI behavior question
-  (whether bots are currently fighting each other at all in extended
-  matches), out of scope for this harness/measurement task, and out of
-  scope for this agent's file ownership (`packages/sim/`, `server/`). It is
-  flagged, not fixed.
+Every offline harness that measured this gap -- `human-analog-metrics.mjs`
+(above) and the pre-existing `full-sweep-metrics.mjs` -- built its `Sim`
+by calling `createMatchSim(seed, N, {}, undefined, arenaId)` /
+`new Sim(seed, N, undefined, ...)`, i.e. passing `undefined` for the
+per-seat `characters` argument. `packages/sim/src/sim.ts` resolves a
+missing `characters` argument to its own internal `DEFAULT_CHARACTER`
+for every seat:
 
-**What can be trusted right now:** the harness's mechanics — it correctly
-builds production-identical Sims via `createMatchSim`, correctly reads
-`eliminationEvents` cause/attacker/percentAtDeath the same way the server's
-own log line does, correctly avoids the ceiling-timeout artifact, and its
-JSON output format is directly comparable field-for-field against
-`journalctl`'s `elimination` and `matchSummary` lines (see table above and
-`scripts/human-analog-metrics.mjs`'s header comment for the exact schema
-mapping).
+```
+const DEFAULT_CHARACTER: CharacterData = {
+  name: 'Unnamed', weight: fx.fromInt(100),
+  hurtboxWidth: fx.fromFloat(1.6), hurtboxHeight: fx.fromFloat(3.2),
+  moves: [],   // <-- no moves at all
+};
+```
 
-**What cannot yet be trusted:** the *absolute* duration and cause-split
-numbers this harness produces. Bot-vs-bot combat is not currently
-reproducing in extended offline play the way it does in real production
-matches with a human present, for reasons this task did not investigate.
-Anyone using this harness to argue "combat share should be X%" or "matches
-should last Y seconds" must check that claim against fresh production logs
-first — this doc's rule stands: **production logs win any disagreement.**
+`moves: []` is deliberate at the sim-core level -- it lets a unit test
+that only cares about movement/physics build a `Sim` without pulling in
+`packages/content`'s character data (see that constant's own comment:
+"attack input is simply a no-op"). But every offline metrics harness
+used it as if it were a neutral stand-in for "some fighter," including
+`full-sweep-metrics.mjs`'s own comment claiming uniform
+`DEFAULT_CHARACTER` "stays comparable with prior measurements." It is
+not neutral: **every bot in every offline sweep was, and had always
+been, physically incapable of landing a single attack**, at any
+difficulty, on any arena, no matter how the AI's targeting/reaction/
+attack-range tuning was adjusted in the many passes chasing this
+("Bot Combat Engagement Fix," the ring-pressure redesign, the
+hesitation dampener, etc. -- see the linked pages below). Production
+never has this problem: `server/src/match.ts` always resolves real
+character data per seat via `resolveCharacterId`, and
+`server/src/rooms.ts`'s bot-fill timer gives every bot seat a real,
+deterministically-drawn character from `ALL_CHARACTERS` (never the
+sim-core stub).
+
+**Proof.** Re-ran a pure 20-bot, no-human, `MATCH_BOT_DIFFICULTY=easy`
+match through `createMatchSim` twice, identical in every way except the
+`characters` argument:
+
+| characters passed | duration | knockout | ring | fall |
+|---|---|---|---|---|
+| `undefined` (the old bug) | ~502-515s (2 seeds) | 0% | 100% | 0% |
+| real roster, drawn the same way `server/src/rooms.ts` draws it | 60.7-97.3s (4 seeds) | 68-79% | 13-25% | 0-8% |
+
+Same seed, same arena, same bot difficulty, same everything else --
+flipping only the `characters` argument took the offline harness from
+"bots can never fight" to numbers in the same neighborhood as
+production. This is conclusive, not circumstantial: it is a single
+before/after with everything else held constant, not a correlation.
+
+**Hypotheses tested and killed before finding this:**
+- *Bot difficulty mismatch* -- killed. `server/src/match-defaults.ts`
+  and the live `/srv/bash-fighter/shared/bash-fighter.env` both confirm
+  production runs EASY with no override; both harnesses already used
+  EASY as their default and the bug reproduced at every difficulty in
+  `full-sweep-metrics.mjs`'s own sweep.
+- *Tick rate / input cadence mismatch* -- killed. `server/src/match.ts`'s
+  `tickOnce()` calls `bot.nextInput(sim)` once per bot, once per
+  `sim.advance()` call, at `TICK_HZ = 60`, exactly like both harnesses'
+  `for (t=0; t<CEIL; t++) { ...; sim.advance(inputs) }` loops. Read side
+  by side; no discrepancy.
+- *Different arena distribution offline* -- killed. Both use
+  `pickArenaId(seed)` / the real arena roster; a live production
+  `matchSummary` line and an offline run land on the same arenas
+  (`battle-royale-20`, `the-atoll`, etc.).
+- *Deploy lag (server running older code than `main`)* -- killed.
+  `/srv/bash-fighter/current` is a symlink to
+  `releases/20260911222819-b1f9c62`, and `git rev-parse HEAD` on `main`
+  in this checkout is also `b1f9c62`. Identical commit.
+- *Presence of a human seat changing bot dynamics* -- killed as the
+  primary driver, though it remains a secondary, smaller effect. Real
+  production log evidence: matchId `m1` recurred verbatim (same seed,
+  since `seedFromMatchId` is deterministic) across two separate server
+  restarts on 2026-09-11. The **first** run (pid 933627) only has
+  elimination log lines from tick 3566 onward (bots only, all
+  `knockout`, attacker slots 4/7/10) -- the earlier ticks/eliminations
+  from that run rotated out of the retained log window, so it is a
+  partial trace, but every visible elimination in it is bot-vs-bot
+  combat. The **second** run (pid 933814) is a complete trace: 22
+  eliminations, `knockout` dominant (14/22), the sole human seat (slot
+  0) eliminated by `ring` damage at 55.6s while `aliveAfter: 12`, i.e.
+  well after 7 other fighters had already died to `knockout` -- bot-vs-
+  bot combat was already well underway before and continued after the
+  human's own elimination. A human seat that mostly stood still and
+  died to ring pressure still saw a match resolve in 90.9s with 64%
+  knockout-caused eliminations, entirely consistent with bots capable
+  of really fighting each other, which is exactly what the character
+  fix reproduces offline with no human seat at all.
+- *Item/hazard spawning disabled offline* -- killed. Both harnesses call
+  `createMatchSim`, which always wires in
+  `BASH_FIGHTER_ITEM_SET`/`BASH_FIGHTER_HAZARD` -- the same call
+  production makes. Nothing to disable.
+
+## What changed
+
+- `scripts/lib/bot-character-assignment.mjs` (new): `assignServerCharacters(seed, numFighters, humanSlots)`
+  reproduces `server/src/rooms.ts`'s `startBotFillTimer` character draw
+  exactly (same `seedRng`/`nextBounded`/`ALL_CHARACTERS` sequence, same
+  `(matchSeed ^ (slot * 0x9e3779b9))` per-slot seed), and gives any
+  `humanSlots` seat `PLACEHOLDER_CHARACTER` (`resolveCharacterId`'s own
+  fallback for an unset human characterId).
+- `scripts/human-analog-metrics.mjs`: builds `characters` via
+  `assignServerCharacters` and passes them into `createMatchSim` instead
+  of `undefined`.
+- `scripts/full-sweep-metrics.mjs`: the main per-arena/difficulty sweep
+  now does the same instead of the old uniform-`undefined` choice; the
+  separately-existing rotated-roster per-character-survival section
+  (further down in the same file) already passed real characters and is
+  untouched.
+- **Not touched**: `packages/sim/src/sim.ts`'s `DEFAULT_CHARACTER`
+  itself, and every other caller of `new Sim(...)` that legitimately
+  wants a moveless placeholder (pure physics/determinism unit tests
+  that never trigger `advance()`'s attack path). This was a harness
+  construction-argument bug, not a sim defect -- nothing about combat,
+  knockback, hitstun, or bot AI itself needed to change, and no golden
+  hash was touched.
+
+## Before / after, 2026-09-11
+
+Same production data as the table above (8 matches, 133 eliminations,
+median 84.4s, knockout 72.2% / ring 18.0% / fall 9.8%).
+
+`scripts/human-analog-metrics.mjs 20 easy` (20 trials, fixed):
+
+| metric | before fix | after fix | production |
+|---|---|---|---|
+| match duration (median) | ~514s | 78.9s | 84.4s |
+| elimination cause | knockout 0%, ring 98%, fall 2% | knockout 73.4%, ring 21.6%, fall 5.0% | knockout 72.2%, ring 18.0%, fall 9.8% |
+
+`scripts/full-sweep-metrics.mjs 4 42000` (all 5 arenas x 3 difficulties,
+4 seeds each, fixed): combat share now 57.9%-94.7% across every
+combination (median ~85%), boundary 5.3%-42.1%, versus the old
+~0-12% combat / ~88-100% boundary at every combination. `battle-royale-20`
+EASY specifically (production's most common arena in this log window):
+duration 91.8-109.7s (median 106.7s) vs production's 84.4s median on the
+same arena family -- a ~1.25x residual gap, not the old ~6x gap.
+Gates on this run: all 4 seeds resolved with exactly 1 survivor, 0
+timeouts, 0 whole-lobby wipes, 0 double-KOs at every arena/difficulty
+combination; novice (passive EASY human) survival unaffected -- 25/25
+sampled seeds across all 5 arenas survived the full match, same as
+before this change (this fix only touches which characters bots use,
+not their AI logic, targeting, or the human-protection tuning).
+
+**Residual gap, stated honestly:** offline EASY durations (median
+78.9-111s depending on arena) still run somewhat longer than
+production's 84.4s median. Plausible remaining contributors, not fully
+isolated here: (1) the human-analog controller is an explicit,
+documented guess about human aggression/positioning
+(`reactionTicks`/`aimJitter`/`idleProb`/`attackProb`), not a fit to real
+data, so a real player who plays more aggressively than the model
+would resolve faster; (2) the small 4-8 seed samples above are not a
+large-N distribution match; (3) production's own 8-match sample spans
+40.4-122.9s, a wide spread that a handful of offline seeds landing at
+the high end of that same range (e.g. `the-undercroft` EASY's 191-201s
+outlier trials) would not obviously contradict, but was not swept at
+higher N here to say for certain it's the same distribution rather than
+a real remaining difference. This residual is roughly an order of
+magnitude smaller than the gap this fix closes and does not change the
+root-cause finding above.
 
 ## What this harness cannot measure at all
 

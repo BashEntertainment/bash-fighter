@@ -49,6 +49,7 @@
 // the one sanctioned Sim builder, so the item set, hazard config and arena
 // resolution match production exactly, not a hand-picked subset.
 import { createMatchSim } from '../packages/content/src/match-sim.ts';
+import { assignServerCharacters } from './lib/bot-character-assignment.mjs';
 import { BotController, BotDifficulty, deriveBotSeed } from '../packages/sim/src/ai/bot.ts';
 import { BUTTON_ATTACK, BUTTON_JUMP, makeInputFrame } from '../packages/sim/src/types.ts';
 import { pickArenaId } from '../packages/content/src/arenas.ts';
@@ -140,9 +141,15 @@ function makeHumanAnalogController(rand) {
 
 function runOneTrial(seed) {
   const arenaId = pickArenaId(seed);
-  const sim = createMatchSim(seed, N, {}, undefined, arenaId);
-  const bots = [];
+  // Diagnosed 2026-09-11 (see docs/MEASUREMENT.md): passing `undefined`
+  // here silently resolved to packages/sim's internal DEFAULT_CHARACTER
+  // (moves: []) for every seat, so no fighter -- human-analog or bot --
+  // could ever land a hit. Build the same per-seat roster the real
+  // server does instead (mirrors server/src/rooms.ts's startBotFillTimer).
   const protectedSlots = new Set([HUMAN_SLOT]);
+  const characters = assignServerCharacters(seed, N, protectedSlots);
+  const sim = createMatchSim(seed, N, {}, characters, arenaId);
+  const bots = [];
   for (let i = 1; i < N; i++) {
     bots.push(new BotController(i, difficulty, deriveBotSeed(seed, i), protectedSlots));
   }

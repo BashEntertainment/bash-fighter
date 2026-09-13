@@ -139,3 +139,4 @@ CLA text. The project stays AGPL-3.0; the CLA lets Bash Entertainment also
 offer the game under additional commercial terms.
 <!-- cla test trigger, will be closed -->
 <!-- retrigger -->
+<!-- retrigger 2 -->

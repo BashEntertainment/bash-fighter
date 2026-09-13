@@ -33,7 +33,11 @@ jobs:
 
           CONTENT=$(gh api "repos/$REPO/contents/CLA-SIGNATURES.md?ref=$HEAD_SHA" --jq .content | base64 -d || true)
 
-          if printf '%s\n' "$CONTENT" | grep -Ei "^- @${AUTHOR}: .*agree.*CLA" > /dev/null; then
+          # Use fgrep-style fixed-string matching for the username portion:
+          # GitHub bot accounts (e.g. "andonos[bot]") contain "[" and "]",
+          # which -E would otherwise interpret as a regex character class.
+          ESCAPED_AUTHOR=$(printf '%s' "$AUTHOR" | sed 's/[.[\*^$/]/\\&/g')
+          if printf '%s\n' "$CONTENT" | grep -Ei "^- @${ESCAPED_AUTHOR}: .*agree.*CLA" > /dev/null; then
             echo "signed=true" >> "$GITHUB_OUTPUT"
           else
             echo "signed=false" >> "$GITHUB_OUTPUT"

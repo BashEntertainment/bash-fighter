@@ -57,20 +57,27 @@ jobs:
           EXISTING=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments" --paginate --jq \
             '.[] | select(.body | contains("cla-check-comment")) | .id' | head -n1)
 
-          BODY="$MARKER
-          Thanks for the pull request, @$AUTHOR! Before this can be merged, you need to
-          agree to the Bash Fighter Contributor Licence Agreement ([CLA.md](../blob/main/CLA.md)).
-
-          Add this exact line to the end of the \"Signed\" list in
-          [\`CLA-SIGNATURES.md\`](../blob/main/CLA-SIGNATURES.md), in this same pull request,
-          then push the change:
-
-          \`\`\`
-          - @$AUTHOR: I have read and agree to the Bash Fighter CLA (CLA.md).
-          \`\`\`
-
-          You only need to do this once — it covers all your future contributions. The
-          \`CLA Check\` status below will turn green automatically once the line is in."
+          # Built with printf rather than a heredoc: a heredoc terminator
+          # cannot be indented, but a YAML block scalar forces indentation on
+          # every line. And the body must not be indented itself, because four
+          # or more leading spaces make Markdown render the whole message as a
+          # grey slab of preformatted text.
+          BODY=$(printf '%s\n' \
+            "$MARKER" \
+            "Thanks for the pull request, @$AUTHOR. Before this can be merged you need" \
+            "to agree to the Bash Fighter Contributor Licence Agreement" \
+            "([CLA.md](../blob/main/CLA.md))." \
+            "" \
+            "Add this exact line to the end of the \"Signed\" list in" \
+            "[\`CLA-SIGNATURES.md\`](../blob/main/CLA-SIGNATURES.md), in this same pull" \
+            "request, then push the change:" \
+            "" \
+            '```' \
+            "- @$AUTHOR: I have read and agree to the Bash Fighter CLA (CLA.md)." \
+            '```' \
+            "" \
+            "You only need to do this once - it covers all your future contributions." \
+            "The \`CLA Check\` status below turns green automatically once the line is in.")
 
           if [ -n "$EXISTING" ]; then
             gh api "repos/$REPO/issues/comments/$EXISTING" -X PATCH -f body="$BODY" > /dev/null
